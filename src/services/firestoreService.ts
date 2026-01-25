@@ -30,7 +30,7 @@ export async function fetchDcsFromFirestore(): Promise<SavedDc[]> {
 
     const querySnapshot = await getDocs(q);
     const dcs: SavedDc[] = [];
-    
+
     querySnapshot.forEach((doc) => {
       // Firestore data is safe to cast to SavedDc as the schema is designed to match
       dcs.push(doc.data() as SavedDc);
@@ -50,7 +50,9 @@ export async function saveDcToFirestore(dc: SavedDc): Promise<boolean> {
   try {
     // Use the DC's ID as the document ID for easy lookup and update
     const dcRef = doc(db, DC_COLLECTION, dc.id);
-    await setDoc(dcRef, dc);
+    // Sanitize data to remove undefined values
+    const sanitizedDc = JSON.parse(JSON.stringify(dc));
+    await setDoc(dcRef, sanitizedDc);
     return true;
   } catch (error) {
     console.error('Error saving DC to Firestore:', error);
@@ -67,7 +69,9 @@ export async function updateDcInFirestore(dc: SavedDc): Promise<boolean> {
     // updateDoc is more efficient than setDoc if only a few fields are changing, 
     // but setDoc with the full object is safer for a full replacement.
     // Since the logic in savedDcStorage.ts handles merging, we can use setDoc for simplicity.
-    await setDoc(dcRef, dc); 
+    // Sanitize data to remove undefined values
+    const sanitizedDc = JSON.parse(JSON.stringify(dc));
+    await setDoc(dcRef, sanitizedDc);
     return true;
   } catch (error) {
     console.error('Error updating DC in Firestore:', error);

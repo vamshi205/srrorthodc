@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
 import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { LoginScreen } from '@/components/ortho/LoginScreen';
+// import { LoginScreen } from '@/components/ortho/LoginScreen'; // Removed
 import { ProcedureSelector } from '@/components/ortho/ProcedureSelector';
 import { ProcedureCard } from '@/components/ortho/ProcedureCard';
 import { SummaryPanel } from '@/components/ortho/SummaryPanel';
@@ -18,13 +18,15 @@ import { useToast } from '@/hooks/use-toast';
 import { useProcedures } from '@/hooks/useProcedures';
 import { loadSavedDcs, saveSavedDc } from '@/lib/savedDcStorage';
 import { Procedure, ActiveProcedure, SizeQty } from '@/types/procedure';
+import { auth } from '@/firebase';
 
 export default function OrthoApp() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => localStorage.getItem('srrortho:auth') === 'true'
-  );
+  const location = useLocation();
+  // Legacy authentication removed - handled by App.tsx ProtectedRoute
+  // const [isAuthenticated, setIsAuthenticated] = useState(...)
+
   const { procedures, loading, procedureTypes, refetchSingleProcedure, searchProcedures, searchInstruments, searchItems, fetchProcedures } = useProcedures();
 
   // Initialize with empty array - no procedures selected by default
@@ -42,6 +44,7 @@ export default function OrthoApp() {
   const [recentSavedDcs, setRecentSavedDcs] = useState<any[]>([]);
   const [isSavingDc, setIsSavingDc] = useState(false);
   const [showConfirmSaveDialog, setShowConfirmSaveDialog] = useState(false);
+  const [deliveredBy, setDeliveredBy] = useState('');
 
   // Manual DC builder
   const [dcMode, setDcMode] = useState<'procedure' | 'manual'>('procedure');
@@ -71,14 +74,23 @@ export default function OrthoApp() {
     });
   }, []);
 
-  // Clear procedures and show selector with "None" filter when user logs in
+  // Clear procedures and show selector on mount
   useEffect(() => {
-    if (isAuthenticated) {
+    const params = new URLSearchParams(location.search);
+    const mode = params.get('mode');
+
+    if (mode === 'manual') {
+      setDcMode('manual');
       setActiveProcedures([]);
-      setShowProcedureSelector(true);
+      setCollapsedProcedures(new Set());
+      setShowProcedureSelector(false);
+    } else {
+      setDcMode('procedure');
+      setActiveProcedures([]);
       setInitialFilterType('None');
+      setShowProcedureSelector(true);
     }
-  }, [isAuthenticated]);
+  }, [location.search]);
 
   const handleSelectProcedure = useCallback((procedure: Procedure) => {
     setActiveProcedures((prev) => {
@@ -128,11 +140,11 @@ export default function OrthoApp() {
     if (updated) {
       setActiveProcedures((prev) =>
         prev.map((p) =>
-          p.name === name ? { 
-            ...p, 
-            ...updated, 
-            selectedItems: p.selectedItems, 
-            selectedFixedItems: p.selectedFixedItems, 
+          p.name === name ? {
+            ...p,
+            ...updated,
+            selectedItems: p.selectedItems,
+            selectedFixedItems: p.selectedFixedItems,
             fixedQtyEdits: p.fixedQtyEdits,
             boxNumbers: p.boxNumbers || [],
             instrumentImageMapping: updated.instrumentImageMapping || p.instrumentImageMapping || {},
@@ -235,20 +247,20 @@ export default function OrthoApp() {
     setActiveProcedures((prev) =>
       prev.map((p) => {
         if (p.name !== procedureName) return p;
-        
+
         // Find the fixed item and remove the part
         const updatedFixedItems = p.fixedItems.map((item) => {
           if (item.name === itemName) {
             const partToRemoveTrimmed = partToRemove.trim();
-            
+
             // Simple approach: find the part in the string and remove it along with any comma
             // Handle cases like "120° DHS Plate Short Barrell 4hole,5hole,6hole"
             // The partToRemove might be just "4hole" but the actual part in the array is "120° DHS Plate Long Barrell 4hole"
             let newName = itemName;
-            
+
             // Split by comma to get individual parts
             const parts = newName.split(',').map(p => p.trim());
-            
+
             // Find which part contains the part to remove
             let foundAndRemoved = false;
             const updatedParts = parts.map((part, index) => {
@@ -266,25 +278,25 @@ export default function OrthoApp() {
                     return beforeSuffix;
                   }
                 }
-                
+
                 // If no suffix pattern found, check if it's a short standalone part (like "5hole")
                 // Remove the entire part if it's short and simple
                 if (part.length < 15 && /^\d+\w+$/.test(part)) {
                   foundAndRemoved = true;
                   return null;
                 }
-                
+
                 // Otherwise, if it's a longer part without a clear suffix pattern, remove the entire part
                 foundAndRemoved = true;
                 return null;
               }
-              
+
               // If the part ends with the partToRemove and has content before it, remove just the suffix
               // This handles edge cases where partToRemove might be a substring
               if (part.endsWith(partToRemoveTrimmed) && part.length > partToRemoveTrimmed.length) {
                 const charBeforeIndex = part.length - partToRemoveTrimmed.length - 1;
                 const charBefore = charBeforeIndex >= 0 ? part[charBeforeIndex] : null;
-                
+
                 if (charBefore === ' ') {
                   const beforePart = part.slice(0, -partToRemoveTrimmed.length).trim();
                   if (beforePart.length > 0) {
@@ -293,10 +305,10 @@ export default function OrthoApp() {
                   }
                 }
               }
-              
+
               return part;
             }).filter(p => p !== null && p.length > 0);
-            
+
             if (updatedParts.length > 0 && foundAndRemoved) {
               // Join parts with commas
               newName = updatedParts.join(',');
@@ -307,7 +319,7 @@ export default function OrthoApp() {
               // If all parts were removed, don't update
               return item;
             }
-            
+
             // Only update if name actually changed
             if (newName !== itemName && newName.trim().length > 0) {
               // Update fixedQtyEdits if it exists
@@ -317,7 +329,7 @@ export default function OrthoApp() {
                 qtyMap.delete(itemName);
                 qtyMap.set(newName.trim(), oldQty);
               }
-              
+
               // Update selectedFixedItems
               const selectedMap = new Map(p.selectedFixedItems);
               const wasSelected = selectedMap.get(itemName);
@@ -325,13 +337,13 @@ export default function OrthoApp() {
                 selectedMap.delete(itemName);
                 selectedMap.set(newName.trim(), wasSelected);
               }
-              
+
               return { ...item, name: newName.trim() };
             }
           }
           return item;
         });
-        
+
         return { ...p, fixedItems: updatedFixedItems };
       })
     );
@@ -341,7 +353,7 @@ export default function OrthoApp() {
     setActiveProcedures((prev) =>
       prev.map((p) => {
         if (p.name !== procedureName) return p;
-        
+
         // Update items array - find item and remove the part
         const updatedItems = p.items.map((item) => {
           // Parse the item to get the name
@@ -350,10 +362,10 @@ export default function OrthoApp() {
             const name = match[1].trim();
             if (name === itemName) {
               const partToRemoveTrimmed = partToRemove.trim();
-              
+
               // Simple approach: find the part in the string and remove it along with any comma
               let newName = name;
-              
+
               // Try to find and remove the part with comma after it: "4hole,"
               const patternWithCommaAfter = partToRemoveTrimmed + ',';
               if (newName.includes(patternWithCommaAfter)) {
@@ -380,31 +392,31 @@ export default function OrthoApp() {
                           return beforeSuffix;
                         }
                       }
-                      
+
                       // If no suffix pattern found, check if it's a short standalone part (like "5hole")
                       // Remove the entire part if it's short and simple
                       if (part.length < 15 && /^\d+\w+$/.test(part)) {
                         return null;
                       }
-                      
+
                       // Otherwise, if it's a longer part without a clear suffix pattern, remove the entire part
                       return null;
                     }
-                    
+
                     // If the part ends with the partToRemove and has content before it, remove just the suffix
                     if (part.endsWith(partToRemoveTrimmed) && part.length > partToRemoveTrimmed.length) {
                       const charBeforeIndex = part.length - partToRemoveTrimmed.length - 1;
                       const charBefore = charBeforeIndex >= 0 ? part[charBeforeIndex] : null;
-                      
+
                       if (charBefore === ' ') {
                         const beforePart = part.slice(0, -partToRemoveTrimmed.length).trim();
                         return beforePart.length > 0 ? beforePart : null;
                       }
                     }
-                    
+
                     return part;
                   }).filter(p => p !== null && p.length > 0);
-                  
+
                   if (updatedParts.length > 0) {
                     newName = updatedParts.join(',');
                   } else {
@@ -413,7 +425,7 @@ export default function OrthoApp() {
                   }
                 }
               }
-              
+
               // Only update if name actually changed
               if (newName !== name && newName.trim().length > 0) {
                 // Reconstruct the item string with new name
@@ -424,10 +436,10 @@ export default function OrthoApp() {
             // Item without size/qty pattern
             if (item.trim() === itemName) {
               const partToRemoveTrimmed = partToRemove.trim();
-              
+
               // Simple approach: find the part in the string and remove it along with any comma
               let newName = itemName;
-              
+
               // Try to find and remove the part with comma after it: "4hole,"
               const patternWithCommaAfter = partToRemoveTrimmed + ',';
               if (newName.includes(patternWithCommaAfter)) {
@@ -454,31 +466,31 @@ export default function OrthoApp() {
                           return beforeSuffix;
                         }
                       }
-                      
+
                       // If no suffix pattern found, check if it's a short standalone part (like "5hole")
                       // Remove the entire part if it's short and simple
                       if (part.length < 15 && /^\d+\w+$/.test(part)) {
                         return null;
                       }
-                      
+
                       // Otherwise, if it's a longer part without a clear suffix pattern, remove the entire part
                       return null;
                     }
-                    
+
                     // If the part ends with the partToRemove and has content before it, remove just the suffix
                     if (part.endsWith(partToRemoveTrimmed) && part.length > partToRemoveTrimmed.length) {
                       const charBeforeIndex = part.length - partToRemoveTrimmed.length - 1;
                       const charBefore = charBeforeIndex >= 0 ? part[charBeforeIndex] : null;
-                      
+
                       if (charBefore === ' ') {
                         const beforePart = part.slice(0, -partToRemoveTrimmed.length).trim();
                         return beforePart.length > 0 ? beforePart : null;
                       }
                     }
-                    
+
                     return part;
                   }).filter(p => p !== null && p.length > 0);
-                  
+
                   if (updatedParts.length > 0) {
                     newName = updatedParts.join(',');
                   } else {
@@ -487,7 +499,7 @@ export default function OrthoApp() {
                   }
                 }
               }
-              
+
               // Only update if name actually changed
               if (newName !== itemName && newName.trim().length > 0) {
                 return newName.trim();
@@ -496,7 +508,7 @@ export default function OrthoApp() {
           }
           return item;
         });
-        
+
         // Update selectedItems map - find items that were updated
         const selectedMap = new Map(p.selectedItems);
         updatedItems.forEach((item) => {
@@ -507,7 +519,7 @@ export default function OrthoApp() {
             const oldName = oldMatch ? oldMatch[1].trim() : oldItem.trim();
             return oldName === itemName;
           });
-          
+
           if (oldItem && newName !== itemName) {
             const selectedItem = selectedMap.get(itemName);
             if (selectedItem) {
@@ -516,7 +528,7 @@ export default function OrthoApp() {
             }
           }
         });
-        
+
         return { ...p, items: updatedItems, selectedItems: selectedMap };
       })
     );
@@ -643,11 +655,12 @@ export default function OrthoApp() {
     setHospitalName('');
     setDcNo('');
     setReceivedBy('');
+    setDeliveredBy('');
     setRemarks('');
   }, []);
 
   const handleSaveDc = useCallback(async (): Promise<boolean> => {
-    if (!hospitalName || !dcNo || !receivedBy) {
+    if (!hospitalName || !dcNo || !receivedBy || !deliveredBy) {
       setShowSettingsModal(true);
       return false;
     }
@@ -668,20 +681,21 @@ export default function OrthoApp() {
         if (arr.length === 1) return arr[0];
         return 'Mixed';
       })();
-      
+
       await saveSavedDc({
         hospitalName,
         dcNo,
         materialType: dcMaterialType,
+        deliveredBy,
         receivedBy,
         remarks,
         items,
         instruments,
         boxNumbers,
       });
-      
+
       toast({ title: 'DC saved successfully', description: `${hospitalName} · ${dcNo}` });
-      
+
       // Reload recent DCs
       const dcs = await loadSavedDcs();
       setRecentSavedDcs(dcs.slice(0, 6));
@@ -705,8 +719,8 @@ export default function OrthoApp() {
       return true;
     } catch (error) {
       console.error('Error saving DC:', error);
-      toast({ 
-        title: 'Error saving DC', 
+      toast({
+        title: 'Error saving DC',
         description: error instanceof Error ? error.message : 'Failed to save DC to Google Sheets',
         variant: 'destructive'
       });
@@ -746,25 +760,14 @@ export default function OrthoApp() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem('srrortho:auth');
-    setIsAuthenticated(false);
-    setActiveProcedures([]);
-    setHospitalName('');
-    setDcNo('');
-    setReceivedBy('');
-    setRemarks('');
-    setShowProcedureSelector(true);
-    setManualItems([]);
-    setManualInstruments([]);
-    setManualBoxNumbers([]);
-    setManualItemQuery('');
-    setManualItemName('');
-    setManualItemSize('');
-    setManualItemQty('1');
-    setManualInstrumentQuery('');
-    setManualBoxInput('');
-    setDcMode('procedure');
+    localStorage.removeItem('srrortho:procedures_cache');
+    try {
+      await auth.signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
   };
 
   const handleAddBox = useCallback((procedureName: string, boxNumber: string) => {
@@ -789,16 +792,8 @@ export default function OrthoApp() {
     );
   }, []);
 
-  if (!isAuthenticated) {
-    return (
-      <LoginScreen
-        onLogin={() => {
-          localStorage.setItem('srrortho:auth', 'true');
-          setIsAuthenticated(true);
-        }}
-      />
-    );
-  }
+  // Legacy login screen logic removed
+  // if (!isAuthenticated) { return <LoginScreen ... />; }
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
@@ -845,7 +840,7 @@ export default function OrthoApp() {
                 <Images className="w-4 h-4" /> Image Database
               </Button>
               <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/saved')}>
-                <List className="w-4 h-4" /> Saved DC List
+                <List className="w-4 h-4" /> DC Tracker
               </Button>
             </div>
 
@@ -871,6 +866,23 @@ export default function OrthoApp() {
                     </button>
                   ))
                 )}
+              </div>
+
+              <div className="pt-2 space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  onClick={() => navigate('/admin')}
+                >
+                  <Wrench className="w-4 h-4" /> Admin Panel
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="w-4 h-4" /> Logout
+                </Button>
               </div>
             </div>
           </div>
@@ -941,7 +953,7 @@ export default function OrthoApp() {
                           </SheetClose>
                           <SheetClose asChild>
                             <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/saved')}>
-                              <List className="w-4 h-4" /> Saved DC List
+                              <List className="w-4 h-4" /> DC Tracker
                             </Button>
                           </SheetClose>
                         </div>
@@ -949,7 +961,7 @@ export default function OrthoApp() {
                         <div className="space-y-2">
                           <div className="text-xs font-semibold text-muted-foreground">Actions</div>
                           <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => fetchProcedures()} disabled={loading}>
+                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => fetchProcedures(true)} disabled={loading}>
                               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh Data
                             </Button>
                           </SheetClose>
@@ -960,11 +972,11 @@ export default function OrthoApp() {
                           </SheetClose>
                           <SheetClose asChild>
                             <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/admin')}>
-                              <Wrench className="w-4 h-4" /> Admin
+                              <Wrench className="w-4 h-4" /> Admin Panel
                             </Button>
                           </SheetClose>
                           <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={handleLogout}>
+                            <Button variant="outline" className="w-full justify-start gap-2 text-red-600" onClick={handleLogout}>
                               <LogOut className="w-4 h-4" /> Logout
                             </Button>
                           </SheetClose>
@@ -993,314 +1005,287 @@ export default function OrthoApp() {
             </div>
           </div>
           <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
-          {/* Left: Procedure Selection & Active Procedures */}
-          <div className="lg:col-span-2 space-y-4 sm:space-y-6 min-w-0">
-            {/* Active Procedures - Show first if they exist */}
-            {activeProcedures.length > 0 && (
-              <div className="space-y-3 sm:space-y-4">
-                <h2 className="font-display font-semibold text-base sm:text-lg">Active Procedures</h2>
-                {activeProcedures.map((procedure) => (
-                  <ProcedureCard
-                    key={procedure.name}
-                    procedure={procedure}
-                    isCollapsed={collapsedProcedures.has(procedure.name)}
-                    onToggleCollapse={() => setCollapsedProcedures((prev) => { const next = new Set(prev); next.has(procedure.name) ? next.delete(procedure.name) : next.add(procedure.name); return next; })}
-                    onRemove={() => handleRemoveProcedure(procedure.name)}
-                    onRefresh={() => handleRefreshProcedure(procedure.name)}
-                    onMaterialTypeChange={(t) => handleProcedureMaterialTypeChange(procedure.name, t)}
-                    onItemToggle={(item, checked) => handleItemToggle(procedure.name, item, checked)}
-                    onSizeQtyChange={(item, sq) => handleSizeQtyChange(procedure.name, item, sq)}
-                    onFixedItemToggle={(item, checked) => handleFixedItemToggle(procedure.name, item, checked)}
-                    onFixedQtyChange={(item, qty) => handleFixedQtyChange(procedure.name, item, qty)}
-                    onAddInstrument={(inst) => handleAddInstrument(procedure.name, inst)}
-                    onRemoveInstrument={(inst) => handleRemoveInstrument(procedure.name, inst)}
-                    onAddItem={(item) => handleAddItem(procedure.name, item)}
-                    onSearchItems={searchItems}
-                    instrumentSuggestions={[]}
-                    onSearchInstruments={searchInstruments}
-                    onRemoveFixedItemPart={(item, part) => handleRemoveFixedItemPart(procedure.name, item, part)}
-                    onRemoveSelectableItemPart={(item, part) => handleRemoveSelectableItemPart(procedure.name, item, part)}
-                    onAddBox={(boxNumber) => handleAddBox(procedure.name, boxNumber)}
-                    onRemoveBox={(index) => handleRemoveBox(procedure.name, index)}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Mode Panel (Procedure List vs Manual DC) */}
-            {dcMode === 'procedure' ? (
-              <>
-                {/* Procedure Selector - Show full selector or compact button */}
-                {showProcedureSelector ? (
-                  <div className="glass-card rounded-xl p-2.5 sm:p-4 min-w-0">
-                    <h2 className="font-display font-semibold text-base sm:text-lg mb-2 sm:mb-4">Select Procedures</h2>
-                    {loading ? (
-                      <div className="py-12 text-center text-muted-foreground">Loading procedures...</div>
-                    ) : (
-                      <ProcedureSelector
-                        procedures={procedures}
-                        procedureTypes={procedureTypes}
-                        activeProcedureNames={activeProcedures.map((p) => p.name)}
-                        onSelectProcedure={handleSelectProcedure}
-                        searchProcedures={searchProcedures}
-                        initialFilterType={initialFilterType}
-                      />
-                    )}
-                  </div>
-                ) : (
-                  <div className="glass-card rounded-xl p-2.5 sm:p-4 flex items-center justify-center min-w-0">
-                    <Button
-                      onClick={() => {
-                        setDcMode('procedure');
-                        setInitialFilterType('All');
-                        setShowProcedureSelector(true);
-                      }}
-                      className="btn-gradient w-full sm:w-auto"
-                      size="lg"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add New Procedure
-                    </Button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="rounded-xl border border-border/60 bg-card/70 backdrop-blur-md p-3 sm:p-5 space-y-4 min-w-0 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                  <div>
-                    <h2 className="font-display font-semibold text-base sm:text-lg">Manual DC</h2>
-                    <div className="text-xs text-muted-foreground">
-                      Add items/instruments/boxes manually
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Select value={manualMaterialType} onValueChange={setManualMaterialType}>
-                      <SelectTrigger className="h-8 sm:h-9 w-[100px] sm:w-[140px] text-xs bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="SS">SS</SelectItem>
-                        <SelectItem value="Titanium">Titanium</SelectItem>
-                        <SelectItem value="None">No Prefix</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 sm:gap-2 h-8 sm:h-9 text-xs border-2 border-red-300 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800"
-                      onClick={handleClearManualEntry}
-                    >
-                      <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden xs:inline">Clear</span><span className="xs:hidden">×</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 sm:gap-2 h-8 sm:h-9 text-xs border-border/70 bg-background/70"
-                      onClick={() => {
-                        setDcMode('procedure');
-                        setInitialFilterType('All');
-                        setShowProcedureSelector(true);
-                      }}
-                    >
-                      <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Procedure List</span><span className="sm:hidden">Proc</span>
-                    </Button>
-                  </div>
+            {/* Left: Procedure Selection & Active Procedures */}
+            <div className="lg:col-span-2 space-y-4 sm:space-y-6 min-w-0">
+              {/* Active Procedures - Show first if they exist */}
+              {activeProcedures.length > 0 && (
+                <div className="space-y-3 sm:space-y-4">
+                  <h2 className="font-display font-semibold text-base sm:text-lg">Active Procedures</h2>
+                  {activeProcedures.map((procedure) => (
+                    <ProcedureCard
+                      key={procedure.name}
+                      procedure={procedure}
+                      isCollapsed={collapsedProcedures.has(procedure.name)}
+                      onToggleCollapse={() => setCollapsedProcedures((prev) => { const next = new Set(prev); next.has(procedure.name) ? next.delete(procedure.name) : next.add(procedure.name); return next; })}
+                      onRemove={() => handleRemoveProcedure(procedure.name)}
+                      onRefresh={() => handleRefreshProcedure(procedure.name)}
+                      onMaterialTypeChange={(t) => handleProcedureMaterialTypeChange(procedure.name, t)}
+                      onItemToggle={(item, checked) => handleItemToggle(procedure.name, item, checked)}
+                      onSizeQtyChange={(item, sq) => handleSizeQtyChange(procedure.name, item, sq)}
+                      onFixedItemToggle={(item, checked) => handleFixedItemToggle(procedure.name, item, checked)}
+                      onFixedQtyChange={(item, qty) => handleFixedQtyChange(procedure.name, item, qty)}
+                      onAddInstrument={(inst) => handleAddInstrument(procedure.name, inst)}
+                      onRemoveInstrument={(inst) => handleRemoveInstrument(procedure.name, inst)}
+                      onAddItem={(item) => handleAddItem(procedure.name, item)}
+                      onSearchItems={searchItems}
+                      instrumentSuggestions={[]}
+                      onSearchInstruments={searchInstruments}
+                      onRemoveFixedItemPart={(item, part) => handleRemoveFixedItemPart(procedure.name, item, part)}
+                      onRemoveSelectableItemPart={(item, part) => handleRemoveSelectableItemPart(procedure.name, item, part)}
+                      onAddBox={(boxNumber) => handleAddBox(procedure.name, boxNumber)}
+                      onRemoveBox={(index) => handleRemoveBox(procedure.name, index)}
+                    />
+                  ))}
                 </div>
+              )}
 
-                {/* Items */}
-                <div className="rounded-xl border border-border/60 bg-background/70 p-2.5 sm:p-4 space-y-3 border-l-4 border-l-blue-600/40">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-xs font-semibold">
-                          Items
-                        </span>
-                        <span className="text-xs text-muted-foreground hidden sm:inline">Search → select → add</span>
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground font-medium">{manualItems.length} added</div>
-                  </div>
-                  <div className="space-y-2">
-                    {/* Item search */}
-                    <div className="relative">
-                      <Label className="text-xs">Item</Label>
-                      <div className="relative mt-1">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input
-                          value={manualItemQuery}
-                          onChange={(e) => {
-                            setManualItemQuery(e.target.value);
-                            setManualItemName(e.target.value);
-                            setManualItemSuggestionsOpen(true);
-                            setManualItemActiveIndex(0);
-                          }}
-                          onFocus={() => {
-                            if (manualItemQuery.trim().length > 0) {
-                              setManualItemSuggestionsOpen(true);
-                              setManualItemActiveIndex((idx) => (idx < 0 ? 0 : idx));
-                            }
-                          }}
-                          onBlur={() => {
-                            // allow click selection to run first
-                            setTimeout(() => setManualItemSuggestionsOpen(false), 120);
-                          }}
-                          onKeyDown={(e) => {
-                            const hasSuggestions = normalizedItemSuggestions.length > 0 && manualItemQuery.trim().length > 0;
-                            if (!hasSuggestions) return;
-
-                            if (e.key === 'ArrowDown') {
-                              e.preventDefault();
-                              setManualItemSuggestionsOpen(true);
-                              setManualItemActiveIndex((idx) => {
-                                const next = idx < 0 ? 0 : Math.min(idx + 1, normalizedItemSuggestions.length - 1);
-                                return next;
-                              });
-                            } else if (e.key === 'ArrowUp') {
-                              e.preventDefault();
-                              setManualItemSuggestionsOpen(true);
-                              setManualItemActiveIndex((idx) => {
-                                const next = idx < 0 ? normalizedItemSuggestions.length - 1 : Math.max(idx - 1, 0);
-                                return next;
-                              });
-                            } else if (e.key === 'Enter' || e.key === 'Tab') {
-                              if (manualItemSuggestionsOpen) {
-                                const idx = manualItemActiveIndex >= 0 ? manualItemActiveIndex : 0;
-                                const v = normalizedItemSuggestions[idx];
-                                if (v) {
-                                  e.preventDefault();
-                                  selectManualItemSuggestion(v);
-                                }
-                              }
-                            } else if (e.key === 'Escape') {
-                              setManualItemSuggestionsOpen(false);
-                              setManualItemActiveIndex(-1);
-                            }
-                          }}
-                          placeholder="Search items..."
-                          className="pl-8 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
-                          aria-autocomplete="list"
-                          aria-expanded={manualItemSuggestionsOpen}
+              {/* Mode Panel (Procedure List vs Manual DC) */}
+              {dcMode === 'procedure' ? (
+                <>
+                  {/* Procedure Selector - Show full selector or compact button */}
+                  {showProcedureSelector ? (
+                    <div className="glass-card rounded-xl p-2.5 sm:p-4 min-w-0">
+                      <h2 className="font-display font-semibold text-base sm:text-lg mb-2 sm:mb-4">Select Procedures</h2>
+                      {loading ? (
+                        <div className="py-12 text-center text-muted-foreground">Loading procedures...</div>
+                      ) : (
+                        <ProcedureSelector
+                          procedures={procedures}
+                          procedureTypes={procedureTypes}
+                          activeProcedureNames={activeProcedures.map((p) => p.name)}
+                          onSelectProcedure={handleSelectProcedure}
+                          searchProcedures={searchProcedures}
+                          initialFilterType={initialFilterType}
                         />
-                      </div>
-                      {manualItemSuggestionsOpen && manualItemQuery.trim().length > 0 && normalizedItemSuggestions.length > 0 && (
-                        <div
-                          className="absolute z-50 mt-1 w-full rounded-md border bg-background shadow-lg max-h-48 overflow-auto"
-                          role="listbox"
-                        >
-                          {normalizedItemSuggestions.map((s, idx) => (
-                            <button
-                              key={s}
-                              type="button"
-                              role="option"
-                              aria-selected={idx === manualItemActiveIndex}
-                              className={`w-full text-left px-3 py-2 text-sm transition-colors cursor-pointer ${
-                                idx === manualItemActiveIndex
-                                  ? 'bg-blue-600 text-white'
-                                  : 'hover:bg-slate-100 text-slate-900'
-                              }`}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                selectManualItemSuggestion(s);
-                              }}
-                              onMouseEnter={() => setManualItemActiveIndex(idx)}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${
-                                    idx === manualItemActiveIndex ? 'bg-white' : 'bg-blue-300'
-                                  }`}
-                                />
-                                <span className="truncate">{s}</span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
                       )}
                     </div>
-                    {/* Size, Qty, and Add button in a row */}
-                    <div className="grid grid-cols-[1fr_80px_auto] gap-2 items-end">
-                      <div>
-                        <Label className="text-xs">Size</Label>
-                        <Input
-                          value={manualItemSize}
-                          onChange={(e) => setManualItemSize(e.target.value)}
-                          placeholder="Optional"
-                          className="mt-1 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs">Qty</Label>
-                        <Input
-                          type="number"
-                          value={manualItemQty}
-                          onChange={(e) => setManualItemQty(e.target.value)}
-                          min="1"
-                          className="mt-1 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
-                        />
-                      </div>
+                  ) : (
+                    <div className="glass-card rounded-xl p-2.5 sm:p-4 flex items-center justify-center min-w-0">
                       <Button
-                        type="button"
                         onClick={() => {
-                          const name = manualItemName.trim();
-                          const qtyNum = Math.max(1, parseInt(manualItemQty || '1', 10) || 1);
-                          if (!name) {
-                            toast({ title: 'Item is required' });
-                            return;
-                          }
-                          setManualItems((prev) => [...prev, { name, size: manualItemSize.trim(), qty: qtyNum }]);
-                          setManualItemName('');
-                          setManualItemQuery('');
-                          setManualItemSize('');
-                          setManualItemQty('1');
+                          setDcMode('procedure');
+                          setInitialFilterType('All');
+                          setShowProcedureSelector(true);
                         }}
-                        className="h-9 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm"
+                        className="btn-gradient w-full sm:w-auto"
+                        size="lg"
                       >
-                        <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add</span>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add New Procedure
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="rounded-xl border border-border/60 bg-card/70 backdrop-blur-md p-3 sm:p-5 space-y-4 min-w-0 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div>
+                      <h2 className="font-display font-semibold text-base sm:text-lg">Manual DC</h2>
+                      <div className="text-xs text-muted-foreground">
+                        Add items/instruments/boxes manually
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Select value={manualMaterialType} onValueChange={setManualMaterialType}>
+                        <SelectTrigger className="h-8 sm:h-9 w-[100px] sm:w-[140px] text-xs bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="SS">SS</SelectItem>
+                          <SelectItem value="Titanium">Titanium</SelectItem>
+                          <SelectItem value="None">No Prefix</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 sm:gap-2 h-8 sm:h-9 text-xs border-2 border-red-300 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800"
+                        onClick={handleClearManualEntry}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden xs:inline">Clear</span><span className="xs:hidden">×</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 sm:gap-2 h-8 sm:h-9 text-xs border-border/70 bg-background/70"
+                        onClick={() => {
+                          setDcMode('procedure');
+                          setInitialFilterType('All');
+                          setShowProcedureSelector(true);
+                        }}
+                      >
+                        <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Procedure List</span><span className="sm:hidden">Proc</span>
                       </Button>
                     </div>
                   </div>
 
-                  {manualItems.length > 0 && (
-                    <div className="rounded-lg border border-border/60 overflow-hidden bg-background/80">
-                      {/* Mobile view */}
-                      <div className="sm:hidden divide-y divide-border/60">
-                        {manualItems.map((it, idx) => (
-                          <div key={`${it.name}-${idx}`} className="p-2.5 flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="text-sm font-medium truncate">{it.name}</div>
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                Size: {it.size || '-'} • Qty: <span className="font-semibold text-foreground">{it.qty}</span>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              className="text-muted-foreground hover:text-destructive flex-shrink-0 p-1"
-                              onClick={() => setManualItems((prev) => prev.filter((_, i) => i !== idx))}
-                              title="Remove item"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      {/* Desktop view */}
-                      <div className="hidden sm:block">
-                        <div className="grid grid-cols-[1fr_120px_70px_40px] gap-2 px-3 py-2 text-[11px] font-semibold bg-muted/30 border-b border-border/60">
-                          <div>Item</div>
-                          <div>Size</div>
-                          <div className="text-right">Qty</div>
-                          <div />
+                  {/* Items */}
+                  <div className="rounded-xl border border-border/60 bg-background/70 p-2.5 sm:p-4 space-y-3 border-l-4 border-l-blue-600/40">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-xs font-semibold">
+                            Items
+                          </span>
+                          <span className="text-xs text-muted-foreground hidden sm:inline">Search → select → add</span>
                         </div>
-                        <div className="divide-y divide-border/60">
+                      </div>
+                      <div className="text-xs text-muted-foreground font-medium">{manualItems.length} added</div>
+                    </div>
+                    <div className="space-y-2">
+                      {/* Item search */}
+                      <div className="relative">
+                        <Label className="text-xs">Item</Label>
+                        <div className="relative mt-1">
+                          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            value={manualItemQuery}
+                            onChange={(e) => {
+                              setManualItemQuery(e.target.value);
+                              setManualItemName(e.target.value);
+                              setManualItemSuggestionsOpen(true);
+                              setManualItemActiveIndex(0);
+                            }}
+                            onFocus={() => {
+                              if (manualItemQuery.trim().length > 0) {
+                                setManualItemSuggestionsOpen(true);
+                                setManualItemActiveIndex((idx) => (idx < 0 ? 0 : idx));
+                              }
+                            }}
+                            onBlur={() => {
+                              // allow click selection to run first
+                              setTimeout(() => setManualItemSuggestionsOpen(false), 120);
+                            }}
+                            onKeyDown={(e) => {
+                              const hasSuggestions = normalizedItemSuggestions.length > 0 && manualItemQuery.trim().length > 0;
+                              if (!hasSuggestions) return;
+
+                              if (e.key === 'ArrowDown') {
+                                e.preventDefault();
+                                setManualItemSuggestionsOpen(true);
+                                setManualItemActiveIndex((idx) => {
+                                  const next = idx < 0 ? 0 : Math.min(idx + 1, normalizedItemSuggestions.length - 1);
+                                  return next;
+                                });
+                              } else if (e.key === 'ArrowUp') {
+                                e.preventDefault();
+                                setManualItemSuggestionsOpen(true);
+                                setManualItemActiveIndex((idx) => {
+                                  const next = idx < 0 ? normalizedItemSuggestions.length - 1 : Math.max(idx - 1, 0);
+                                  return next;
+                                });
+                              } else if (e.key === 'Enter' || e.key === 'Tab') {
+                                if (manualItemSuggestionsOpen) {
+                                  const idx = manualItemActiveIndex >= 0 ? manualItemActiveIndex : 0;
+                                  const v = normalizedItemSuggestions[idx];
+                                  if (v) {
+                                    e.preventDefault();
+                                    selectManualItemSuggestion(v);
+                                  }
+                                }
+                              } else if (e.key === 'Escape') {
+                                setManualItemSuggestionsOpen(false);
+                                setManualItemActiveIndex(-1);
+                              }
+                            }}
+                            placeholder="Search items..."
+                            className="pl-8 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
+                            aria-autocomplete="list"
+                            aria-expanded={manualItemSuggestionsOpen}
+                          />
+                        </div>
+                        {manualItemSuggestionsOpen && manualItemQuery.trim().length > 0 && normalizedItemSuggestions.length > 0 && (
+                          <div
+                            className="absolute z-50 mt-1 w-full rounded-md border bg-background shadow-lg max-h-48 overflow-auto"
+                            role="listbox"
+                          >
+                            {normalizedItemSuggestions.map((s, idx) => (
+                              <button
+                                key={s}
+                                type="button"
+                                role="option"
+                                aria-selected={idx === manualItemActiveIndex}
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors cursor-pointer ${idx === manualItemActiveIndex
+                                  ? 'bg-blue-600 text-white'
+                                  : 'hover:bg-slate-100 text-slate-900'
+                                  }`}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  selectManualItemSuggestion(s);
+                                }}
+                                onMouseEnter={() => setManualItemActiveIndex(idx)}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${idx === manualItemActiveIndex ? 'bg-white' : 'bg-blue-300'
+                                      }`}
+                                  />
+                                  <span className="truncate">{s}</span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* Size, Qty, and Add button in a row */}
+                      <div className="grid grid-cols-[1fr_80px_auto] gap-2 items-end">
+                        <div>
+                          <Label className="text-xs">Size</Label>
+                          <Input
+                            value={manualItemSize}
+                            onChange={(e) => setManualItemSize(e.target.value)}
+                            placeholder="Optional"
+                            className="mt-1 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Qty</Label>
+                          <Input
+                            type="number"
+                            value={manualItemQty}
+                            onChange={(e) => setManualItemQty(e.target.value)}
+                            min="1"
+                            className="mt-1 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            const name = manualItemName.trim();
+                            const qtyNum = Math.max(1, parseInt(manualItemQty || '1', 10) || 1);
+                            if (!name) {
+                              toast({ title: 'Item is required' });
+                              return;
+                            }
+                            setManualItems((prev) => [...prev, { name, size: manualItemSize.trim(), qty: qtyNum }]);
+                            setManualItemName('');
+                            setManualItemQuery('');
+                            setManualItemSize('');
+                            setManualItemQty('1');
+                          }}
+                          className="h-9 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm"
+                        >
+                          <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {manualItems.length > 0 && (
+                      <div className="rounded-lg border border-border/60 overflow-hidden bg-background/80">
+                        {/* Mobile view */}
+                        <div className="sm:hidden divide-y divide-border/60">
                           {manualItems.map((it, idx) => (
-                            <div key={`${it.name}-${idx}`} className="grid grid-cols-[1fr_120px_70px_40px] gap-2 px-3 py-2 text-sm">
-                              <div className="truncate">{it.name}</div>
-                              <div className="truncate text-muted-foreground">{it.size || '-'}</div>
-                              <div className="text-right font-semibold">{it.qty}</div>
+                            <div key={`${it.name}-${idx}`} className="p-2.5 flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-medium truncate">{it.name}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  Size: {it.size || '-'} • Qty: <span className="font-semibold text-foreground">{it.qty}</span>
+                                </div>
+                              </div>
                               <button
                                 type="button"
-                                className="text-muted-foreground hover:text-destructive flex items-center justify-center"
+                                className="text-muted-foreground hover:text-destructive flex-shrink-0 p-1"
                                 onClick={() => setManualItems((prev) => prev.filter((_, i) => i !== idx))}
                                 title="Remove item"
                               >
@@ -1309,314 +1294,339 @@ export default function OrthoApp() {
                             </div>
                           ))}
                         </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Instruments */}
-                <div className="rounded-xl border border-border/60 bg-background/70 p-2.5 sm:p-4 space-y-3 border-l-4 border-l-indigo-600/40">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 text-xs font-semibold">
-                        Instruments
-                      </span>
-                      <span className="text-xs text-muted-foreground hidden sm:inline">Pick with procedure badge</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground font-medium">{manualInstruments.length} added</div>
-                  </div>
-                  <div className="relative">
-                    <Label className="text-xs">Instrument</Label>
-                    <div className="relative mt-1">
-                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        value={manualInstrumentQuery}
-                        onChange={(e) => {
-                          setManualInstrumentQuery(e.target.value);
-                          setManualInstrumentSuggestionsOpen(true);
-                          setManualInstrumentActiveIndex(0);
-                        }}
-                        placeholder="Search instruments..."
-                        className="pl-8 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
-                        onFocus={() => {
-                          if (manualInstrumentQuery.trim().length > 0) {
-                            setManualInstrumentSuggestionsOpen(true);
-                            setManualInstrumentActiveIndex((idx) => (idx < 0 ? 0 : idx));
-                          }
-                        }}
-                        onBlur={() => {
-                          setTimeout(() => setManualInstrumentSuggestionsOpen(false), 120);
-                        }}
-                        onKeyDown={(e) => {
-                          const hasSuggestions = instrumentSuggestions.length > 0 && manualInstrumentQuery.trim().length > 0;
-                          if (!hasSuggestions) return;
-
-                          if (e.key === 'ArrowDown') {
-                            e.preventDefault();
-                            setManualInstrumentSuggestionsOpen(true);
-                            setManualInstrumentActiveIndex((idx) => {
-                              const next = idx < 0 ? 0 : Math.min(idx + 1, instrumentSuggestions.length - 1);
-                              return next;
-                            });
-                          } else if (e.key === 'ArrowUp') {
-                            e.preventDefault();
-                            setManualInstrumentSuggestionsOpen(true);
-                            setManualInstrumentActiveIndex((idx) => {
-                              const next = idx < 0 ? instrumentSuggestions.length - 1 : Math.max(idx - 1, 0);
-                              return next;
-                            });
-                          } else if (e.key === 'Enter' || e.key === 'Tab') {
-                            if (manualInstrumentSuggestionsOpen) {
-                              const idx = manualInstrumentActiveIndex >= 0 ? manualInstrumentActiveIndex : 0;
-                              const v = instrumentSuggestions[idx]?.instrument;
-                              if (v) {
-                                e.preventDefault();
-                                selectManualInstrumentSuggestion(v);
-                              }
-                            }
-                          } else if (e.key === 'Escape') {
-                            setManualInstrumentSuggestionsOpen(false);
-                            setManualInstrumentActiveIndex(-1);
-                          }
-                        }}
-                        aria-autocomplete="list"
-                        aria-expanded={manualInstrumentSuggestionsOpen}
-                      />
-                    </div>
-                    {manualInstrumentSuggestionsOpen && manualInstrumentQuery.trim().length > 0 && instrumentSuggestions.length > 0 && (
-                      <div className="absolute z-50 mt-1 w-full rounded-md border bg-background shadow-lg max-h-48 overflow-auto" role="listbox">
-                        {instrumentSuggestions.map((s, idx) => (
-                          <button
-                            key={`${s.instrument}-${s.procedureName}`}
-                            type="button"
-                            role="option"
-                            aria-selected={idx === manualInstrumentActiveIndex}
-                            className={`w-full text-left px-2.5 sm:px-3 py-2 text-sm transition-colors ${
-                              idx === manualInstrumentActiveIndex ? 'bg-blue-600 text-white' : 'hover:bg-slate-100'
-                            }`}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              selectManualInstrumentSuggestion(s.instrument);
-                            }}
-                            onMouseEnter={() => setManualInstrumentActiveIndex(idx)}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${idx === manualInstrumentActiveIndex ? 'bg-white' : 'bg-blue-300'}`} />
-                                <div className="font-medium truncate text-xs sm:text-sm">{s.instrument}</div>
+                        {/* Desktop view */}
+                        <div className="hidden sm:block">
+                          <div className="grid grid-cols-[1fr_120px_70px_40px] gap-2 px-3 py-2 text-[11px] font-semibold bg-muted/30 border-b border-border/60">
+                            <div>Item</div>
+                            <div>Size</div>
+                            <div className="text-right">Qty</div>
+                            <div />
+                          </div>
+                          <div className="divide-y divide-border/60">
+                            {manualItems.map((it, idx) => (
+                              <div key={`${it.name}-${idx}`} className="grid grid-cols-[1fr_120px_70px_40px] gap-2 px-3 py-2 text-sm">
+                                <div className="truncate">{it.name}</div>
+                                <div className="truncate text-muted-foreground">{it.size || '-'}</div>
+                                <div className="text-right font-semibold">{it.qty}</div>
+                                <button
+                                  type="button"
+                                  className="text-muted-foreground hover:text-destructive flex items-center justify-center"
+                                  onClick={() => setManualItems((prev) => prev.filter((_, i) => i !== idx))}
+                                  title="Remove item"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
                               </div>
-                              <Badge
-                                variant="secondary"
-                                className={`h-5 px-1.5 text-[9px] sm:text-[10px] shrink-0 ${
-                                  idx === manualInstrumentActiveIndex ? 'bg-white/15 text-white border-white/20' : ''
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Instruments */}
+                  <div className="rounded-xl border border-border/60 bg-background/70 p-2.5 sm:p-4 space-y-3 border-l-4 border-l-indigo-600/40">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 text-xs font-semibold">
+                          Instruments
+                        </span>
+                        <span className="text-xs text-muted-foreground hidden sm:inline">Pick with procedure badge</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground font-medium">{manualInstruments.length} added</div>
+                    </div>
+                    <div className="relative">
+                      <Label className="text-xs">Instrument</Label>
+                      <div className="relative mt-1">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          value={manualInstrumentQuery}
+                          onChange={(e) => {
+                            setManualInstrumentQuery(e.target.value);
+                            setManualInstrumentSuggestionsOpen(true);
+                            setManualInstrumentActiveIndex(0);
+                          }}
+                          placeholder="Search instruments..."
+                          className="pl-8 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
+                          onFocus={() => {
+                            if (manualInstrumentQuery.trim().length > 0) {
+                              setManualInstrumentSuggestionsOpen(true);
+                              setManualInstrumentActiveIndex((idx) => (idx < 0 ? 0 : idx));
+                            }
+                          }}
+                          onBlur={() => {
+                            setTimeout(() => setManualInstrumentSuggestionsOpen(false), 120);
+                          }}
+                          onKeyDown={(e) => {
+                            const hasSuggestions = instrumentSuggestions.length > 0 && manualInstrumentQuery.trim().length > 0;
+                            if (!hasSuggestions) return;
+
+                            if (e.key === 'ArrowDown') {
+                              e.preventDefault();
+                              setManualInstrumentSuggestionsOpen(true);
+                              setManualInstrumentActiveIndex((idx) => {
+                                const next = idx < 0 ? 0 : Math.min(idx + 1, instrumentSuggestions.length - 1);
+                                return next;
+                              });
+                            } else if (e.key === 'ArrowUp') {
+                              e.preventDefault();
+                              setManualInstrumentSuggestionsOpen(true);
+                              setManualInstrumentActiveIndex((idx) => {
+                                const next = idx < 0 ? instrumentSuggestions.length - 1 : Math.max(idx - 1, 0);
+                                return next;
+                              });
+                            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                              if (manualInstrumentSuggestionsOpen) {
+                                const idx = manualInstrumentActiveIndex >= 0 ? manualInstrumentActiveIndex : 0;
+                                const v = instrumentSuggestions[idx]?.instrument;
+                                if (v) {
+                                  e.preventDefault();
+                                  selectManualInstrumentSuggestion(v);
+                                }
+                              }
+                            } else if (e.key === 'Escape') {
+                              setManualInstrumentSuggestionsOpen(false);
+                              setManualInstrumentActiveIndex(-1);
+                            }
+                          }}
+                          aria-autocomplete="list"
+                          aria-expanded={manualInstrumentSuggestionsOpen}
+                        />
+                      </div>
+                      {manualInstrumentSuggestionsOpen && manualInstrumentQuery.trim().length > 0 && instrumentSuggestions.length > 0 && (
+                        <div className="absolute z-50 mt-1 w-full rounded-md border bg-background shadow-lg max-h-48 overflow-auto" role="listbox">
+                          {instrumentSuggestions.map((s, idx) => (
+                            <button
+                              key={`${s.instrument}-${s.procedureName}`}
+                              type="button"
+                              role="option"
+                              aria-selected={idx === manualInstrumentActiveIndex}
+                              className={`w-full text-left px-2.5 sm:px-3 py-2 text-sm transition-colors ${idx === manualInstrumentActiveIndex ? 'bg-blue-600 text-white' : 'hover:bg-slate-100'
                                 }`}
-                              >
-                                {s.procedureName}
-                              </Badge>
-                            </div>
-                          </button>
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                selectManualInstrumentSuggestion(s.instrument);
+                              }}
+                              onMouseEnter={() => setManualInstrumentActiveIndex(idx)}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${idx === manualInstrumentActiveIndex ? 'bg-white' : 'bg-blue-300'}`} />
+                                  <div className="font-medium truncate text-xs sm:text-sm">{s.instrument}</div>
+                                </div>
+                                <Badge
+                                  variant="secondary"
+                                  className={`h-5 px-1.5 text-[9px] sm:text-[10px] shrink-0 ${idx === manualInstrumentActiveIndex ? 'bg-white/15 text-white border-white/20' : ''
+                                    }`}
+                                >
+                                  {s.procedureName}
+                                </Badge>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {manualInstruments.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {manualInstruments.map((inst) => (
+                          <span key={inst} className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-1 text-xs bg-muted/20">
+                            {inst}
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => setManualInstruments((prev) => prev.filter((x) => x !== inst))}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
                         ))}
                       </div>
                     )}
                   </div>
-                  {manualInstruments.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {manualInstruments.map((inst) => (
-                        <span key={inst} className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-1 text-xs bg-muted/20">
-                          {inst}
-                          <button
-                            type="button"
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() => setManualInstruments((prev) => prev.filter((x) => x !== inst))}
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
 
-                {/* Box Numbers */}
-                <div className="rounded-xl border border-border/60 bg-background/70 p-2.5 sm:p-4 space-y-3 border-l-4 border-l-green-600/40">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center rounded-full bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 text-xs font-semibold">
-                        Box Numbers
-                      </span>
-                      <span className="text-xs text-muted-foreground">Optional</span>
+                  {/* Box Numbers */}
+                  <div className="rounded-xl border border-border/60 bg-background/70 p-2.5 sm:p-4 space-y-3 border-l-4 border-l-green-600/40">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 text-xs font-semibold">
+                          Box Numbers
+                        </span>
+                        <span className="text-xs text-muted-foreground">Optional</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground font-medium">{manualBoxNumbers.length} added</div>
                     </div>
-                    <div className="text-xs text-muted-foreground font-medium">{manualBoxNumbers.length} added</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      value={manualBoxInput}
-                      onChange={(e) => setManualBoxInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                    <div className="flex gap-2">
+                      <Input
+                        value={manualBoxInput}
+                        onChange={(e) => setManualBoxInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const trimmed = manualBoxInput.trim();
+                            if (!trimmed) return;
+                            setManualBoxNumbers((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+                            setManualBoxInput('');
+                          }
+                        }}
+                        placeholder="Enter box number"
+                        className="flex-1 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 px-3 sm:px-4 border-2 border-green-700 bg-green-600 text-white hover:bg-green-700 hover:text-white"
+                        onClick={() => {
                           const trimmed = manualBoxInput.trim();
                           if (!trimmed) return;
                           setManualBoxNumbers((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
                           setManualBoxInput('');
-                        }
-                      }}
-                      placeholder="Enter box number"
-                      className="flex-1 h-9 bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 px-3 sm:px-4 border-2 border-green-700 bg-green-600 text-white hover:bg-green-700 hover:text-white"
-                      onClick={() => {
-                        const trimmed = manualBoxInput.trim();
-                        if (!trimmed) return;
-                        setManualBoxNumbers((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
-                        setManualBoxInput('');
-                      }}
-                    >
-                      Add
-                    </Button>
-                  </div>
-                  {manualBoxNumbers.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {manualBoxNumbers.map((b) => (
-                        <span key={b} className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-1 text-xs bg-muted/20">
-                          {b}
-                          <button
-                            type="button"
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() => setManualBoxNumbers((prev) => prev.filter((x) => x !== b))}
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
+                        }}
+                      >
+                        Add
+                      </Button>
                     </div>
-                  )}
+                    {manualBoxNumbers.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {manualBoxNumbers.map((b) => (
+                          <span key={b} className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-1 text-xs bg-muted/20">
+                            {b}
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => setManualBoxNumbers((prev) => prev.filter((x) => x !== b))}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Submission Form (Save DC)
+              {/* Submission Form (Save DC)
                 - Manual mode: always show (manual entries are the "selection")
                 - Procedure mode: show only when at least one active procedure is selected */}
-            {(dcMode === 'manual' || activeProcedures.length > 0) && (
-              <div id="dc-submission" className="glass-card rounded-xl p-4 sm:p-5 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-display font-semibold text-base sm:text-lg">Submission</h3>
-                  <Button variant="outline" size="sm" onClick={() => navigate('/saved')} className="gap-2">
-                    <Bookmark className="w-4 h-4" /> Saved DCs
-                  </Button>
-                </div>
+              {(dcMode === 'manual' || activeProcedures.length > 0) && (
+                <div id="dc-submission" className="glass-card rounded-xl p-4 sm:p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-display font-semibold text-base sm:text-lg">Submission</h3>
+                  </div>
 
-                <div className="text-sm text-muted-foreground">
-                  {hospitalName || dcNo || receivedBy ? (
-                    <div className="space-y-0.5">
-                      <div><span className="font-semibold text-foreground">Hospital:</span> {hospitalName || '-'}</div>
-                      <div><span className="font-semibold text-foreground">DC No:</span> {dcNo || '-'}</div>
-                      <div><span className="font-semibold text-foreground">Received By:</span> {receivedBy || '-'}</div>
-                    </div>
-                  ) : (
-                    <div>Enter Hospital / DC details in the popup before saving or printing.</div>
-                  )}
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button 
-                    onClick={() => {
-                      if (!hospitalName || !dcNo || !receivedBy) {
-                        setShowSettingsModal(true);
-                      } else {
-                        setShowConfirmSaveDialog(true);
-                      }
-                    }} 
-                    className="w-full sm:flex-1 gap-2" 
-                    disabled={isSavingDc}
-                  >
-                    {isSavingDc ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </>
+                  <div className="text-sm text-muted-foreground">
+                    {hospitalName || dcNo || receivedBy ? (
+                      <div className="space-y-0.5">
+                        <div><span className="font-semibold text-foreground">Hospital:</span> {hospitalName || '-'}</div>
+                        <div><span className="font-semibold text-foreground">DC No:</span> {dcNo || '-'}</div>
+                        <div><span className="font-semibold text-foreground">Received By:</span> {receivedBy || '-'}</div>
+                      </div>
                     ) : (
-                      <>
-                        <Save className="w-4 h-4" />
-                        Save DC
-                      </>
+                      <div>Enter Hospital / DC details in the popup before saving or printing.</div>
                     )}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+                  </div>
 
-          {/* Right: Summary */}
-          <div className="lg:col-span-1 min-w-0 lg:border-l lg:border-border lg:pl-6">
-            {/* Mobile: Toggleable Summary */}
-            <div className="lg:hidden mb-4">
-              <button
-                onClick={() => setShowSummaryMobile(!showSummaryMobile)}
-                className="w-full glass-card rounded-xl p-3 flex items-center justify-between"
-              >
-                <h2 className="font-display font-semibold text-base">Summary</h2>
-                {showSummaryMobile ? (
-                  <ChevronUp className="w-5 h-5 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      onClick={() => {
+                        if (!hospitalName || !dcNo || !receivedBy) {
+                          setShowSettingsModal(true);
+                        } else {
+                          setShowConfirmSaveDialog(true);
+                        }
+                      }}
+                      className="w-full sm:flex-1 gap-2"
+                      disabled={isSavingDc}
+                    >
+                      {isSavingDc ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          Save DC
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right: Summary */}
+            <div className="lg:col-span-1 min-w-0 lg:border-l lg:border-border lg:pl-6">
+              {/* Mobile: Toggleable Summary */}
+              <div className="lg:hidden mb-4">
+                <button
+                  onClick={() => setShowSummaryMobile(!showSummaryMobile)}
+                  className="w-full glass-card rounded-xl p-3 flex items-center justify-between"
+                >
+                  <h2 className="font-display font-semibold text-base">Summary</h2>
+                  {showSummaryMobile ? (
+                    <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </button>
+                {showSummaryMobile && (
+                  <div className="glass-card rounded-xl p-3 mt-4">
+                    <SummaryPanel
+                      activeProcedures={activeProcedures}
+                      hospitalName={hospitalName}
+                      dcNo={dcNo}
+                      deliveredBy={deliveredBy}
+                      receivedBy={receivedBy}
+                      manualItems={manualItems}
+                      manualInstruments={manualInstruments}
+                      manualBoxNumbers={manualBoxNumbers}
+                      manualMaterialType={manualMaterialType}
+                    />
+                  </div>
                 )}
-              </button>
-              {showSummaryMobile && (
-                <div className="glass-card rounded-xl p-3 mt-4">
+              </div>
+
+              {/* Desktop: Always visible Summary */}
+              <div className="hidden lg:block">
+                <div className="glass-card rounded-xl p-3 sm:p-4 sticky top-24">
+                  <h2 className="font-display font-semibold text-base sm:text-lg mb-3 sm:mb-4">Summary</h2>
                   <SummaryPanel
                     activeProcedures={activeProcedures}
                     hospitalName={hospitalName}
                     dcNo={dcNo}
+                    deliveredBy={deliveredBy}
+                    receivedBy={receivedBy}
                     manualItems={manualItems}
                     manualInstruments={manualInstruments}
                     manualBoxNumbers={manualBoxNumbers}
                     manualMaterialType={manualMaterialType}
                   />
                 </div>
-              )}
-            </div>
-
-            {/* Desktop: Always visible Summary */}
-            <div className="hidden lg:block">
-              <div className="glass-card rounded-xl p-3 sm:p-4 sticky top-24">
-                <h2 className="font-display font-semibold text-base sm:text-lg mb-3 sm:mb-4">Summary</h2>
-                <SummaryPanel
-                  activeProcedures={activeProcedures}
-                  hospitalName={hospitalName}
-                  dcNo={dcNo}
-                  manualItems={manualItems}
-                  manualInstruments={manualInstruments}
-                  manualBoxNumbers={manualBoxNumbers}
-                  manualMaterialType={manualMaterialType}
-                />
               </div>
             </div>
           </div>
-        </div>
         </main>
-      </div>
+      </div >
 
       {/* Settings Modal */}
-      <Dialog open={showSettingsModal} onOpenChange={setShowSettingsModal}>
+      < Dialog open={showSettingsModal} onOpenChange={setShowSettingsModal} >
         <DialogContent>
           <DialogHeader><DialogTitle>DC Details</DialogTitle></DialogHeader>
           <div className="space-y-4 pt-4">
             <div><Label>Hospital Name</Label><Input value={hospitalName} onChange={(e) => setHospitalName(e.target.value)} placeholder="Enter hospital name" className="mt-1" /></div>
             <div><Label>DC Number</Label><Input value={dcNo} onChange={(e) => setDcNo(e.target.value)} placeholder="Enter DC number" className="mt-1" /></div>
-            <div><Label>Received By</Label><Input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} placeholder="Enter receiver name" className="mt-1" /></div>
+            <div><Label>Delivered By *</Label><Input value={deliveredBy} onChange={(e) => setDeliveredBy(e.target.value)} placeholder="Enter deliverer name" className="mt-1" /></div>
+            <div><Label>Received By *</Label><Input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} placeholder="Enter receiver name" className="mt-1" /></div>
             <div><Label>Remarks</Label><Input value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Add remarks (optional)" className="mt-1" /></div>
             <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 onClick={() => {
-                  if (!hospitalName || !dcNo || !receivedBy) {
-                    toast({ 
-                      title: 'Missing information', 
-                      description: 'Please fill in all required fields',
+                  if (!hospitalName || !dcNo || !receivedBy || !deliveredBy) {
+                    toast({
+                      title: 'Missing information',
+                      description: 'Please fill in all mandatory fields (*)',
                       variant: 'destructive'
                     });
                     return;
@@ -1637,10 +1647,10 @@ export default function OrthoApp() {
                 )}
               </Button>
               <Button onClick={() => {
-                if (!hospitalName || !dcNo || !receivedBy) {
-                  toast({ 
-                    title: 'Missing information', 
-                    description: 'Please fill in all required fields',
+                if (!hospitalName || !dcNo || !receivedBy || !deliveredBy) {
+                  toast({
+                    title: 'Missing information',
+                    description: 'Please fill in all mandatory fields (*)',
                     variant: 'destructive'
                   });
                   return;
@@ -1653,10 +1663,10 @@ export default function OrthoApp() {
             </div>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog >
 
       {/* Confirm Save Dialog */}
-      <Dialog open={showConfirmSaveDialog} onOpenChange={setShowConfirmSaveDialog}>
+      < Dialog open={showConfirmSaveDialog} onOpenChange={setShowConfirmSaveDialog} >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Confirm Save to Google Sheets</DialogTitle>
@@ -1670,6 +1680,10 @@ export default function OrthoApp() {
               <div className="text-sm">
                 <span className="font-semibold">DC No:</span>{' '}
                 <span className="text-muted-foreground">{dcNo}</span>
+              </div>
+              <div className="text-sm">
+                <span className="font-semibold">Delivered By:</span>{' '}
+                <span className="text-muted-foreground">{deliveredBy}</span>
               </div>
               <div className="text-sm">
                 <span className="font-semibold">Received By:</span>{' '}
@@ -1744,10 +1758,10 @@ export default function OrthoApp() {
             </div>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog >
 
       {/* Print Modal */}
-      <Dialog open={showPrintModal} onOpenChange={setShowPrintModal}>
+      < Dialog open={showPrintModal} onOpenChange={setShowPrintModal} >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
           <DialogHeader className="no-print">
             <DialogTitle>Print Preview</DialogTitle>
@@ -1758,6 +1772,8 @@ export default function OrthoApp() {
               activeProcedures={activeProcedures}
               hospitalName={hospitalName}
               dcNo={dcNo}
+              deliveredBy={deliveredBy}
+              receivedBy={receivedBy}
               manualItems={manualItems}
               manualInstruments={manualInstruments}
               manualBoxNumbers={manualBoxNumbers}
@@ -1769,7 +1785,7 @@ export default function OrthoApp() {
             <Button onClick={handleSavePDF} variant="outline" className="flex-1"><Download className="w-4 h-4 mr-2" />Save PDF</Button>
           </div>
         </DialogContent>
-      </Dialog>
-    </div>
+      </Dialog >
+    </div >
   );
 }

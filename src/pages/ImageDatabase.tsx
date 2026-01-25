@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Activity, CheckCircle2, Circle, Images, List, LogOut, Menu, Trash2 } from "lucide-react";
+import { Activity, CheckCircle2, Circle, Images, List, LogOut, Menu, Plus, Trash2, Wrench } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -271,8 +271,11 @@ export default function ImageDatabase() {
 
             <div className="space-y-2">
               <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
-              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/")}>
-                <List className="w-4 h-4" /> DC Generator
+              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=procedure")}>
+                <Plus className="w-4 h-4" /> Procedure List
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=manual")}>
+                <Plus className="w-4 h-4" /> Manual DC
               </Button>
               <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/saved")}>
                 <List className="w-4 h-4" /> DC Tracker
@@ -282,8 +285,15 @@ export default function ImageDatabase() {
               </Button>
             </div>
 
-            <div className="mt-auto">
-              <Button variant="outline" className="w-full justify-start gap-2" onClick={handleLogout}>
+            <div className="mt-auto space-y-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+                onClick={() => navigate("/admin")}
+              >
+                <Wrench className="w-4 h-4" /> Admin Panel
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100" onClick={handleLogout}>
                 <LogOut className="w-4 h-4" /> Logout
               </Button>
             </div>
@@ -325,8 +335,13 @@ export default function ImageDatabase() {
                         <div className="space-y-2">
                           <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
                           <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/")}>
-                              <List className="w-4 h-4" /> DC Generator
+                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=procedure")}>
+                              <Plus className="w-4 h-4" /> Procedure List
+                            </Button>
+                          </SheetClose>
+                          <SheetClose asChild>
+                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=manual")}>
+                              <Plus className="w-4 h-4" /> Manual DC
                             </Button>
                           </SheetClose>
                           <SheetClose asChild>
@@ -334,15 +349,22 @@ export default function ImageDatabase() {
                               <List className="w-4 h-4" /> DC Tracker
                             </Button>
                           </SheetClose>
-                          <Button variant="default" className="w-full justify-start gap-2">
-                            <Images className="w-4 h-4" /> Image Database
-                          </Button>
+                          <SheetClose asChild>
+                            <Button variant="default" className="w-full justify-start gap-2">
+                              <Images className="w-4 h-4" /> Image Database
+                            </Button>
+                          </SheetClose>
                         </div>
 
                         <div className="space-y-2">
                           <div className="text-xs font-semibold text-muted-foreground">Actions</div>
                           <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={handleLogout}>
+                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/admin")}>
+                              <Wrench className="w-4 h-4" /> Admin Panel
+                            </Button>
+                          </SheetClose>
+                          <SheetClose asChild>
+                            <Button variant="outline" className="w-full justify-start gap-2 text-red-600" onClick={handleLogout}>
                               <LogOut className="w-4 h-4" /> Logout
                             </Button>
                           </SheetClose>
@@ -450,11 +472,10 @@ export default function ImageDatabase() {
                     </span>
                     <Badge
                       variant="outline"
-                      className={`border ${
-                        packedStats.total > 0 && packedStats.packed === packedStats.total
-                          ? "border-green-200 bg-green-50 text-green-800"
-                          : "border-slate-300 text-slate-700"
-                      }`}
+                      className={`border ${packedStats.total > 0 && packedStats.packed === packedStats.total
+                        ? "border-green-200 bg-green-50 text-green-800"
+                        : "border-slate-300 text-slate-700"
+                        }`}
                     >
                       {packedStats.packed}/{packedStats.total} packed · {progressPct}%
                     </Badge>
@@ -557,15 +578,33 @@ export default function ImageDatabase() {
           currentIndex={currentImageIndex}
           onNavigate={handleNavigateImage}
           headerActions={
-            selectedProcedure ? (
-              <Button
-                size="sm"
-                variant={isPacked(selectedImage) ? "outline" : "default"}
-                className={`h-8 px-3 ${isPacked(selectedImage) ? "border-slate-300" : ""}`}
-                onClick={() => togglePacked(selectedImage, !isPacked(selectedImage))}
-              >
-                {isPacked(selectedImage) ? "Uncheck" : "Packed ✅"}
-              </Button>
+            selectedProcedure && selectedImage ? (
+              <div className="flex items-center gap-3 pr-8">
+                <div className="flex items-center gap-1.5 text-xs text-slate-600 border-r pr-3 border-slate-200">
+                  {isPacked(selectedImage) ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-green-700" />
+                      <span className="font-medium text-green-700 hidden sm:inline">Packed</span>
+                    </>
+                  ) : (
+                    <>
+                      <Circle className="h-4 w-4 text-slate-300" />
+                      <span className="font-medium text-slate-400 hidden sm:inline">Unpacked</span>
+                    </>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant={isPacked(selectedImage) ? "outline" : "default"}
+                  className={`h-8 px-3 ${isPacked(selectedImage)
+                    ? "border-slate-300"
+                    : "bg-green-600 hover:bg-green-700 text-white"
+                    }`}
+                  onClick={() => togglePacked(selectedImage, !isPacked(selectedImage))}
+                >
+                  {isPacked(selectedImage) ? "Uncheck" : "Pack"}
+                </Button>
+              </div>
             ) : null
           }
         />
@@ -596,7 +635,7 @@ function PackedSplitGrid({
       <div>
         <div className="flex items-center justify-between gap-3 mb-2">
           <div className="flex items-center gap-2">
-            <Circle className="h-3.5 w-3.5 text-red-600 fill-red-600" />
+            <Circle className="h-3.5 w-3.5 text-slate-300" />
             <div className="text-xs font-semibold text-slate-800">Unpacked</div>
           </div>
           <Badge className="bg-red-50 text-red-800 border-red-200" variant="outline">
@@ -657,9 +696,8 @@ function GalleryGrid({
           <button
             key={`${img.category}:${img.name}`}
             onClick={() => onOpen(img)}
-            className={`text-left rounded-lg border bg-white hover:shadow-sm transition-all overflow-hidden ${
-              packed ? "border-green-200 hover:border-green-300" : "border-red-200 hover:border-red-300"
-            }`}
+            className={`text-left rounded-lg border bg-white hover:shadow-sm transition-all overflow-hidden ${packed ? "border-green-200 hover:border-green-300" : "border-red-200 hover:border-red-300"
+              }`}
             title={img.name}
           >
             <div className={`border-b ${packed ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
@@ -677,13 +715,12 @@ function GalleryGrid({
                 <div className="text-xs font-semibold text-slate-900 truncate">{img.name}</div>
                 <Badge
                   variant="outline"
-                  className={`text-[10px] border-slate-300 ${
-                    img.category === "instrument"
-                      ? "text-indigo-700"
-                      : img.category === "fixed"
-                        ? "text-slate-700"
-                        : "text-blue-700"
-                  }`}
+                  className={`text-[10px] border-slate-300 ${img.category === "instrument"
+                    ? "text-indigo-700"
+                    : img.category === "fixed"
+                      ? "text-slate-700"
+                      : "text-blue-700"
+                    }`}
                 >
                   {img.category === "instrument" ? "Instrument" : img.category === "fixed" ? "Fixed" : "Item"}
                 </Badge>
@@ -697,8 +734,8 @@ function GalleryGrid({
                     </>
                   ) : (
                     <>
-                      <Circle className="h-3 w-3 text-red-600 fill-red-600" />
-                      <span className="font-medium text-red-700">Unpacked</span>
+                      <Circle className="h-3 w-3 text-slate-300" />
+                      <span className="font-medium text-slate-400">Unpacked</span>
                     </>
                   )}
                 </div>
@@ -706,18 +743,17 @@ function GalleryGrid({
                   type="button"
                   size="sm"
                   variant={packed ? "outline" : "default"}
-                  className={`h-7 px-2 text-[11px] ${
-                    packed
-                      ? "border-red-200 text-red-700 hover:bg-red-50"
-                      : "bg-green-600 hover:bg-green-700 text-white"
-                  }`}
+                  className={`h-7 px-2 text-[11px] ${packed
+                    ? "border-red-200 text-red-700 hover:bg-red-50"
+                    : "bg-green-600 hover:bg-green-700 text-white"
+                    }`}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     onTogglePacked(img, !packed);
                   }}
                 >
-                  {packed ? "Mark Unpacked" : "Mark Packed"}
+                  {packed ? "Uncheck" : "Pack"}
                 </Button>
               </div>
               {img.qty && (

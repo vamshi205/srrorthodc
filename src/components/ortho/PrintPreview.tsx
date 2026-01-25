@@ -5,6 +5,8 @@ interface PrintPreviewProps {
   activeProcedures: ActiveProcedure[];
   hospitalName: string;
   dcNo: string;
+  deliveredBy?: string;
+  receivedBy?: string;
   manualItems?: Array<{ name: string; size: string; qty: number }>;
   manualInstruments?: string[];
   manualBoxNumbers?: string[];
@@ -21,7 +23,7 @@ interface PrintItem {
 }
 
 export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
-  ({ activeProcedures, hospitalName, dcNo, manualItems = [], manualInstruments = [], manualBoxNumbers = [], manualMaterialType = 'SS' }, ref) => {
+  ({ activeProcedures, hospitalName, dcNo, deliveredBy, receivedBy, manualItems = [], manualInstruments = [], manualBoxNumbers = [], manualMaterialType = 'SS' }, ref) => {
     const printItems = useMemo(() => {
       const items: PrintItem[] = [];
 
@@ -116,7 +118,7 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
       <div
         ref={ref}
         className="bg-white text-black w-full max-w-[210mm]"
-        style={{ 
+        style={{
           fontFamily: 'Arial, sans-serif',
           pageBreakInside: 'avoid',
           pageBreakAfter: 'avoid',
@@ -143,11 +145,10 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
           </div>
           <div className="text-right">
             <p>
-              <strong>Date:</strong> {today}
+              <strong>Delivered By:</strong> {deliveredBy || '___________________'}
             </p>
             <p className="mt-1">
-              <strong>Procedures:</strong>{' '}
-              {activeProcedures.map((p) => p.name).join(', ')}
+              <strong>Received By:</strong> {receivedBy || '___________________'}
             </p>
           </div>
         </div>
@@ -210,13 +211,13 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
         <div className="grid grid-cols-2 gap-3 mt-2 pt-1" style={{ pageBreakInside: 'avoid', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
           <div className="text-center">
             <div className="border-t border-black pt-1 mt-4">
-              <p className="text-[10px] font-semibold">Receiver's Signature</p>
+              <p className="text-[10px] font-semibold">{receivedBy || "Receiver's Signature"}</p>
               <p className="text-[9px] text-gray-600">Name & Date</p>
             </div>
           </div>
           <div className="text-center">
             <div className="border-t border-black pt-1 mt-4">
-              <p className="text-[10px] font-semibold">Authorized Signature</p>
+              <p className="text-[10px] font-semibold">{deliveredBy || "Authorized Signature"}</p>
               <p className="text-[9px] text-gray-600">SRR Ortho Implants</p>
             </div>
           </div>

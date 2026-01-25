@@ -17,18 +17,20 @@ export type SavedDcItem = {
   isSelectable: boolean;
 };
 
-export type SavedDcStatus = "pending" | "returned" | "completed" | "cash";
+export type SavedDcStatus = "pending" | "returned" | "completed" | "cash" | "cancelled";
 
 export type SavedDcHistoryEvent = {
   at: string; // ISO timestamp
   action:
-    | "CREATED"
-    | "MARK_RETURNED"
-    | "LINK_INVOICE"
-    | "MOVE_TO_CASH"
-    | "MOVE_BACK_TO_PENDING"
-    | "MOVE_BACK_TO_RETURNED"
-    | "MOVE_CASH_TO_COMPLETED";
+  | "CREATED"
+  | "MARK_RETURNED"
+  | "LINK_INVOICE"
+  | "MOVE_TO_CASH"
+  | "MOVE_BACK_TO_PENDING"
+  | "MOVE_BACK_TO_RETURNED"
+  | "MOVE_CASH_TO_COMPLETED"
+  | "CANCEL_CASE"
+  | "RESTORE_FROM_CANCELLED";
   fromStatus?: SavedDcStatus;
   toStatus: SavedDcStatus;
   meta?: Record<string, unknown>;
@@ -40,6 +42,7 @@ export type SavedDc = {
   dcNo: string;
   materialType: string;
   savedAt: string;
+  deliveredBy: string;
   receivedBy: string;
   remarks: string;
   status: SavedDcStatus;
@@ -54,6 +57,8 @@ export type SavedDc = {
   cashAt?: string;
   cashAmount?: number;
   cashRemarks?: string;
+  cancelledAt?: string;
+  cancelledRemarks?: string;
   history?: SavedDcHistoryEvent[];
 };
 
@@ -67,15 +72,15 @@ const createId = () => {
 };
 
 /**
- * Load DCs from Google Sheets
+ * Load DCs from Firestore
  */
 export const loadSavedDcs = async (): Promise<SavedDc[]> => {
   try {
     const dcs = await fetchDcsFromFirestore();
     return dcs;
   } catch (error) {
-    console.error('Error loading DCs from Google Sheets:', error);
-    // Fallback to localStorage if Google Sheets fails
+    console.error('Error loading DCs from Firestore:', error);
+    // Fallback to localStorage if Firestore fails
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return [];
@@ -89,11 +94,12 @@ export const loadSavedDcs = async (): Promise<SavedDc[]> => {
 };
 
 /**
- * Save a new DC to Google Sheets
+ * Save a new DC to Firestore
  */
 export const saveSavedDc = async (
   data: Omit<SavedDc, "id" | "savedAt" | "status"> & { status?: SavedDcStatus },
 ): Promise<SavedDc> => {
+  // ... (implementation remains same, already references Firestore)
   const now = new Date().toISOString();
   const saved: SavedDc = {
     ...data,
@@ -119,7 +125,7 @@ export const saveSavedDc = async (
 };
 
 /**
- * Delete a DC from Google Sheets
+ * Delete a DC from Firestore
  */
 export const deleteSavedDc = async (id: string): Promise<void> => {
   try {
@@ -131,24 +137,25 @@ export const deleteSavedDc = async (id: string): Promise<void> => {
 };
 
 /**
- * Update a DC in Google Sheets
+ * Update a DC in Firestore
  */
 export const updateSavedDc = async (id: string, updates: Partial<SavedDc>): Promise<SavedDc> => {
+  // ...
   try {
     // First, fetch all DCs to get the current DC
     const dcs = await loadSavedDcs();
     const dc = dcs.find((d) => d.id === id);
-    
+
     if (!dc) {
       throw new Error(`DC not found with id: ${id}`);
     }
-    
+
     // Merge updates with existing DC
     const updatedDc: SavedDc = { ...dc, ...updates };
-    
+
     // Update in Firestore
     await updateDcInFirestore(updatedDc);
-    
+
     return updatedDc;
   } catch (error) {
     console.error('Error updating DC in Firestore:', error);
@@ -173,7 +180,7 @@ export const transitionSavedDc = async (
     // Fetch all DCs to get the current DC
     const dcs = await loadSavedDcs();
     const dc = dcs.find((d) => d.id === id);
-    
+
     if (!dc) {
       throw new Error(`DC not found with id: ${id}`);
     }
@@ -212,7 +219,7 @@ export const transitionSavedDc = async (
 
     // Update in Firestore
     await updateDcInFirestore(updatedDc);
-    
+
     return updatedDc;
   } catch (error) {
     console.error('Error transitioning DC in Firestore:', error);
@@ -221,7 +228,7 @@ export const transitionSavedDc = async (
 };
 
 /**
- * Clear all DCs from Google Sheets (use with caution!)
+ * Clear all DCs from Firestore (use with caution!)
  */
 export const clearSavedDcs = async (): Promise<void> => {
   try {
@@ -234,49 +241,6 @@ export const clearSavedDcs = async (): Promise<void> => {
     }
   } catch (error) {
     console.error('Error clearing DCs from Firestore:', error);
-    throw error;
-  }
-};
-
-/**
- * Migrate DCs from localStorage to Google Sheets
- * This is a one-time migration utility
- */
-export const migrateLocalStorageToSheets = async (): Promise<{ success: number; failed: number }> => {
-  let success = 0;
-  let failed = 0;
-
-  try {
-    // Read from localStorage
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return { success: 0, failed: 0 };
-    }
-
-    const localDcs = JSON.parse(raw) as SavedDc[];
-    if (!Array.isArray(localDcs) || localDcs.length === 0) {
-      return { success: 0, failed: 0 };
-    }
-
-    // Save each DC to Firestore
-    for (const dc of localDcs) {
-      try {
-        await saveDcToFirestore(dc);
-        success++;
-      } catch (error) {
-        console.error(`Failed to migrate DC ${dc.id}:`, error);
-        failed++;
-      }
-    }
-
-    // Clear localStorage after successful migration
-    if (success > 0 && failed === 0) {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-
-    return { success, failed };
-  } catch (error) {
-    console.error('Error during migration:', error);
     throw error;
   }
 };

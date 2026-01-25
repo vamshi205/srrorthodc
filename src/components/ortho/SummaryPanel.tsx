@@ -1,11 +1,13 @@
 import { useMemo, forwardRef } from 'react';
-import { FileText, Package, Wrench, Building2, FileCheck } from 'lucide-react';
+import { FileText, Package, Wrench, Building2, FileCheck, User } from 'lucide-react';
 import { ActiveProcedure } from '@/types/procedure';
 
 interface SummaryPanelProps {
   activeProcedures: ActiveProcedure[];
   hospitalName: string;
   dcNo: string;
+  deliveredBy?: string;
+  receivedBy?: string;
   manualItems?: Array<{ name: string; size: string; qty: number }>;
   manualInstruments?: string[];
   manualBoxNumbers?: string[];
@@ -20,7 +22,7 @@ interface SummaryItem {
 }
 
 export const SummaryPanel = forwardRef<HTMLDivElement, SummaryPanelProps>(
-  ({ activeProcedures, hospitalName, dcNo, manualItems = [], manualInstruments = [], manualBoxNumbers = [], manualMaterialType = 'SS' }, ref) => {
+  ({ activeProcedures, hospitalName, dcNo, deliveredBy, receivedBy, manualItems = [], manualInstruments = [], manualBoxNumbers = [], manualMaterialType = 'SS' }, ref) => {
     const summaryData = useMemo(() => {
       const items: SummaryItem[] = [];
       const instruments = new Set<string>();
@@ -61,7 +63,7 @@ export const SummaryPanel = forwardRef<HTMLDivElement, SummaryPanelProps>(
 
         // Collect instruments
         procedure.instruments.forEach((inst) => instruments.add(inst));
-        
+
         // Collect box numbers
         if (procedure.boxNumbers && procedure.boxNumbers.length > 0) {
           allBoxNumbers.push(...procedure.boxNumbers);
@@ -123,16 +125,30 @@ export const SummaryPanel = forwardRef<HTMLDivElement, SummaryPanelProps>(
         <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-muted/50 border-[3px] border-border/80">
           <div className="flex items-center gap-3">
             <Building2 className="w-5 h-5 text-primary" />
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">Hospital</p>
-              <p className="font-medium">{hospitalName || 'Not specified'}</p>
+              <p className="font-medium truncate">{hospitalName || 'Not specified'}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <FileCheck className="w-5 h-5 text-primary" />
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-muted-foreground">DC No.</p>
-              <p className="font-medium">{dcNo || 'Not specified'}</p>
+              <p className="font-medium truncate">{dcNo || 'Not specified'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <User className="w-5 h-5 text-primary" />
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Delivered By</p>
+              <p className="font-medium truncate">{deliveredBy || '-'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <User className="w-5 h-5 text-primary" />
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Received By</p>
+              <p className="font-medium truncate">{receivedBy || '-'}</p>
             </div>
           </div>
         </div>
@@ -172,18 +188,18 @@ export const SummaryPanel = forwardRef<HTMLDivElement, SummaryPanelProps>(
                 {summaryData.items.map((item, index) => {
                   const totalQty = item.sizes.reduce((a, s) => a + s.qty, 0);
                   const hasSizes = item.isSelectable && item.sizes.length > 0 && item.sizes.some(s => s.size);
-                  
+
                   // Build size details text for selectable items
-                  const sizeDetails = hasSizes 
+                  const sizeDetails = hasSizes
                     ? item.sizes
-                        .filter(s => s.size)
-                        .map(s => `${s.size} (Qty: ${s.qty})`)
-                        .join(', ')
+                      .filter(s => s.size)
+                      .map(s => `${s.size} (Qty: ${s.qty})`)
+                      .join(', ')
                     : '';
-                  
+
                   return (
-                    <tr 
-                      key={`${item.name}-${index}`} 
+                    <tr
+                      key={`${item.name}-${index}`}
                       className="border-b-[1px] border-border/50 hover:bg-muted/20 transition-colors"
                     >
                       <td className="p-3 text-sm font-medium">

@@ -1,28 +1,30 @@
-// src/firebase.ts
-
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
 import { getAuth } from "firebase/auth";
+import { getAnalytics } from "firebase/analytics";
 
-// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDZLZoqjt6ciSCRyHD9DzLhYVzUhUG2tkc",
-  authDomain: "srr-ortho-dc.firebaseapp.com",
-  projectId: "srr-ortho-dc",
-  storageBucket: "srr-ortho-dc.firebasestorage.app",
-  messagingSenderId: "77019251347",
-  appId: "1:77019251347:web:3550b27f9a2c5b292f0366",
-  measurementId: "G-ZBKG7XN8YF"
+  apiKey: "AIzaSyDuK5kOP_WsiFTgMQE7B2qyYaAPDwdi_hY",
+  authDomain: "srrorthodc-antigravity.firebaseapp.com",
+  projectId: "srrorthodc-antigravity",
+  storageBucket: "srrorthodc-antigravity.firebasestorage.app",
+  messagingSenderId: "851487467736",
+  appId: "1:851487467736:web:1065fa1ffbfdd194530fad",
+  measurementId: "G-RPSEV8795H"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase (Singleton pattern to avoid duplicate app errors)
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firestore
+// Initialize Services
 export const db = getFirestore(app);
-
-// Initialize Auth
 export const auth = getAuth(app);
 
-// Export the app instance if needed for other services (e.g., Auth)
+// Initialize Analytics (optional, only works in browser)
+let analytics;
+if (typeof window !== 'undefined') {
+  analytics = getAnalytics(app);
+}
+
+export { analytics };
 export default app;
