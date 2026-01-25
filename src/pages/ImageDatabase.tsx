@@ -10,10 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Progress } from "@/components/ui/progress";
 
-import { LoginScreen } from "@/components/ortho/LoginScreen";
 import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
 import { ProcedureSelector } from "@/components/ortho/ProcedureSelector";
 import { useProcedures } from "@/hooks/useProcedures";
+import { auth } from "@/firebase";
 import type { Location, Procedure } from "@/types/procedure";
 import { clearPackedForProcedure, loadImageDbPacked, setPackedForItem, type ImageDbPackedState } from "@/lib/imageDbStorage";
 
@@ -78,10 +78,6 @@ const extractBaseItemName = (raw: string) => raw.match(/^(.+?)\s*\{/)?.[1]?.trim
 export default function ImageDatabase() {
   const navigate = useNavigate();
   const { procedures, procedureTypes, loading, error, searchProcedures } = useProcedures();
-
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => localStorage.getItem("srrortho:auth") === "true",
-  );
 
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [showProcedurePicker, setShowProcedurePicker] = useState(true);
@@ -236,22 +232,15 @@ export default function ImageDatabase() {
     setShowPackedSection(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("srrortho:auth");
-    setIsAuthenticated(false);
-    navigate("/");
+    localStorage.removeItem('srrortho:procedures_cache');
+    try {
+      await auth.signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
   };
-
-  if (!isAuthenticated) {
-    return (
-      <LoginScreen
-        onLogin={() => {
-          localStorage.setItem("srrortho:auth", "true");
-          setIsAuthenticated(true);
-        }}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
