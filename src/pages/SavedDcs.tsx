@@ -912,8 +912,16 @@ const SavedDcs = () => {
                 <Badge variant="outline" className="hidden md:inline-flex border-slate-300 text-slate-700">
                   {activeQueue.toUpperCase()} • {statusCounts[activeQueue]}
                 </Badge>
-                {/* Mobile menu */}
-                <div className="md:hidden">
+
+                {/* Desktop actions */}
+                <div className="hidden md:flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="gap-2" onClick={handleExportCSV}>
+                    <Download className="w-4 h-4" /> Export
+                  </Button>
+                </div>
+
+                {/* Mobile menu - shows on tablets and mobile */}
+                <div className="lg:hidden">
                   <Sheet>
                     <SheetTrigger asChild>
                       <Button variant="outline" size="icon" className="h-9 w-9">
@@ -971,13 +979,6 @@ const SavedDcs = () => {
                       </div>
                     </SheetContent>
                   </Sheet>
-                </div>
-
-                {/* Desktop actions */}
-                <div className="hidden md:flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="gap-2" onClick={handleExportCSV}>
-                    <Download className="w-4 h-4" /> Export
-                  </Button>
                 </div>
               </div>
             </div>

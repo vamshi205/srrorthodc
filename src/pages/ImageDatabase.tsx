@@ -307,8 +307,8 @@ export default function ImageDatabase() {
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Mobile menu */}
-                <div className="md:hidden">
+                {/* Mobile menu - shows on tablets and mobile */}
+                <div className="lg:hidden">
                   <Sheet>
                     <SheetTrigger asChild>
                       <Button variant="outline" size="icon" className="h-9 w-9">

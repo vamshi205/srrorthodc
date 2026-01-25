@@ -903,8 +903,24 @@ export default function OrthoApp() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {/* Mobile menu */}
-                <div className="md:hidden">
+                {/* Desktop actions */}
+                <div className="hidden md:flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchProcedures()} disabled={loading}>
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={handlePrint}>
+                    <Printer className="w-4 h-4" /> Print
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/admin')}>
+                    <Wrench className="w-4 h-4" /> Admin
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout}>
+                    <LogOut className="w-4 h-4" /> Logout
+                  </Button>
+                </div>
+
+                {/* Mobile menu - shows on tablets and mobile */}
+                <div className="lg:hidden">
                   <Sheet>
                     <SheetTrigger asChild>
                       <Button variant="outline" size="icon" className="h-9 w-9">
@@ -984,22 +1000,6 @@ export default function OrthoApp() {
                       </div>
                     </SheetContent>
                   </Sheet>
-                </div>
-
-                {/* Desktop actions */}
-                <div className="hidden md:flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchProcedures()} disabled={loading}>
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={handlePrint}>
-                    <Printer className="w-4 h-4" /> Print
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/admin')}>
-                    <Wrench className="w-4 h-4" /> Admin
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout}>
-                    <LogOut className="w-4 h-4" /> Logout
-                  </Button>
                 </div>
               </div>
             </div>
