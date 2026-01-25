@@ -245,8 +245,8 @@ export default function ImageDatabase() {
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
       <div className="flex min-h-screen">
-        {/* Left Menu (desktop) */}
-        <aside className="hidden md:flex w-80 border-r border-border bg-card/70 backdrop-blur-md">
+        {/* Left Menu (desktop only - hidden on tablets) */}
+        <aside className="hidden lg:flex w-80 border-r border-border bg-card/70 backdrop-blur-md">
           <div className="flex flex-col w-full p-4 gap-4 overflow-y-auto">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">

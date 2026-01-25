@@ -470,7 +470,7 @@ export function AddProcedureForm() {
                               </div>
                               <Label className="text-sm uppercase text-blue-900 font-bold tracking-wide">Item Details</Label>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                               <div className="space-y-2">
                                 <Label className="text-xs text-blue-800 font-semibold flex items-center gap-1">
                                   Item Name <span className="text-red-600">*</span>
@@ -582,7 +582,7 @@ export function AddProcedureForm() {
                               </div>
                               <Label className="text-sm uppercase text-purple-900 font-bold tracking-wide">Storage & Media</Label>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                               <div className="space-y-2">
                                 <Label className="text-xs text-purple-800 font-semibold">Storage Location</Label>
                                 <div className="grid grid-cols-3 gap-2">
@@ -665,7 +665,7 @@ export function AddProcedureForm() {
                       </div>
 
                       <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                           <div className="space-y-1.5">
                             <Label className="text-xs uppercase text-slate-500 font-bold">Instrument/Set Name</Label>
                             <Input
