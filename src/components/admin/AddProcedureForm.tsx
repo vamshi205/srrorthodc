@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus, X, Save, Upload, Edit, PlusCircle, Trash2,
   Settings, Layers, Boxes, LayoutGrid, Info, Search,
-  ClipboardList, Wrench
+  ClipboardList, Wrench, Package
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useProcedures } from '@/hooks/useProcedures';
@@ -462,82 +462,110 @@ export function AddProcedureForm() {
                         </div>
 
                         <div className="flex-1 space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <Label className="text-xs uppercase text-slate-500 font-bold">Item Name</Label>
-                              <Input
-                                placeholder="Enter item name..."
-                                value={item.name}
-                                onChange={(e) => updateItem(itemIndex, 'name', e.target.value)}
-                                className="border-slate-300 h-9"
-                              />
+                          {/* Primary Info Section - Blue Tint */}
+                          <div className="rounded-lg border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/50 p-4 space-y-3 shadow-sm">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shadow-md">
+                                <Package className="w-4 h-4 text-white" />
+                              </div>
+                              <Label className="text-sm uppercase text-blue-900 font-bold tracking-wide">Item Details</Label>
                             </div>
-                            <div className="space-y-1.5 pt-px">
-                              <Label className="text-xs uppercase text-slate-500 font-bold">Configuration</Label>
-                              <div className="flex items-center gap-2">
-                                <Select
-                                  value={item.isFixed ? 'fixed' : 'selectable'}
-                                  onValueChange={(value) => updateItem(itemIndex, 'isFixed', value === 'fixed')}
-                                >
-                                  <SelectTrigger className="bg-white border-slate-300 h-9">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="selectable">User Picks Size</SelectItem>
-                                    <SelectItem value="fixed">Always Included</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                {item.isFixed && (
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    placeholder="Qty"
-                                    value={item.fixedQty || '1'}
-                                    onChange={(e) => updateItem(itemIndex, 'fixedQty', e.target.value)}
-                                    className="w-16 h-9 border-indigo-300 focus:ring-indigo-500"
-                                  />
-                                )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label className="text-xs text-blue-800 font-semibold flex items-center gap-1">
+                                  Item Name <span className="text-red-600">*</span>
+                                </Label>
+                                <Input
+                                  placeholder="e.g., Locking Plate"
+                                  value={item.name}
+                                  onChange={(e) => updateItem(itemIndex, 'name', e.target.value)}
+                                  className="border-blue-300 bg-white h-10 focus:border-blue-500 focus:ring-blue-500 font-medium"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-xs text-blue-800 font-semibold flex items-center gap-1">
+                                  Configuration Type <span className="text-red-600">*</span>
+                                </Label>
+                                <div className="flex items-center gap-2">
+                                  <Select
+                                    value={item.isFixed ? 'fixed' : 'selectable'}
+                                    onValueChange={(value) => updateItem(itemIndex, 'isFixed', value === 'fixed')}
+                                  >
+                                    <SelectTrigger className="bg-white border-blue-300 h-10 focus:border-blue-500 focus:ring-blue-500">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="selectable">📋 User Picks Size</SelectItem>
+                                      <SelectItem value="fixed">📌 Always Included</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  {item.isFixed && (
+                                    <div className="flex items-center gap-1.5 bg-white rounded-lg border-2 border-blue-300 px-3 py-2">
+                                      <Label className="text-[11px] text-blue-700 font-bold whitespace-nowrap">Qty:</Label>
+                                      <Input
+                                        type="number"
+                                        min="1"
+                                        placeholder="1"
+                                        value={item.fixedQty || '1'}
+                                        onChange={(e) => updateItem(itemIndex, 'fixedQty', e.target.value)}
+                                        className="w-16 h-8 border-0 focus:ring-0 text-center font-bold text-blue-900 bg-blue-50"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
 
+                          {/* Sizes Section - Only for Selectable Items */}
                           {!item.isFixed && (
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+                            <div className="rounded-lg border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4 space-y-3 shadow-sm">
                               <div className="flex items-center justify-between">
-                                <Label className="text-xs font-bold text-slate-600">Available Sizes & Quantities</Label>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center shadow-md">
+                                    <Layers className="w-4 h-4 text-white" />
+                                  </div>
+                                  <Label className="text-sm uppercase text-emerald-900 font-bold tracking-wide">Available Sizes & Quantities</Label>
+                                </div>
                                 <Button
                                   type="button"
                                   onClick={() => addItemSize(itemIndex)}
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-[10px] bg-white border-slate-300"
+                                  className="h-8 text-xs bg-white border-emerald-400 text-emerald-700 hover:bg-emerald-100 font-semibold shadow-sm"
                                 >
-                                  <Plus className="w-3 h-3 mr-1" /> Add Size
+                                  <Plus className="w-3.5 h-3.5 mr-1" /> Add Size
                                 </Button>
                               </div>
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap gap-2.5">
                                 {item.sizes.map((sizeQty, sizeIndex) => (
-                                  <div key={sizeIndex} className="flex items-center bg-white border border-slate-300 rounded shadow-sm overflow-hidden group/size">
+                                  <div key={sizeIndex} className="flex items-center bg-white border-2 border-emerald-300 rounded-lg shadow-md overflow-hidden group/size hover:border-emerald-500 hover:shadow-lg transition-all">
+                                    <div className="px-2.5 py-2 bg-emerald-100 border-r-2 border-emerald-300">
+                                      <span className="text-[10px] font-bold text-emerald-800 uppercase">Size</span>
+                                    </div>
                                     <Input
-                                      placeholder="Size"
+                                      placeholder="e.g., 3.5mm"
                                       value={sizeQty.size}
                                       onChange={(e) => updateItemSize(itemIndex, sizeIndex, 'size', e.target.value)}
-                                      className="w-20 border-0 focus-visible:ring-0 h-8 text-[11px] font-medium border-r rounded-none px-2"
+                                      className="w-28 border-0 focus-visible:ring-0 h-9 text-xs font-semibold rounded-none px-2.5"
                                     />
+                                    <div className="px-2 py-2 bg-blue-100 border-l-2 border-r-2 border-emerald-300">
+                                      <span className="text-[10px] font-bold text-blue-800 uppercase">Qty</span>
+                                    </div>
                                     <Input
                                       type="number"
                                       min="1"
                                       value={sizeQty.qty}
                                       onChange={(e) => updateItemSize(itemIndex, sizeIndex, 'qty', e.target.value)}
-                                      className="w-10 border-0 focus-visible:ring-0 h-8 text-[11px] font-bold rounded-none px-1 text-center bg-blue-50/30"
+                                      className="w-14 border-0 focus-visible:ring-0 h-9 text-xs font-bold rounded-none px-1 text-center bg-blue-50"
                                     />
                                     {item.sizes.length > 1 && (
                                       <button
                                         type="button"
                                         onClick={() => removeItemSize(itemIndex, sizeIndex)}
-                                        className="h-8 px-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 border-l transition-colors"
+                                        className="h-9 px-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 border-l-2 border-emerald-300 transition-colors"
                                       >
-                                        <X className="w-3 h-3" />
+                                        <X className="w-4 h-4" />
                                       </button>
                                     )}
                                   </div>
@@ -546,23 +574,56 @@ export function AddProcedureForm() {
                             </div>
                           )}
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <Label className="text-[10px] uppercase text-slate-400 font-bold">Storage Location</Label>
-                              <div className="grid grid-cols-3 gap-2">
-                                <Input placeholder="Rm" value={item.location?.room} onChange={(e) => updateItem(itemIndex, 'location', { ...item.location, room: e.target.value })} className="h-8 text-[10px] border-slate-200" />
-                                <Input placeholder="Rk" value={item.location?.rack} onChange={(e) => updateItem(itemIndex, 'location', { ...item.location, rack: e.target.value })} className="h-8 text-[10px] border-slate-200" />
-                                <Input placeholder="Bx" value={item.location?.box} onChange={(e) => updateItem(itemIndex, 'location', { ...item.location, box: e.target.value })} className="h-8 text-[10px] border-slate-200" />
+                          {/* Storage & Image Section - Purple Tint */}
+                          <div className="rounded-lg border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100/50 p-4 space-y-3 shadow-sm">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-7 h-7 rounded-lg bg-purple-600 flex items-center justify-center shadow-md">
+                                <Boxes className="w-4 h-4 text-white" />
                               </div>
+                              <Label className="text-sm uppercase text-purple-900 font-bold tracking-wide">Storage & Media</Label>
                             </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[10px] uppercase text-slate-400 font-bold">Image Link</Label>
-                              <Input
-                                placeholder="Google Drive URL"
-                                value={item.imageUrl}
-                                onChange={(e) => updateItem(itemIndex, 'imageUrl', e.target.value)}
-                                className="h-8 text-[10px] border-slate-200"
-                              />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label className="text-xs text-purple-800 font-semibold">Storage Location</Label>
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div className="space-y-1.5">
+                                    <span className="text-[10px] text-purple-700 font-bold uppercase block">Room</span>
+                                    <Input
+                                      placeholder="A1"
+                                      value={item.location?.room}
+                                      onChange={(e) => updateItem(itemIndex, 'location', { ...item.location, room: e.target.value })}
+                                      className="h-9 text-xs border-purple-300 bg-white focus:border-purple-500 font-medium"
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <span className="text-[10px] text-purple-700 font-bold uppercase block">Rack</span>
+                                    <Input
+                                      placeholder="R2"
+                                      value={item.location?.rack}
+                                      onChange={(e) => updateItem(itemIndex, 'location', { ...item.location, rack: e.target.value })}
+                                      className="h-9 text-xs border-purple-300 bg-white focus:border-purple-500 font-medium"
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <span className="text-[10px] text-purple-700 font-bold uppercase block">Box</span>
+                                    <Input
+                                      placeholder="B3"
+                                      value={item.location?.box}
+                                      onChange={(e) => updateItem(itemIndex, 'location', { ...item.location, box: e.target.value })}
+                                      className="h-9 text-xs border-purple-300 bg-white focus:border-purple-500 font-medium"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-xs text-purple-800 font-semibold">Image Link (Google Drive)</Label>
+                                <Input
+                                  placeholder="https://drive.google.com/..."
+                                  value={item.imageUrl}
+                                  onChange={(e) => updateItem(itemIndex, 'imageUrl', e.target.value)}
+                                  className="h-9 text-xs border-purple-300 bg-white focus:border-purple-500"
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
