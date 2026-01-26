@@ -503,7 +503,7 @@ export function AddProcedureForm() {
           <CardContent className="p-0">
             <TabsContent value="items" className="m-0 focus-visible:ring-0">
               <div className="p-4 sm:p-6 space-y-4">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div className="text-sm font-medium text-slate-600">Configured Implants</div>
                   <div className="flex gap-2">
                     <Button onClick={() => addItem(true)} size="sm" className="bg-indigo-600 hover:bg-indigo-700 shadow-sm gap-2">
@@ -735,7 +735,7 @@ export function AddProcedureForm() {
                   {items.length === 0 && (
                     <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
                       <p className="text-slate-500 text-sm">No items configured yet for this procedure.</p>
-                      <div className="flex gap-3 justify-center mt-2">
+                      <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mt-4">
                         <Button onClick={() => addItem(true)} variant="outline" className="text-indigo-600 border-indigo-200 hover:bg-indigo-50">
                           + Add Fixed Item
                         </Button>
