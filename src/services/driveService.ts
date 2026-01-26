@@ -1,7 +1,6 @@
 
-// Configure your GAS Web App URL here or in .env
-// Example: https://script.google.com/macros/s/AKfycbx.../exec
-const GAS_URL = import.meta.env.VITE_APPS_SCRIPT_URL || '';
+// Configure your GAS Web App URL here
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw5plrQgRwCRsb65S7RDcATjyyMAiJOPCJ5raKzm_Zwm7_1OAuMnRHFHZyF1VQeO_zP5Q/exec';
 
 export interface UploadResult {
     success: boolean;
