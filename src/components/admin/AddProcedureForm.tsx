@@ -47,9 +47,78 @@ export function AddProcedureForm() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [enteredPassword, setEnteredPassword] = useState('');
   const [pendingAction, setPendingAction] = useState<'save' | 'delete' | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>('');
 
-  const addItem = () => {
-    setItems([...items, { name: '', sizes: [{ size: '', qty: '1' }], imageUrl: '', isFixed: false, location: { room: '', rack: '', box: '' } }]);
+  // Helper to convert file to base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  const handleImageUpload = async (file: File, type: 'item' | 'instrument' | 'fixed', index: number) => {
+    if (!procedureName.trim()) {
+      toast({ title: "Procedure Name Required", description: "Please enter a procedure name first to create the folder.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(`Uploading ${file.name}...`);
+
+    try {
+      // 1. Convert to Base64
+      const base64 = await fileToBase64(file);
+
+      // 2. Upload to Drive
+      // Use procedureName as folder name, and file.name (or a timestamped name)
+      const fileName = `${Date.now()}_${file.name}`;
+
+      // Import dynamically or use the one imported at top (need to add import)
+      const { driveService } = await import('@/services/driveService');
+
+      const result = await driveService.uploadImage(base64, procedureName, fileName);
+
+      if (result.success && result.url) {
+        toast({ title: "Upload Success", description: "Image uploaded to Google Drive." });
+
+        // 3. Update the specific field
+        if (type === 'item') {
+          updateItem(index, 'imageUrl', result.url); // Use viewLink if you want the user to see it in a new tab, or downloadUrl for src. Usually viewLink for drive.
+          // However, for <img> tags we often need a direct link. Drive view links aren't direct images. 
+          // result.url from my script is getDownloadUrl(). This might work for <img> if public.
+          // Let's use result.viewLink if we want to link to it, or result.url (download) for src.
+          // Actually, standard Drive 'view' links are better for clicking.
+          // Let's store the viewLink for now as the 'imageUrl' field effectively acts as a reference.
+          // The user said "shown in front end". <img src="drive content link"> is tricky. 
+          // Apps Scirpt `getDownloadUrl` often requires cookie auth if not fully public webContentLink.
+          // Let's try to store the viewLink (url property from my script was getDownloadUrl).
+          // I'll assume `result.viewLink` is the browser-friendly link and `result.url` is the download link.
+          // Let's use `result.viewLink` for the input field so they can check it.
+          updateItem(index, 'imageUrl', result.viewLink || result.url);
+        } else if (type === 'instrument') {
+          updateInstrument(index, 'imageUrl', result.viewLink || result.url);
+        } else if (type === 'fixed') { // Wait, fixed items serve from same 'items' array
+          updateItem(index, 'imageUrl', result.viewLink || result.url);
+        }
+      } else {
+        throw new Error(result.error || "Unknown error");
+      }
+
+    } catch (error: any) {
+      console.error("Upload failed", error);
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      setUploadProgress('');
+    }
+  };
+
+  const addItem = (isFixed: boolean = false) => {
+    setItems([...items, { name: '', sizes: [{ size: '', qty: '1' }], imageUrl: '', isFixed, location: { room: '', rack: '', box: '' } }]);
   };
 
   const removeItem = (index: number) => {
@@ -436,9 +505,14 @@ export function AddProcedureForm() {
               <div className="p-4 sm:p-6 space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium text-slate-600">Configured Implants</div>
-                  <Button onClick={addItem} size="sm" className="bg-blue-600 hover:bg-blue-700 shadow-sm gap-2">
-                    <Plus className="w-4 h-4" /> Add Item
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button onClick={() => addItem(true)} size="sm" className="bg-indigo-600 hover:bg-indigo-700 shadow-sm gap-2">
+                      <Plus className="w-4 h-4" /> Add Fixed Item
+                    </Button>
+                    <Button onClick={() => addItem(false)} size="sm" className="bg-blue-600 hover:bg-blue-700 shadow-sm gap-2">
+                      <Plus className="w-4 h-4" /> Add Selectable Item
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
@@ -617,12 +691,40 @@ export function AddProcedureForm() {
                               </div>
                               <div className="space-y-2">
                                 <Label className="text-xs text-purple-800 font-semibold">Image Link (Google Drive)</Label>
-                                <Input
-                                  placeholder="https://drive.google.com/..."
-                                  value={item.imageUrl}
-                                  onChange={(e) => updateItem(itemIndex, 'imageUrl', e.target.value)}
-                                  className="h-9 text-xs border-purple-300 bg-white focus:border-purple-500"
-                                />
+                                <div className="flex gap-2">
+                                  <Input
+                                    placeholder="https://drive.google.com/..."
+                                    value={item.imageUrl}
+                                    onChange={(e) => updateItem(itemIndex, 'imageUrl', e.target.value)}
+                                    className="h-9 text-xs border-purple-300 bg-white focus:border-purple-500"
+                                  />
+                                  <div className="relative">
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      id={`file-upload-item-${itemIndex}`}
+                                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                          handleImageUpload(file, item.isFixed ? 'fixed' : 'item', itemIndex);
+                                          // Reset input so same file can be selected again if needed
+                                          e.target.value = '';
+                                        }
+                                      }}
+                                      disabled={isUploading}
+                                    />
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="outline"
+                                      className="h-9 w-9 border-purple-300 text-purple-700 hover:bg-purple-50"
+                                      disabled={isUploading}
+                                    >
+                                      {isUploading ? <span className="animate-spin text-xs">⏳</span> : <Upload className="w-4 h-4" />}
+                                    </Button>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -633,7 +735,14 @@ export function AddProcedureForm() {
                   {items.length === 0 && (
                     <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
                       <p className="text-slate-500 text-sm">No items configured yet for this procedure.</p>
-                      <Button onClick={addItem} variant="ghost" className="mt-2 text-blue-600">Start by adding an implant</Button>
+                      <div className="flex gap-3 justify-center mt-2">
+                        <Button onClick={() => addItem(true)} variant="outline" className="text-indigo-600 border-indigo-200 hover:bg-indigo-50">
+                          + Add Fixed Item
+                        </Button>
+                        <Button onClick={() => addItem(false)} variant="ghost" className="text-blue-600 hover:bg-blue-50">
+                          + Add Selectable Item
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -677,12 +786,39 @@ export function AddProcedureForm() {
                           </div>
                           <div className="space-y-1.5">
                             <Label className="text-xs uppercase text-slate-500 font-bold">Image URL</Label>
-                            <Input
-                              placeholder="Google Drive URL"
-                              value={instrument.imageUrl}
-                              onChange={(e) => updateInstrument(instIdx, 'imageUrl', e.target.value)}
-                              className="border-slate-300 h-9"
-                            />
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="Google Drive URL"
+                                value={instrument.imageUrl}
+                                onChange={(e) => updateInstrument(instIdx, 'imageUrl', e.target.value)}
+                                className="border-slate-300 h-9"
+                              />
+                              <div className="relative">
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  id={`file-upload-inst-${instIdx}`}
+                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      handleImageUpload(file, 'instrument', instIdx);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                  disabled={isUploading}
+                                />
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="outline"
+                                  className="h-9 w-9 border-slate-300 text-slate-600 hover:bg-slate-50"
+                                  disabled={isUploading}
+                                >
+                                  {isUploading ? <span className="animate-spin text-xs">⏳</span> : <Upload className="w-4 h-4" />}
+                                </Button>
+                              </div>
+                            </div>
                           </div>
                         </div>
 

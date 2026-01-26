@@ -45,6 +45,7 @@ export default function OrthoApp() {
   const [isSavingDc, setIsSavingDc] = useState(false);
   const [showConfirmSaveDialog, setShowConfirmSaveDialog] = useState(false);
   const [deliveredBy, setDeliveredBy] = useState('');
+  const [customDcDate, setCustomDcDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Manual DC builder
   const [dcMode, setDcMode] = useState<'procedure' | 'manual'>('procedure');
@@ -692,6 +693,7 @@ export default function OrthoApp() {
         items,
         instruments,
         boxNumbers,
+        customAt: customDcDate ? new Date(customDcDate).toISOString() : undefined,
       });
 
       toast({ title: 'DC saved successfully', description: `${hospitalName} · ${dcNo}` });
@@ -710,6 +712,7 @@ export default function OrthoApp() {
       setShowProcedureSelector(true);
       setManualMaterialType('SS');
       handleClearManualEntry();
+      setCustomDcDate(new Date().toISOString().split('T')[0]);
 
       // Navigate to Saved DC List
       setTimeout(() => {
@@ -1688,6 +1691,15 @@ export default function OrthoApp() {
               <div className="text-sm">
                 <span className="font-semibold">Received By:</span>{' '}
                 <span className="text-muted-foreground">{receivedBy}</span>
+              </div>
+              <div className="text-sm flex items-center gap-2 pt-1 border-t border-border/50 mt-1">
+                <span className="font-semibold whitespace-nowrap">DC Date:</span>
+                <Input
+                  type="date"
+                  value={customDcDate}
+                  onChange={(e) => setCustomDcDate(e.target.value)}
+                  className="h-8 py-0 px-2 text-xs bg-white border-slate-300 focus:ring-blue-500 w-full"
+                />
               </div>
               {(() => {
                 const { items, instruments, boxNumbers } = buildSavePayload();

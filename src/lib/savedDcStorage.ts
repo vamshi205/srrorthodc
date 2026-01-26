@@ -97,18 +97,18 @@ export const loadSavedDcs = async (): Promise<SavedDc[]> => {
  * Save a new DC to Firestore
  */
 export const saveSavedDc = async (
-  data: Omit<SavedDc, "id" | "savedAt" | "status"> & { status?: SavedDcStatus },
+  data: Omit<SavedDc, "id" | "savedAt" | "status"> & { status?: SavedDcStatus; customAt?: string },
 ): Promise<SavedDc> => {
-  // ... (implementation remains same, already references Firestore)
   const now = new Date().toISOString();
+  const savedAt = data.customAt || now;
   const saved: SavedDc = {
     ...data,
     id: createId(),
-    savedAt: now,
+    savedAt: savedAt,
     status: data.status ?? "pending",
     history: [
       {
-        at: now,
+        at: savedAt,
         action: "CREATED",
         toStatus: (data.status ?? "pending") as SavedDcStatus,
       },
