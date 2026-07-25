@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Activity, CheckCircle2, Circle, Images, List, LogOut, Menu, Plus, Trash2, Wrench } from "lucide-react";
+import { Activity, CheckCircle2, Circle, Images, List, LogOut, Menu, Plus, Trash2, Wrench, Sun, Moon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,21 @@ const extractBaseItemName = (raw: string) => raw.match(/^(.+?)\s*\{/)?.[1]?.trim
 export default function ImageDatabase() {
   const navigate = useNavigate();
   const { procedures, procedureTypes, loading, error, searchProcedures } = useProcedures();
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'dark';
+  });
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('srrortho:theme', nextTheme);
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
 
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [showProcedurePicker, setShowProcedurePicker] = useState(true);
@@ -277,6 +292,14 @@ export default function ImageDatabase() {
             <div className="mt-auto space-y-2">
               <Button
                 variant="outline"
+                className="w-full justify-start gap-2 border-border/60 bg-background/50"
+                onClick={toggleTheme}
+              >
+                {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                Theme: {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+              </Button>
+              <Button
+                variant="outline"
                 className="w-full justify-start gap-2"
                 onClick={() => navigate("/admin")}
               >
@@ -307,6 +330,12 @@ export default function ImageDatabase() {
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Theme toggle for desktop */}
+                <div className="hidden md:block">
+                  <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
+                    {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                  </Button>
+                </div>
                 {/* Mobile menu - shows on tablets and mobile */}
                 <div className="lg:hidden">
                   <Sheet>
@@ -350,6 +379,12 @@ export default function ImageDatabase() {
                           <SheetClose asChild>
                             <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/admin")}>
                               <Wrench className="w-4 h-4" /> Admin Panel
+                            </Button>
+                          </SheetClose>
+                          <SheetClose asChild>
+                            <Button variant="outline" className="w-full justify-start gap-2" onClick={toggleTheme}>
+                              {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                              Toggle Theme
                             </Button>
                           </SheetClose>
                           <SheetClose asChild>

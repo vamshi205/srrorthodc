@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
-import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images } from 'lucide-react';
+import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,6 +24,21 @@ export default function OrthoApp() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const location = useLocation();
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'dark';
+  });
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('srrortho:theme', nextTheme);
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
   // Legacy authentication removed - handled by App.tsx ProtectedRoute
   // const [isAuthenticated, setIsAuthenticated] = useState(...)
 
@@ -874,6 +889,14 @@ export default function OrthoApp() {
               <div className="pt-2 space-y-2">
                 <Button
                   variant="outline"
+                  className="w-full justify-start gap-2 border-border/60 bg-background/50"
+                  onClick={toggleTheme}
+                >
+                  {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                  Theme: {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                </Button>
+                <Button
+                  variant="outline"
                   className="w-full justify-start gap-2"
                   onClick={() => navigate('/admin')}
                 >
@@ -917,7 +940,10 @@ export default function OrthoApp() {
                   <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/admin')}>
                     <Wrench className="w-4 h-4" /> Admin
                   </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout}>
+                  <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
+                    {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100" onClick={handleLogout}>
                     <LogOut className="w-4 h-4" /> Logout
                   </Button>
                 </div>
@@ -992,6 +1018,12 @@ export default function OrthoApp() {
                           <SheetClose asChild>
                             <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/admin')}>
                               <Wrench className="w-4 h-4" /> Admin Panel
+                            </Button>
+                          </SheetClose>
+                          <SheetClose asChild>
+                            <Button variant="outline" className="w-full justify-start gap-2" onClick={toggleTheme}>
+                              {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                              Toggle Theme
                             </Button>
                           </SheetClose>
                           <SheetClose asChild>

@@ -13,7 +13,7 @@ const Admin = () => {
   // const configStatus = getConfigurationStatus();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-hero">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border shadow-sm">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">

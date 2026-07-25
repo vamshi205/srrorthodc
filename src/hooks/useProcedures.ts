@@ -98,20 +98,13 @@ export function useProcedures() {
   const refetchSingleProcedure = useCallback(
     async (procedureName: string): Promise<Procedure | null> => {
       try {
-        // We reuse the cached data if available, or fetch fresh if not
-        const cached = localStorage.getItem(CACHE_KEY);
-        let data: Procedure[] = [];
-
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          data = parsed.data;
-        } else {
-          data = await procedureService.getAll();
-          localStorage.setItem(CACHE_KEY, JSON.stringify({
-            data,
-            timestamp: Date.now()
-          }));
-        }
+        // Fetch fresh data when explicitly refreshing a single procedure
+        const data = await procedureService.getAll();
+        
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          data,
+          timestamp: Date.now()
+        }));
 
         processProcedures(data);
         return data.find(p => p.name === procedureName) || null;

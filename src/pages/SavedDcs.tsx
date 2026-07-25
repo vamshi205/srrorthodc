@@ -31,6 +31,8 @@ import {
   Wallet,
   Wrench,
   X,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +92,21 @@ const SavedDcs = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { fetchProcedures, loading: proceduresLoading } = useProcedures();
+
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'dark';
+  });
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('srrortho:theme', nextTheme);
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
   const [savedDcs, setSavedDcs] = useState<SavedDc[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false); // Loading for action dialogs
@@ -875,6 +892,14 @@ const SavedDcs = () => {
               <div className="pt-2 space-y-2">
                 <Button
                   variant="outline"
+                  className="w-full justify-start gap-2 border-border/60 bg-background/50"
+                  onClick={toggleTheme}
+                >
+                  {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                  Theme: {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                </Button>
+                <Button
+                  variant="outline"
                   className="w-full justify-start gap-2"
                   onClick={handleAdminClick}
                 >
@@ -917,6 +942,9 @@ const SavedDcs = () => {
                 <div className="hidden md:flex items-center gap-2">
                   <Button variant="outline" size="sm" className="gap-2" onClick={handleExportCSV}>
                     <Download className="w-4 h-4" /> Export
+                  </Button>
+                  <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
+                    {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
                   </Button>
                 </div>
 
@@ -968,6 +996,12 @@ const SavedDcs = () => {
                           <SheetClose asChild>
                             <Button variant="outline" className="w-full justify-start gap-2" onClick={handleAdminClick}>
                               <Wrench className="w-4 h-4" /> Admin Panel
+                            </Button>
+                          </SheetClose>
+                          <SheetClose asChild>
+                            <Button variant="outline" className="w-full justify-start gap-2" onClick={toggleTheme}>
+                              {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                              Toggle Theme
                             </Button>
                           </SheetClose>
                           <SheetClose asChild>

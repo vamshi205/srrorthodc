@@ -68,15 +68,15 @@ const Login = () => {
         </div>
 
         {/* Login Card */}
-        <div className="glass-card rounded-2xl p-8 border border-white/20 shadow-2xl backdrop-blur-xl bg-white/40">
+        <div className="glass-card rounded-2xl p-8 border border-white/20 shadow-2xl backdrop-blur-xl">
           <div className="flex items-center gap-2 mb-6">
             <Shield className="w-5 h-5 text-primary" />
-            <h2 className="font-display text-xl font-semibold text-slate-800">Sign In</h2>
+            <h2 className="font-display text-xl font-semibold text-slate-800 dark:text-slate-100">Sign In</h2>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium text-slate-700">
+              <Label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-300">
                 Email Address
               </Label>
               <div className="relative">
@@ -87,14 +87,14 @@ const Login = () => {
                   placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-12 bg-white/50 border-slate-200 focus:border-blue-500 rounded-xl"
+                  className="pl-10 h-12 bg-white/30 dark:bg-slate-900/30 border-white/10 rounded-xl"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium text-slate-700">
+              <Label htmlFor="password" className="text-sm font-medium text-slate-700 dark:text-slate-300">
                 Password
               </Label>
               <div className="relative">
@@ -105,7 +105,7 @@ const Login = () => {
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 h-12 bg-white/50 border-slate-200 focus:border-blue-500 rounded-xl"
+                  className="pl-10 pr-10 h-12 bg-white/30 dark:bg-slate-900/30 border-white/10 rounded-xl"
                   required
                 />
                 <button
@@ -121,7 +121,7 @@ const Login = () => {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full h-12 bg-blue-700 hover:bg-blue-800 text-white rounded-xl shadow-lg transition-all duration-200 active:scale-[0.98] font-semibold"
+              className="w-full h-12 btn-gradient rounded-xl shadow-lg transition-all duration-200 active:scale-[0.98] font-semibold"
             >
               {loading ? (
                 <span className="flex items-center gap-2">
