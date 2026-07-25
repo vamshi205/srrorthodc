@@ -796,127 +796,6 @@ const SavedDcs = () => {
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
       <div className="flex min-h-screen">
-        {/* Left Menu (desktop only - hidden on tablets) */}
-        <aside className="hidden lg:flex w-80 border-r border-border bg-card/70 backdrop-blur-md">
-          <div className="flex flex-col w-full p-4 gap-4 overflow-y-auto">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-                <Activity className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="font-display font-bold truncate">SRR Ortho Implant</div>
-                <div className="text-xs text-muted-foreground">DC Tracker</div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={() => navigate("/?mode=procedure")}
-              >
-                <Plus className="w-4 h-4" /> Procedure List
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={() => navigate("/?mode=manual")}
-              >
-                <Plus className="w-4 h-4" /> Manual DC
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={() => navigate("/images")}
-              >
-                <Images className="w-4 h-4" /> Image Database
-              </Button>
-              <Button
-                variant="default"
-                className="w-full justify-start gap-2"
-                disabled
-              >
-                <List className="w-4 h-4" /> DC Tracker
-              </Button>
-            </div>
-
-            <div className="mt-auto space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold text-muted-foreground">Recent Saved</div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2"
-                  onClick={async () => {
-                    try {
-                      setIsLoading(true);
-                      await fetchProcedures(true);
-                      const dcs = await loadSavedDcs();
-                      setSavedDcs(dcs);
-                      toast({ title: "Data refreshed from Firebase" });
-                    } catch (error) {
-                      toast({ title: "Error refreshing data", variant: 'destructive' });
-                    } finally {
-                      setIsLoading(false);
-                    }
-                  }}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-                </Button>
-              </div>
-              <div className="rounded-xl border border-border/70 bg-background/60 p-2 space-y-1 max-h-48 overflow-y-auto">
-                {savedDcs.length === 0 ? (
-                  <div className="text-xs text-muted-foreground p-2">No saved DCs yet</div>
-                ) : (
-                  savedDcs
-                    .slice()
-                    .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
-                    .slice(0, 6)
-                    .map((dc) => (
-                      <button
-                        key={dc.id}
-                        onClick={() => {
-                          setSelectedDcId(dc.id);
-                          setDetailsDialogOpen(true);
-                        }}
-                        className="w-full text-left px-2 py-1 rounded-lg hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="text-xs font-medium truncate">{dc.hospitalName}</div>
-                        <div className="text-[11px] text-muted-foreground truncate">{dc.dcNo}</div>
-                      </button>
-                    ))
-                )}
-              </div>
-              <div className="pt-2 space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2 border-border/60 bg-background/50"
-                  onClick={toggleTheme}
-                >
-                  {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                  Theme: {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  onClick={handleAdminClick}
-                >
-                  <Wrench className="w-4 h-4" /> Admin Panel
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="w-4 h-4" /> Logout
-                </Button>
-              </div>
-            </div>
-          </div>
-        </aside>
-
         {/* Main Content */}
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
           {/* Top toolbar */}
@@ -938,11 +817,28 @@ const SavedDcs = () => {
                   {activeQueue.toUpperCase()} • {statusCounts[activeQueue]}
                 </Badge>
 
-                {/* Desktop actions */}
-                <div className="hidden md:flex items-center gap-2">
+                <div className="hidden md:flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/?mode=procedure") }>
+                    Procedure List
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/?mode=manual") }>
+                    Manual DC
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/images") }>
+                    Image Database
+                  </Button>
                   <Button variant="outline" size="sm" className="gap-2" onClick={handleExportCSV}>
                     <Download className="w-4 h-4" /> Export
                   </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={handleAdminClick}>
+                    <Wrench className="w-4 h-4" /> Admin
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2 text-red-600" onClick={handleLogout}>
+                    Logout
+                  </Button>
+                </div>
+
+                <div className="hidden md:flex items-center gap-2">
                   <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
                     {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
                   </Button>

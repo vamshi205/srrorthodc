@@ -815,110 +815,12 @@ export default function OrthoApp() {
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
-      <div className="flex min-h-screen">
-        {/* Left Menu (desktop only - hidden on tablets) */}
-        <aside className="hidden lg:flex w-80 border-r border-border bg-card/70 backdrop-blur-md">
-          <div className="flex flex-col w-full p-4 gap-4 overflow-y-auto">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-                <Activity className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="font-display font-bold truncate">SRR Ortho Implant</div>
-                <div className="text-xs text-muted-foreground">DC Generator</div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={() => {
-                  setDcMode('procedure');
-                  setInitialFilterType('All');
-                  setShowProcedureSelector(true);
-                }}
-              >
-                <Plus className="w-4 h-4" /> Procedure List
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={() => {
-                  setDcMode('manual');
-                  setActiveProcedures([]);
-                  setCollapsedProcedures(new Set());
-                  setShowProcedureSelector(false);
-                }}
-              >
-                <Plus className="w-4 h-4" /> Manual DC
-              </Button>
-              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/images')}>
-                <Images className="w-4 h-4" /> Image Database
-              </Button>
-              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/saved')}>
-                <List className="w-4 h-4" /> DC Tracker
-              </Button>
-            </div>
-
-            <div className="mt-auto space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold text-muted-foreground">Recent Saved</div>
-                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => navigate('/saved')}>
-                  <Bookmark className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="rounded-xl border border-border/70 bg-background/60 p-2 space-y-1">
-                {recentSavedDcs.length === 0 ? (
-                  <div className="text-xs text-muted-foreground p-2">No saved DCs yet</div>
-                ) : (
-                  recentSavedDcs.map((dc) => (
-                    <button
-                      key={dc.id}
-                      onClick={() => navigate('/saved')}
-                      className="w-full text-left px-2 py-1 rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="text-xs font-medium truncate">{dc.hospitalName}</div>
-                      <div className="text-[11px] text-muted-foreground truncate">{dc.dcNo}</div>
-                    </button>
-                  ))
-                )}
-              </div>
-
-              <div className="pt-2 space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2 border-border/60 bg-background/50"
-                  onClick={toggleTheme}
-                >
-                  {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                  Theme: {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  onClick={() => navigate('/admin')}
-                >
-                  <Wrench className="w-4 h-4" /> Admin Panel
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="w-4 h-4" /> Logout
-                </Button>
-              </div>
-            </div>
-          </div>
-        </aside>
-
+      <div className="min-h-screen">
         {/* Main Content */}
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
+        <main className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
           {/* Top toolbar (desktop & mobile) */}
           <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-4">
-            <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md px-3 py-2 flex items-center justify-between gap-2">
+            <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md px-3 py-3 flex flex-col gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="md:hidden w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
                   <Activity className="w-4 h-4" />
@@ -928,9 +830,43 @@ export default function OrthoApp() {
                   <div className="text-xs text-muted-foreground truncate">{hospitalName || 'Hospital'} · {dcNo || 'DC'}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {/* Desktop actions */}
-                <div className="hidden md:flex items-center gap-2">
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    setDcMode('procedure');
+                    setInitialFilterType('All');
+                    setShowProcedureSelector(true);
+                  }}
+                >
+                  <Plus className="w-4 h-4" /> Procedure List
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    setDcMode('manual');
+                    setActiveProcedures([]);
+                    setCollapsedProcedures(new Set());
+                    setShowProcedureSelector(false);
+                  }}
+                >
+                  <Plus className="w-4 h-4" /> Manual DC
+                </Button>
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/images')}>
+                  <Images className="w-4 h-4" /> Image Database
+                </Button>
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/saved')}>
+                  <List className="w-4 h-4" /> DC Tracker
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchProcedures(true)} disabled={loading}>
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                   </Button>
@@ -940,101 +876,102 @@ export default function OrthoApp() {
                   <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/admin')}>
                     <Wrench className="w-4 h-4" /> Admin
                   </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
                     {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
                   </Button>
                   <Button variant="outline" size="sm" className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100" onClick={handleLogout}>
                     <LogOut className="w-4 h-4" /> Logout
                   </Button>
-                </div>
+                  <div className="lg:hidden">
+                    <Sheet>
+                      <SheetTrigger asChild>
+                        <Button variant="outline" size="icon" className="h-9 w-9">
+                          <Menu className="h-4 w-4" />
+                        </Button>
+                      </SheetTrigger>
+                      <SheetContent side="left" className="p-4">
+                        <SheetHeader className="pr-10">
+                          <SheetTitle>Menu</SheetTitle>
+                        </SheetHeader>
 
-                {/* Mobile menu - shows on tablets and mobile */}
-                <div className="lg:hidden">
-                  <Sheet>
-                    <SheetTrigger asChild>
-                      <Button variant="outline" size="icon" className="h-9 w-9">
-                        <Menu className="h-4 w-4" />
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent side="left" className="p-4">
-                      <SheetHeader className="pr-10">
-                        <SheetTitle>Menu</SheetTitle>
-                      </SheetHeader>
+                        <div className="mt-4 space-y-4">
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
+                            <SheetClose asChild>
+                              <Button
+                                variant="outline"
+                                className="w-full justify-start gap-2"
+                                onClick={() => {
+                                  setDcMode('procedure');
+                                  setInitialFilterType('All');
+                                  setShowProcedureSelector(true);
+                                }}
+                              >
+                                <Plus className="w-4 h-4" /> Procedure List
+                              </Button>
+                            </SheetClose>
+                            <SheetClose asChild>
+                              <Button
+                                variant="outline"
+                                className="w-full justify-start gap-2"
+                                onClick={() => {
+                                  setDcMode('manual');
+                                  setActiveProcedures([]);
+                                  setCollapsedProcedures(new Set());
+                                  setShowProcedureSelector(false);
+                                }}
+                              >
+                                <Plus className="w-4 h-4" /> Manual DC
+                              </Button>
+                            </SheetClose>
+                            <SheetClose asChild>
+                              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/images')}>
+                                <Images className="w-4 h-4" /> Image Database
+                              </Button>
+                            </SheetClose>
+                            <SheetClose asChild>
+                              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/saved')}>
+                                <List className="w-4 h-4" /> DC Tracker
+                              </Button>
+                            </SheetClose>
+                          </div>
 
-                      <div className="mt-4 space-y-4">
-                        <div className="space-y-2">
-                          <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
-                          <SheetClose asChild>
-                            <Button
-                              variant="outline"
-                              className="w-full justify-start gap-2"
-                              onClick={() => {
-                                setDcMode('procedure');
-                                setInitialFilterType('All');
-                                setShowProcedureSelector(true);
-                              }}
-                            >
-                              <Plus className="w-4 h-4" /> Procedure List
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button
-                              variant="outline"
-                              className="w-full justify-start gap-2"
-                              onClick={() => {
-                                setDcMode('manual');
-                                setActiveProcedures([]);
-                                setCollapsedProcedures(new Set());
-                                setShowProcedureSelector(false);
-                              }}
-                            >
-                              <Plus className="w-4 h-4" /> Manual DC
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/images')}>
-                              <Images className="w-4 h-4" /> Image Database
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/saved')}>
-                              <List className="w-4 h-4" /> DC Tracker
-                            </Button>
-                          </SheetClose>
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold text-muted-foreground">Actions</div>
+                            <SheetClose asChild>
+                              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => fetchProcedures(true)} disabled={loading}>
+                                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh Data
+                              </Button>
+                            </SheetClose>
+                            <SheetClose asChild>
+                              <Button variant="outline" className="w-full justify-start gap-2" onClick={handlePrint}>
+                                <Printer className="w-4 h-4" /> Print
+                              </Button>
+                            </SheetClose>
+                            <SheetClose asChild>
+                              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/admin')}>
+                                <Wrench className="w-4 h-4" /> Admin Panel
+                              </Button>
+                            </SheetClose>
+                            <SheetClose asChild>
+                              <Button variant="outline" className="w-full justify-start gap-2" onClick={toggleTheme}>
+                                {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+                                Toggle Theme
+                              </Button>
+                            </SheetClose>
+                            <SheetClose asChild>
+                              <Button variant="outline" className="w-full justify-start gap-2 text-red-600" onClick={handleLogout}>
+                                <LogOut className="w-4 h-4" /> Logout
+                              </Button>
+                            </SheetClose>
+                          </div>
                         </div>
-
-                        <div className="space-y-2">
-                          <div className="text-xs font-semibold text-muted-foreground">Actions</div>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => fetchProcedures(true)} disabled={loading}>
-                              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh Data
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={handlePrint}>
-                              <Printer className="w-4 h-4" /> Print
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/admin')}>
-                              <Wrench className="w-4 h-4" /> Admin Panel
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={toggleTheme}>
-                              {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                              Toggle Theme
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2 text-red-600" onClick={handleLogout}>
-                              <LogOut className="w-4 h-4" /> Logout
-                            </Button>
-                          </SheetClose>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
+                      </SheetContent>
+                    </Sheet>
+                  </div>
                 </div>
               </div>
             </div>

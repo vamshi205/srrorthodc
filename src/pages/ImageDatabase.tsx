@@ -259,9 +259,7 @@ export default function ImageDatabase() {
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
-      <div className="flex min-h-screen">
-        {/* Left Menu (desktop only - hidden on tablets) */}
-        <aside className="hidden lg:flex w-80 border-r border-border bg-card/70 backdrop-blur-md">
+      <div className="min-h-screen">
           <div className="flex flex-col w-full p-4 gap-4 overflow-y-auto">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
@@ -310,7 +308,6 @@ export default function ImageDatabase() {
               </Button>
             </div>
           </div>
-        </aside>
 
         {/* Main Content */}
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
@@ -330,6 +327,23 @@ export default function ImageDatabase() {
               </div>
 
               <div className="flex items-center gap-2">
+                <div className="hidden md:flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/?mode=procedure") }>
+                    Procedure List
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/?mode=manual") }>
+                    Manual DC
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/saved") }>
+                    DC Tracker
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/admin") }>
+                    Admin
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2 text-red-600" onClick={handleLogout}>
+                    Logout
+                  </Button>
+                </div>
                 {/* Theme toggle for desktop */}
                 <div className="hidden md:block">
                   <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
