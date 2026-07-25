@@ -335,7 +335,7 @@ export function AddProcedureForm() {
 
       resetForm();
       setSelectedProcedureToEdit('__NEW__');
-      fetchProcedures();
+      fetchProcedures(true);
 
     } catch (error: any) {
       console.error("Save error:", error);
@@ -365,7 +365,7 @@ export function AddProcedureForm() {
       toast({ title: 'Deleted', description: `Procedure "${originalProcedureName}" deleted.` });
       resetForm();
       setSelectedProcedureToEdit('__NEW__');
-      fetchProcedures();
+      fetchProcedures(true);
     } catch (error: any) {
       toast({ title: 'Error', description: 'Failed to delete: ' + error.message, variant: 'destructive' });
     } finally {

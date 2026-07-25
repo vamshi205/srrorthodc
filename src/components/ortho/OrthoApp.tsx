@@ -931,7 +931,7 @@ export default function OrthoApp() {
               <div className="flex items-center gap-2">
                 {/* Desktop actions */}
                 <div className="hidden md:flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchProcedures()} disabled={loading}>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchProcedures(true)} disabled={loading}>
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                   </Button>
                   <Button variant="outline" size="sm" className="gap-2" onClick={handlePrint}>
