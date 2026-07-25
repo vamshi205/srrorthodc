@@ -22,6 +22,7 @@ import { InstrumentImageModal } from './InstrumentImageModal';
 
 interface ProcedureCardProps {
   procedure: ActiveProcedure;
+  index?: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onRemove: () => void;
@@ -71,6 +72,7 @@ function splitItemNameByComma(itemName: string): { parts: string[]; hasCommas: b
 
 export function ProcedureCard({
   procedure,
+  index,
   isCollapsed,
   onToggleCollapse,
   onRemove,
@@ -442,40 +444,53 @@ export function ProcedureCard({
   };
 
   return (
-    <div className="glass-card rounded-xl overflow-hidden animate-fade-in border-2 border-border/60 shadow-md">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 bg-muted/50 border-b-2 border-border/60">
+    <div className="glass-card rounded-2xl overflow-hidden animate-fade-in border-2 border-teal-500/30 shadow-lg bg-white mb-6">
+      {/* Premium Active Procedure Header */}
+      <div className="flex flex-wrap items-center justify-between p-4 bg-gradient-to-r from-teal-50 via-slate-50 to-teal-50/40 border-b-2 border-teal-500/20 gap-3">
         <button
           onClick={onToggleCollapse}
-          className="flex items-center gap-2 flex-1 text-left"
+          className="flex items-center gap-2.5 flex-1 text-left min-w-0"
         >
-          {isCollapsed ? (
-            <ChevronDown className="w-5 h-5 text-muted-foreground" />
-          ) : (
-            <ChevronUp className="w-5 h-5 text-muted-foreground" />
-          )}
-          <h3 className="font-display font-semibold text-lg">{procedure.name}</h3>
-          <Badge variant="outline" className="ml-2">
-            {procedure.type}
-          </Badge>
+          <div className="w-8 h-8 rounded-lg bg-teal-600/10 border border-teal-500/30 flex items-center justify-center text-teal-700 shrink-0">
+            {isCollapsed ? (
+              <ChevronDown className="w-5 h-5" />
+            ) : (
+              <ChevronUp className="w-5 h-5" />
+            )}
+          </div>
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+            {typeof index === 'number' && (
+              <Badge className="bg-teal-700 text-white font-extrabold text-xs px-2.5 py-0.5 shadow-sm shrink-0">
+                Procedure #{index + 1}
+              </Badge>
+            )}
+            <h3 className="font-display font-extrabold text-slate-900 text-base sm:text-lg truncate tracking-tight">{procedure.name}</h3>
+            <Badge variant="outline" className="text-teal-700 bg-teal-100/60 border-teal-300 font-semibold text-xs shrink-0">
+              {procedure.type}
+            </Badge>
+          </div>
         </button>
-        <div className="flex items-center gap-2">
-          <Select value={procedure.materialType} onValueChange={onMaterialTypeChange}>
-            <SelectTrigger className="h-8 w-[120px] text-xs bg-background border-2 border-slate-400 shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:border-blue-600">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="SS">SS</SelectItem>
-              <SelectItem value="Titanium">Titanium</SelectItem>
-              <SelectItem value="None">No Prefix</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-slate-300 shadow-xs">
+            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Material:</span>
+            <Select value={procedure.materialType} onValueChange={onMaterialTypeChange}>
+              <SelectTrigger className="h-7 w-[105px] text-xs bg-white font-bold text-teal-800 border-none focus:ring-0 shadow-none p-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SS">SS</SelectItem>
+                <SelectItem value="Titanium">Titanium</SelectItem>
+                <SelectItem value="None">No Prefix</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className="h-8 w-8"
+            className="h-8 w-8 text-slate-600 hover:text-teal-700 hover:bg-teal-100/50 rounded-lg"
+            title="Reset Procedure Items"
           >
             <RefreshCw
               className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
@@ -485,7 +500,8 @@ export function ProcedureCard({
             variant="ghost"
             size="icon"
             onClick={onRemove}
-            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+            className="h-8 w-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+            title="Remove Procedure"
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -495,30 +511,31 @@ export function ProcedureCard({
       {/* Content */}
       {!isCollapsed && (
         <div className="p-4 space-y-6 overflow-visible">
-          {/* Fixed Items */}
+          {/* 1. Fixed Items Section */}
           {procedure.fixedItems.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b-2 border-border/60">
+            <div className="rounded-xl border-2 border-emerald-300/80 bg-emerald-50/40 p-3.5 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-emerald-200">
                 <div className="flex items-center gap-2">
-                  <Package className="w-4 h-4 text-primary" />
+                  <div className="p-1 rounded-lg bg-emerald-600 text-white shadow-2xs">
+                    <Package className="w-4 h-4" />
+                  </div>
                   <div>
-                    <h4 className="text-sm font-semibold">Fixed Items</h4>
-                    <p className="text-xs text-muted-foreground">Pre-defined items with quantities</p>
+                    <h4 className="text-sm font-extrabold text-emerald-950">Fixed Items ({procedure.fixedItems.length})</h4>
+                    <p className="text-[11px] font-semibold text-emerald-700">Pre-defined essential implants with quantities</p>
                   </div>
                 </div>
               </div>
-              <div className="space-y-3 pl-6 border-l-4 border-primary/60">
+              <div className="space-y-2">
                 {procedure.fixedItems.map((fixedItem, fixedIndex) => {
-                  console.log('Rendering fixed item:', fixedItem.name);
                   const isSelected = procedure.selectedFixedItems.get(fixedItem.name) ?? true;
                   const editedQty = procedure.fixedQtyEdits.get(fixedItem.name) ?? fixedItem.qty;
                   return (
                     <div 
                       key={`${procedure.name}-fixed-${fixedIndex}-${fixedItem.name}`} 
-                      className={`item-row flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg transition-all duration-200 ${
+                      className={`flex flex-wrap sm:flex-nowrap items-center gap-2.5 px-3 py-2 rounded-lg transition-colors ${
                         isSelected 
-                          ? 'bg-primary/5 border-2 border-primary/40 shadow-sm' 
-                          : 'bg-muted/30 border-2 border-transparent hover:bg-muted/50 hover:border-border/40'
+                          ? 'bg-white border-2 border-emerald-500 shadow-2xs' 
+                          : 'bg-slate-100/80 border border-slate-200 opacity-60'
                       }`}
                     >
                       <Checkbox
@@ -526,21 +543,17 @@ export function ProcedureCard({
                         onCheckedChange={(checked) =>
                           onFixedItemToggle(fixedItem.name, checked as boolean)
                         }
-                        className="flex-shrink-0"
+                        className="w-5 h-5 rounded-md border-2 border-slate-400 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600 shrink-0 cursor-pointer"
                       />
                       <div className="flex-1 flex items-center gap-1.5 min-w-0 flex-wrap">
                         {(() => {
                           const { parts, hasCommas } = splitItemNameByComma(fixedItem.name);
-                          // Debug: log when we detect commas
-                          if (hasCommas) {
-                            console.log('Fixed item with commas detected:', fixedItem.name, 'Parts:', parts);
-                          }
                           if (hasCommas) {
                             return (
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {parts.map((part, idx) => (
                                   <span key={`${procedure.name}-${fixedItem.name}-${idx}-${part}`} className="inline-flex items-baseline gap-0.5">
-                                    <span className={`text-sm ${isSelected ? 'font-semibold' : 'font-medium'}`}>
+                                    <span className={`text-sm ${isSelected ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}`}>
                                       {part}
                                     </span>
                                     <sup className="inline-block">
@@ -550,15 +563,15 @@ export function ProcedureCard({
                                           e.preventDefault();
                                           onRemoveFixedItemPart(fixedItem.name, part);
                                         }}
-                                        className="hover:bg-destructive/30 rounded-full p-0.5 transition-colors text-destructive flex-shrink-0 ml-0.5"
+                                        className="hover:bg-rose-100 rounded-full p-0.5 text-rose-600 flex-shrink-0 ml-0.5"
                                         title={`Remove ${part}`}
                                         type="button"
                                       >
-                                        <X className="w-2 h-2" />
+                                        <X className="w-2.5 h-2.5" />
                                       </button>
                                     </sup>
                                     {idx < parts.length - 1 && (
-                                      <span className="text-muted-foreground">,</span>
+                                      <span className="text-slate-400 font-bold">,</span>
                                     )}
                                   </span>
                                 ))}
@@ -566,7 +579,7 @@ export function ProcedureCard({
                             );
                           }
                           return (
-                            <span className={`text-sm ${isSelected ? 'font-semibold' : 'font-medium'} min-w-0 break-words sm:break-normal`}>
+                            <span className={`text-sm ${isSelected ? 'font-bold text-slate-900' : 'font-medium text-slate-600'} min-w-0 break-words`}>
                               {fixedItem.name}
                             </span>
                           );
@@ -574,7 +587,7 @@ export function ProcedureCard({
                         {procedure.fixedItemImageMapping?.[fixedItem.name] && (
                           <button
                             onClick={() => handleShowFixedItemImage(fixedItem.name)}
-                            className="hover:bg-primary/20 rounded-full p-0.5 transition-colors text-primary flex-shrink-0"
+                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-full p-1 transition-colors shrink-0 border border-emerald-300"
                             title={`View image of ${fixedItem.name}`}
                           >
                             <Info className="w-3.5 h-3.5" />
@@ -582,26 +595,22 @@ export function ProcedureCard({
                         )}
                         {procedure.fixedItemLocationMapping?.[fixedItem.name] && (
                           <span 
-                            className="text-[10px] text-muted-foreground ml-1.5 px-1.5 py-0.5 bg-muted/50 rounded"
+                            className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300"
                             title={`Room: ${procedure.fixedItemLocationMapping[fixedItem.name]?.room || '-'}, Rack: ${procedure.fixedItemLocationMapping[fixedItem.name]?.rack || '-'}, Box: ${procedure.fixedItemLocationMapping[fixedItem.name]?.box || '-'}`}
                           >
-                            <MapPin className="w-2.5 h-2.5 inline mr-0.5" />
+                            <MapPin className="w-2.5 h-2.5 inline mr-0.5 text-emerald-600" />
                             {procedure.fixedItemLocationMapping[fixedItem.name]?.room || '-'}/{procedure.fixedItemLocationMapping[fixedItem.name]?.rack || '-'}/{procedure.fixedItemLocationMapping[fixedItem.name]?.box || '-'}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 w-full sm:w-auto justify-end sm:justify-start">
-                        <span className="text-xs font-medium text-muted-foreground whitespace-nowrap hidden sm:inline">Qty:</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-xs font-bold text-emerald-950">Qty:</span>
                         <Input
                           type="number"
                           min="1"
                           value={editedQty}
                           onChange={(e) => onFixedQtyChange(fixedItem.name, e.target.value)}
-                          className={`w-16 sm:w-24 h-8 sm:h-9 text-center font-semibold border transition-all text-xs sm:text-sm ${
-                            isSelected 
-                              ? 'border-primary focus:border-primary focus:ring-2 focus:ring-primary/20 bg-background' 
-                              : 'border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 bg-muted/50'
-                          }`}
+                          className="w-16 h-8 text-center font-extrabold border-2 border-emerald-400 bg-white text-slate-900 rounded-lg text-xs"
                         />
                       </div>
                     </div>
@@ -611,22 +620,23 @@ export function ProcedureCard({
             </div>
           )}
 
-          {/* Editable Items */}
-          <div className="space-y-3 pt-2 border-t-2 border-border/60">
-            <div className="flex items-center justify-between pb-2 border-b border-border">
+          {/* 2. Selectable Items Section */}
+          <div className="rounded-xl border-2 border-blue-300/80 bg-blue-50/40 p-3.5 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-blue-200">
               <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-blue-600" />
+                <div className="p-1 rounded-lg bg-blue-600 text-white shadow-2xs">
+                  <Package className="w-4 h-4" />
+                </div>
                 <div>
-                  <h4 className="text-sm font-semibold">Selectable Items</h4>
-                  <p className="text-xs text-muted-foreground">Choose items and specify sizes/quantities</p>
+                  <h4 className="text-sm font-extrabold text-blue-950">Selectable Items ({procedure.items.length})</h4>
+                  <p className="text-[11px] font-semibold text-blue-700">Choose optional implants and configure sizes/quantities</p>
                 </div>
               </div>
             </div>
             {procedure.items.length > 0 ? (
-              <div className="space-y-3 pl-6 border-l-4 border-primary/60">
+              <div className="space-y-2.5">
                 {procedure.items.map((item, itemIndex) => {
                   const parsed = parseSizeQtyFromItem(item);
-                  console.log('Rendering selectable item:', parsed.name);
                   const selectedItem = procedure.selectedItems.get(parsed.name);
                   const isSelected = !!selectedItem;
                   const sizeQty = selectedItem?.sizeQty || parsed.sizeQty;
@@ -634,45 +644,43 @@ export function ProcedureCard({
 
                   return (
                     <div key={`${procedure.name}-item-${itemIndex}-${item}`} className="space-y-2">
-                      <div className={`item-row flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg transition-all duration-200 ${
+                      <div className={`flex flex-wrap sm:flex-nowrap items-center gap-2.5 px-3 py-2 rounded-lg transition-colors ${
                         isSelected 
-                          ? 'bg-primary/5 border-2 border-primary/40 shadow-sm' 
-                          : 'bg-muted/30 border-2 border-transparent hover:bg-muted/50 hover:border-border/40'
+                          ? 'bg-white border-2 border-blue-500 shadow-2xs' 
+                          : 'bg-slate-100/80 border border-slate-200 opacity-60'
                       }`}>
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={(checked) => {
                             onItemToggle(parsed.name, checked as boolean);
-                            if (checked) {
-                              // Auto-show details when selected
-                              setShowDetails((prev) => {
-                                const next = new Set(prev);
+                            setShowDetails((prev) => {
+                              const next = new Set(prev);
+                              if (checked) {
                                 next.add(parsed.name);
-                                return next;
-                              });
+                              } else {
+                                next.delete(parsed.name);
+                              }
+                              return next;
+                            });
+                            if (checked) {
                               if (parsed.sizeQty.length > 0) {
                                 onSizeQtyChange(parsed.name, parsed.sizeQty);
                               } else {
-                                // Initialize with one empty size/qty if none exist
                                 onSizeQtyChange(parsed.name, [{ size: '', qty: '1' }]);
                               }
                             }
                           }}
-                          className="flex-shrink-0"
+                          className="w-5 h-5 rounded border-2 border-slate-500 bg-white data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600 shrink-0 cursor-pointer"
                         />
                         <div className="flex-1 flex items-center gap-1.5 min-w-0 flex-wrap">
                           {(() => {
                             const { parts, hasCommas } = splitItemNameByComma(parsed.name);
-                            // Debug: log when we detect commas
-                            if (hasCommas) {
-                              console.log('Selectable item with commas detected:', parsed.name, 'Parts:', parts);
-                            }
                             if (hasCommas) {
                               return (
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   {parts.map((part, idx) => (
                                     <span key={`${procedure.name}-${parsed.name}-${idx}-${part}`} className="inline-flex items-baseline gap-0.5">
-                                      <span className={`text-sm ${isSelected ? 'font-semibold' : 'font-medium'}`}>
+                                      <span className={`text-sm ${isSelected ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}`}>
                                         {part}
                                       </span>
                                       <sup className="inline-block">
@@ -682,15 +690,15 @@ export function ProcedureCard({
                                             e.preventDefault();
                                             onRemoveSelectableItemPart(parsed.name, part);
                                           }}
-                                          className="hover:bg-destructive/30 rounded-full p-0.5 transition-colors text-destructive flex-shrink-0 ml-0.5"
+                                          className="hover:bg-rose-100 rounded-full p-0.5 text-rose-600 flex-shrink-0 ml-0.5"
                                           title={`Remove ${part}`}
                                           type="button"
                                         >
-                                          <X className="w-2 h-2" />
+                                          <X className="w-2.5 h-2.5" />
                                         </button>
                                       </sup>
                                       {idx < parts.length - 1 && (
-                                        <span className="text-muted-foreground">,</span>
+                                        <span className="text-slate-400 font-bold">,</span>
                                       )}
                                     </span>
                                   ))}
@@ -698,7 +706,7 @@ export function ProcedureCard({
                               );
                             }
                             return (
-                              <span className={`text-sm ${isSelected ? 'font-semibold' : 'font-medium'} min-w-0 break-words sm:break-normal`}>
+                              <span className={`text-sm ${isSelected ? 'font-bold text-slate-900' : 'font-medium text-slate-600'} min-w-0 break-words`}>
                                 {parsed.name}
                               </span>
                             );
@@ -706,7 +714,7 @@ export function ProcedureCard({
                           {procedure.itemImageMapping?.[parsed.name] && (
                             <button
                               onClick={() => handleShowSelectableItemImage(parsed.name)}
-                              className="ml-1 hover:bg-primary/20 rounded-full p-0.5 transition-colors text-primary flex-shrink-0"
+                              className="bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-full p-1 transition-colors shrink-0 border border-blue-300"
                               title={`View image of ${parsed.name}`}
                             >
                               <Info className="w-3.5 h-3.5" />
@@ -714,41 +722,53 @@ export function ProcedureCard({
                           )}
                           {procedure.itemLocationMapping?.[parsed.name] && (
                             <span 
-                              className="text-[10px] text-muted-foreground ml-1.5 px-1.5 py-0.5 bg-muted/50 rounded"
+                              className="text-[10px] font-bold text-blue-800 bg-blue-100/90 px-2 py-0.5 rounded border border-blue-300"
                               title={`Room: ${procedure.itemLocationMapping[parsed.name]?.room || '-'}, Rack: ${procedure.itemLocationMapping[parsed.name]?.rack || '-'}, Box: ${procedure.itemLocationMapping[parsed.name]?.box || '-'}`}
                             >
-                              <MapPin className="w-2.5 h-2.5 inline mr-0.5" />
+                              <MapPin className="w-2.5 h-2.5 inline mr-0.5 text-blue-600" />
                               {procedure.itemLocationMapping[parsed.name]?.room || '-'}/{procedure.itemLocationMapping[parsed.name]?.rack || '-'}/{procedure.itemLocationMapping[parsed.name]?.box || '-'}
                             </span>
                           )}
                         </div>
                         {isSelected && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleItemDetails(parsed.name)}
-                            className="h-6 sm:h-7 text-[10px] sm:text-xs text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 sm:px-2"
-                          >
-                            <span className="hidden sm:inline">{showItemDetails ? 'Hide Sizes' : 'Show Sizes'}</span>
-                            <span className="sm:hidden">{showItemDetails ? 'Hide' : 'Sizes'}</span>
-                          </Button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-xs font-bold text-blue-950">Qty:</span>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={sizeQty[0]?.qty || '1'}
+                              onChange={(e) => {
+                                const currentSize = sizeQty[0]?.size || '';
+                                onSizeQtyChange(parsed.name, [{ size: currentSize, qty: e.target.value }]);
+                              }}
+                              className="w-16 h-8 text-center font-extrabold border-2 border-blue-400 bg-white text-slate-900 rounded-lg text-xs"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => toggleItemDetails(parsed.name)}
+                              className="h-8 text-xs font-bold text-blue-800 border-blue-300 hover:bg-blue-100 px-2.5 rounded-lg"
+                            >
+                              <span>{showItemDetails ? 'Hide Sizes' : 'Sizes'}</span>
+                            </Button>
+                          </div>
                         )}
                       </div>
 
-                      {/* Size/Qty Editor */}
+                      {/* Size/Qty Rows */}
                       {isSelected && showItemDetails && (
-                        <div className="ml-6 sm:ml-8 space-y-2 pt-2">
+                        <div className="ml-6 sm:ml-8 space-y-2 p-3 bg-white rounded-xl border-2 border-blue-300/80 shadow-xs">
                           {sizeQty.map((sq, index) => (
-                            <div key={index} className="flex items-center gap-1.5 sm:gap-2">
+                            <div key={index} className="flex items-center gap-2">
                               <Input
-                                placeholder="Size (e.g., 6mm)"
+                                placeholder="Size (e.g., 6.0mm x 34,36)"
                                 value={sq.size}
                                 onChange={(e) => {
                                   const updated = [...sizeQty];
                                   updated[index] = { ...sq, size: e.target.value };
                                   onSizeQtyChange(parsed.name, updated);
                                 }}
-                                className="flex-1 h-8 sm:h-9 text-xs sm:text-sm border border-primary focus:border-primary focus:ring-2 focus:ring-primary/20 bg-background"
+                                className="flex-1 h-8 text-xs sm:text-sm font-semibold border-2 border-blue-300 focus:border-blue-500 bg-white rounded-lg"
                               />
                               <Input
                                 type="number"
@@ -760,20 +780,20 @@ export function ProcedureCard({
                                   updated[index] = { ...sq, qty: e.target.value };
                                   onSizeQtyChange(parsed.name, updated);
                                 }}
-                                className="w-16 sm:w-24 h-8 sm:h-9 text-xs sm:text-sm text-center font-semibold border border-primary focus:border-primary focus:ring-2 focus:ring-primary/20 bg-background"
+                                className="w-16 sm:w-20 h-8 text-xs sm:text-sm text-center font-extrabold border-2 border-blue-300 focus:border-blue-500 bg-white rounded-lg"
                               />
                               {sizeQty.length > 1 && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                                  className="h-8 w-8 text-rose-500 hover:bg-rose-50 rounded-lg"
                                   onClick={() => {
                                     const updated = sizeQty.filter((_, i) => i !== index);
                                     onSizeQtyChange(parsed.name, updated);
                                   }}
                                   title="Remove"
                                 >
-                                  <X className="w-3 h-3" />
+                                  <X className="w-3.5 h-3.5" />
                                 </Button>
                               )}
                               {index === sizeQty.length - 1 && (
@@ -786,10 +806,10 @@ export function ProcedureCard({
                                       { size: '', qty: '1' },
                                     ]);
                                   }}
-                                  className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                                  title="Add Size"
+                                  className="h-8 w-8 text-blue-600 hover:bg-blue-100 rounded-lg"
+                                  title="Add Size Row"
                                 >
-                                  <Plus className="w-3 h-3" />
+                                  <Plus className="w-4 h-4" />
                                 </Button>
                               )}
                             </div>
@@ -801,17 +821,16 @@ export function ProcedureCard({
                 })}
               </div>
             ) : (
-              <div className="pl-6 border-l-4 border-blue-600/60 border-2 border-blue-600/40 rounded-lg bg-blue-50/30 py-4 text-center text-sm text-muted-foreground">
-                No items available. Add items below.
+              <div className="py-2.5 text-center text-xs font-semibold text-slate-500 bg-white rounded-lg border border-slate-200">
+                No optional items configured. Add a custom item below.
               </div>
             )}
 
-            {/* Add new item input */}
-            <div className="relative pl-6 border-l-4 border-blue-600/60 pt-3 pb-2 border-2 border-blue-600/40 rounded-lg bg-blue-50/30 p-4 overflow-visible">
-              <label className="text-xs font-semibold text-blue-900 mb-2 block">Add New Item</label>
-              <div ref={itemInputRef} className="flex gap-2 relative">
+            {/* Add Custom Item */}
+            <div className="pt-1">
+              <div ref={itemInputRef} className="flex gap-2">
                 <Input
-                  placeholder="Type item name..."
+                  placeholder="Type custom item name..."
                   value={newItem}
                   onChange={(e) => handleItemInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -822,125 +841,72 @@ export function ProcedureCard({
                       } else {
                         handleAddItem();
                       }
-                    } else if (e.key === 'ArrowDown') {
-                      if (showItemSuggestions && itemSuggestions.length > 0) {
-                        e.preventDefault();
-                        setItemSuggestionActiveIndex((idx) => {
-                          const next = idx < 0 ? 0 : Math.min(idx + 1, itemSuggestions.length - 1);
-                          return next;
-                        });
-                      }
-                    } else if (e.key === 'ArrowUp') {
-                      if (showItemSuggestions && itemSuggestions.length > 0) {
-                        e.preventDefault();
-                        setItemSuggestionActiveIndex((idx) => {
-                          const next = idx < 0 ? itemSuggestions.length - 1 : Math.max(idx - 1, 0);
-                          return next;
-                        });
-                      }
-                    } else if (e.key === 'Escape') {
-                      setShowItemSuggestions(false);
-                      setItemSuggestionActiveIndex(-1);
-                      setItemDropdownPos(null);
                     }
                   }}
-                  className="flex-1 h-9 border-2 border-blue-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-300"
-                  onBlur={() => setTimeout(() => {
-                    setShowItemSuggestions(false);
-                    setItemSuggestionActiveIndex(-1);
-                    setItemDropdownPos(null);
-                  }, 100)}
+                  className="flex-1 h-9 border-2 border-blue-400 focus:border-blue-600 bg-white text-xs sm:text-sm font-semibold rounded-lg"
                 />
                 <Button
                   size="sm"
                   onClick={() => handleAddItem()}
                   disabled={!newItem.trim()}
-                  className="h-9 border-2 border-blue-500 hover:border-blue-600"
+                  className="h-9 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm"
                   title="Add item to list"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4 mr-1" /> Add Item
                 </Button>
               </div>
             </div>
           </div>
 
-          {/* Instruments */}
-          <div className="space-y-3 pt-2 border-t-2 border-border/60">
-            <div className="flex items-center justify-between pb-2 border-b border-border">
+          {/* 3. Instruments Section */}
+          <div className="rounded-xl border-2 border-amber-300/80 bg-amber-50/40 p-3.5 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-amber-200">
               <div className="flex items-center gap-2">
-                <Wrench className="w-4 h-4 text-orange-600" />
+                <div className="p-1 rounded-lg bg-amber-500 text-slate-950 shadow-2xs">
+                  <Wrench className="w-4 h-4" />
+                </div>
                 <div>
-                  <h4 className="text-sm font-semibold">Instruments</h4>
-                  <p className="text-xs text-muted-foreground">Tools and equipment needed</p>
+                  <h4 className="text-sm font-extrabold text-amber-950">Instruments ({procedure.instruments.length})</h4>
+                  <p className="text-[11px] font-semibold text-amber-800">Surgical instrument sets & tools required</p>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className="h-8 text-xs"
-                title="Refresh instruments from Google Sheet"
-              >
-                <RefreshCw
-                  className={`w-3 h-3 mr-1 ${isRefreshing ? 'animate-spin' : ''}`}
-                />
-                Refresh
-              </Button>
             </div>
             {procedure.instruments.length > 0 ? (
-              <div className="pl-6 border-l-4 border-orange-600/60">
-                <div className="flex flex-wrap gap-2">
-                  {procedure.instruments.map((instrument, instIndex) => {
-                    const hasImage = procedure.instrumentImageMapping?.[instrument] || null;
-                    return (
-                      <div key={`${procedure.name}-instrument-${instIndex}-${instrument}`} className="flex flex-col gap-1">
-                        <Badge
-                          variant="secondary"
-                          className="pl-3 pr-1.5 py-1.5 flex items-center gap-1.5 hover:bg-secondary/80 transition-colors"
+              <div className="flex flex-wrap gap-2 pt-1">
+                {procedure.instruments.map((instrument, instIndex) => {
+                  const hasImage = procedure.instrumentImageMapping?.[instrument] || null;
+                  return (
+                    <div key={`${procedure.name}-instrument-${instIndex}-${instrument}`} className="flex items-center gap-1.5 bg-white border-2 border-amber-300/90 px-3 py-1.5 rounded-xl shadow-2xs">
+                      <span className="text-xs font-bold text-slate-900">{instrument}</span>
+                      {hasImage && (
+                        <button
+                          onClick={() => handleShowInstrumentImage(instrument)}
+                          className="bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-full p-1 transition-colors border border-amber-300"
+                          title={`View image of ${instrument}`}
                         >
-                          <span className="text-sm">{instrument}</span>
-                          {hasImage && (
-                            <button
-                              onClick={() => handleShowInstrumentImage(instrument)}
-                              className="ml-1 hover:bg-primary/20 rounded-full p-0.5 transition-colors text-primary"
-                              title={`View image of ${instrument}`}
-                            >
-                              <Info className="w-3 h-3" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => onRemoveInstrument(instrument)}
-                            className="ml-1 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
-                            title="Remove instrument"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </Badge>
-                        {procedure.instrumentLocationMapping?.[instrument] && (
-                          <span 
-                            className="text-[10px] text-muted-foreground px-1.5 py-0.5 bg-muted/50 rounded inline-block mt-0.5"
-                            title={`Room: ${procedure.instrumentLocationMapping[instrument]?.room || '-'}, Rack: ${procedure.instrumentLocationMapping[instrument]?.rack || '-'}, Box: ${procedure.instrumentLocationMapping[instrument]?.box || '-'}`}
-                          >
-                            <MapPin className="w-2.5 h-2.5 inline mr-0.5" />
-                            {procedure.instrumentLocationMapping[instrument]?.room || '-'}/{procedure.instrumentLocationMapping[instrument]?.rack || '-'}/{procedure.instrumentLocationMapping[instrument]?.box || '-'}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onRemoveInstrument(instrument)}
+                        className="hover:bg-rose-100 rounded-full p-1 text-rose-600 ml-0.5 transition-colors"
+                        title="Remove instrument"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <div className="pl-6 border-l-4 border-orange-600/60 py-4 text-center text-sm text-muted-foreground">
-                No instruments. Add instruments below.
+              <div className="py-2.5 text-center text-xs font-semibold text-slate-500 bg-white rounded-lg border border-slate-200">
+                No instruments added for this procedure.
               </div>
             )}
 
             {/* Add Instrument */}
-            <div className="relative pl-6 border-l-4 border-orange-600/60 pt-3 pb-2 border-2 border-orange-600/40 rounded-lg bg-orange-50/30 p-4 overflow-visible">
-              <label className="text-xs font-semibold text-orange-900 mb-2 block">Add New Instrument</label>
-              <div ref={instrumentInputRef} className="flex gap-2 relative">
+            <div className="pt-1">
+              <div ref={instrumentInputRef} className="flex gap-2">
                 <Input
                   placeholder="Type instrument name..."
                   value={newInstrument}
@@ -957,84 +923,62 @@ export function ProcedureCard({
                         }
                       }
                       handleAddInstrument(newInstrument);
-                    } else if (e.key === 'ArrowDown') {
-                      if (suggestions.length > 0) {
-                        e.preventDefault();
-                        setInstrumentSuggestionActiveIndex((idx) => {
-                          const next = idx < 0 ? 0 : Math.min(idx + 1, suggestions.length - 1);
-                          return next;
-                        });
-                      }
-                    } else if (e.key === 'ArrowUp') {
-                      if (suggestions.length > 0) {
-                        e.preventDefault();
-                        setInstrumentSuggestionActiveIndex((idx) => {
-                          const next = idx < 0 ? suggestions.length - 1 : Math.max(idx - 1, 0);
-                          return next;
-                        });
-                      }
-                    } else if (e.key === 'Escape') {
-                      setSuggestions([]);
-                      setInstrumentSuggestionActiveIndex(-1);
-                      setInstrumentDropdownPos(null);
                     }
                   }}
-                  className="flex-1 h-9 border-2 border-orange-400 focus:border-orange-600 focus:ring-2 focus:ring-orange-300"
+                  className="flex-1 h-9 border-2 border-amber-400 focus:border-amber-600 bg-white text-xs sm:text-sm font-semibold rounded-lg"
                 />
                 <Button
                   size="sm"
                   onClick={() => handleAddInstrument(newInstrument)}
                   disabled={!newInstrument.trim()}
-                  className="h-9 border-2 border-orange-500 hover:border-orange-600"
+                  className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg shadow-sm"
                   title="Add instrument to list"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4 mr-1" /> Add Instrument
                 </Button>
               </div>
             </div>
           </div>
 
-          {/* Box Details */}
-          <div className="space-y-3 pt-2 border-t-2 border-border/60">
-            <div className="flex items-center justify-between pb-2 border-b border-border">
+          {/* 4. Box Details Section */}
+          <div className="rounded-xl border-2 border-teal-300/80 bg-teal-50/40 p-3.5 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-teal-200">
               <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-blue-600" />
+                <div className="p-1 rounded-lg bg-teal-600 text-white shadow-2xs">
+                  <Package className="w-4 h-4" />
+                </div>
                 <div>
-                  <h4 className="text-sm font-semibold">Box Details</h4>
-                  <p className="text-xs text-muted-foreground">Box numbers for this procedure</p>
+                  <h4 className="text-sm font-extrabold text-teal-950">Box Details ({procedure.boxNumbers?.length || 0})</h4>
+                  <p className="text-[11px] font-semibold text-teal-800">Assigned container box numbers</p>
                 </div>
               </div>
             </div>
             {procedure.boxNumbers && procedure.boxNumbers.length > 0 ? (
-              <div className="pl-6 border-l-4 border-blue-600/60">
-                <div className="flex flex-wrap gap-2">
-                  {procedure.boxNumbers.map((boxNumber, index) => (
-                    <Badge
-                      key={index}
-                      variant="secondary"
-                      className="pl-3 pr-1.5 py-1.5 flex items-center gap-1.5 hover:bg-secondary/80 transition-colors"
+              <div className="flex flex-wrap gap-2 pt-1">
+                {procedure.boxNumbers.map((boxNumber, index) => (
+                  <Badge
+                    key={index}
+                    className="pl-3 pr-1.5 py-1 flex items-center gap-1.5 bg-white border-2 border-teal-400 text-slate-900 font-bold shadow-2xs"
+                  >
+                    <span className="text-xs">{boxNumber}</span>
+                    <button
+                      onClick={() => onRemoveBox(index)}
+                      className="hover:bg-rose-100 rounded-full p-0.5 text-rose-600 transition-colors"
+                      title="Remove box number"
                     >
-                      <span className="text-sm">{boxNumber}</span>
-                      <button
-                        onClick={() => onRemoveBox(index)}
-                        className="ml-1 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
-                        title="Remove box number"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
+                      <X className="w-3 h-3" />
+                    </button>
+                  </Badge>
+                ))}
               </div>
             ) : (
-              <div className="pl-6 border-l-4 border-blue-600/60 py-4 text-center text-sm text-muted-foreground">
+              <div className="py-2.5 text-center text-xs font-semibold text-slate-500 bg-white rounded-lg border border-slate-200">
                 No box numbers added. Add box numbers below.
               </div>
             )}
 
             {/* Add Box Number */}
-            <div className="relative pl-6 border-l-4 border-blue-600/60 pt-3 pb-2 border-2 border-blue-600/40 rounded-lg bg-blue-50/30 p-4 overflow-visible">
-              <label className="text-xs font-semibold text-blue-900 mb-2 block">Add Box Number</label>
+            <div className="pt-1">
               <div className="flex gap-2">
                 <Input
                   placeholder="Enter box number..."
@@ -1048,7 +992,7 @@ export function ProcedureCard({
                       }
                     }
                   }}
-                  className="flex-1 h-9 border-2 border-blue-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-300"
+                  className="flex-1 h-9 border-2 border-teal-400 focus:border-teal-600 bg-white text-xs sm:text-sm font-semibold rounded-lg"
                 />
                 <Button
                   size="sm"
@@ -1059,10 +1003,9 @@ export function ProcedureCard({
                     }
                   }}
                   disabled={!newBoxNumber.trim()}
-                  className="h-9 border-2 border-blue-500 hover:border-blue-600"
-                  title="Add box number"
+                  className="h-9 px-3 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg shadow-sm"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4 mr-1" /> Add Box
                 </Button>
               </div>
             </div>

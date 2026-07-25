@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 
 import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
 import { ProcedureSelector } from "@/components/ortho/ProcedureSelector";
+import { TopToolbar } from "@/components/ortho/TopToolbar";
 import { useProcedures } from "@/hooks/useProcedures";
 import { auth } from "@/firebase";
 import type { Location, Procedure } from "@/types/procedure";
@@ -77,7 +78,7 @@ const extractBaseItemName = (raw: string) => raw.match(/^(.+?)\s*\{/)?.[1]?.trim
 
 export default function ImageDatabase() {
   const navigate = useNavigate();
-  const { procedures, procedureTypes, loading, error, searchProcedures } = useProcedures();
+  const { procedures, procedureTypes, loading, error, searchProcedures, fetchProcedures } = useProcedures();
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'dark';
@@ -260,160 +261,23 @@ export default function ImageDatabase() {
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
       <div className="min-h-screen">
-          <div className="flex flex-col w-full p-4 gap-4 overflow-y-auto">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-                <Activity className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="font-display font-bold truncate">SRR Ortho Implant</div>
-                <div className="text-xs text-muted-foreground">Image Database</div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
-              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=procedure")}>
-                <Plus className="w-4 h-4" /> Procedure List
-              </Button>
-              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=manual")}>
-                <Plus className="w-4 h-4" /> Manual DC
-              </Button>
-              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/saved")}>
-                <List className="w-4 h-4" /> DC Tracker
-              </Button>
-              <Button variant="default" className="w-full justify-start gap-2">
-                <Images className="w-4 h-4" /> Image Database
-              </Button>
-            </div>
-
-            <div className="mt-auto space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2 border-border/60 bg-background/50"
-                onClick={toggleTheme}
-              >
-                {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                Theme: {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={() => navigate("/admin")}
-              >
-                <Wrench className="w-4 h-4" /> Admin Panel
-              </Button>
-              <Button variant="outline" className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100" onClick={handleLogout}>
-                <LogOut className="w-4 h-4" /> Logout
-              </Button>
-            </div>
-          </div>
-
         {/* Main Content */}
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
           {/* Top toolbar */}
-          <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-4">
-            <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md px-3 py-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="md:hidden w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-                  <Activity className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-display font-semibold truncate">Image Database</div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {selectedProcedure ? selectedProcedure.name : "Search a procedure to view images"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="hidden md:flex flex-wrap items-center gap-2">
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/?mode=procedure") }>
-                    Procedure List
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/?mode=manual") }>
-                    Manual DC
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/saved") }>
-                    DC Tracker
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/admin") }>
-                    Admin
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2 text-red-600" onClick={handleLogout}>
-                    Logout
-                  </Button>
-                </div>
-                {/* Theme toggle for desktop */}
-                <div className="hidden md:block">
-                  <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
-                    {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                  </Button>
-                </div>
-                {/* Mobile menu - shows on tablets and mobile */}
-                <div className="lg:hidden">
-                  <Sheet>
-                    <SheetTrigger asChild>
-                      <Button variant="outline" size="icon" className="h-9 w-9">
-                        <Menu className="h-4 w-4" />
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent side="left" className="p-4">
-                      <SheetHeader className="pr-10">
-                        <SheetTitle>Menu</SheetTitle>
-                      </SheetHeader>
-
-                      <div className="mt-4 space-y-4">
-                        <div className="space-y-2">
-                          <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=procedure")}>
-                              <Plus className="w-4 h-4" /> Procedure List
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=manual")}>
-                              <Plus className="w-4 h-4" /> Manual DC
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/saved")}>
-                              <List className="w-4 h-4" /> DC Tracker
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="default" className="w-full justify-start gap-2">
-                              <Images className="w-4 h-4" /> Image Database
-                            </Button>
-                          </SheetClose>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="text-xs font-semibold text-muted-foreground">Actions</div>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/admin")}>
-                              <Wrench className="w-4 h-4" /> Admin Panel
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={toggleTheme}>
-                              {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                              Toggle Theme
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2 text-red-600" onClick={handleLogout}>
-                              <LogOut className="w-4 h-4" /> Logout
-                            </Button>
-                          </SheetClose>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
-                </div>
-              </div>
-            </div>
-          </div>
+          <TopToolbar
+            theme={theme}
+            toggleTheme={toggleTheme}
+            fetchProcedures={fetchProcedures}
+            loading={loading}
+            handlePrint={() => {}}
+            navigate={navigate}
+            handleLogout={handleLogout}
+            setDcMode={(mode) => navigate(`/?mode=${mode}`)}
+            setInitialFilterType={() => {}}
+            setShowProcedureSelector={() => {}}
+            setActiveProcedures={() => {}}
+            setCollapsedProcedures={() => {}}
+          />
 
           <div className="space-y-6">
             <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md">

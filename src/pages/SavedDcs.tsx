@@ -36,6 +36,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
+import { TopToolbar } from "@/components/ortho/TopToolbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -512,11 +514,12 @@ const SavedDcs = () => {
   };
 
   const getStatusBadgeClass = (status: SavedDcStatus) => {
-    if (status === "pending") return "bg-destructive/10 text-destructive border-destructive/20";
-    if (status === "returned") return "bg-indigo-100 text-indigo-800 border-indigo-200";
-    if (status === "cash") return "bg-blue-100 text-blue-800 border-blue-200";
-    if (status === "cancelled") return "bg-slate-100 text-slate-800 border-slate-200";
-    return "bg-green-100 text-green-800 border-green-200";
+    if (status === "pending") return "bg-rose-100 text-rose-800 border-rose-300 font-bold";
+    if (status === "returned") return "bg-teal-100 text-teal-800 border-teal-300 font-bold";
+    if (status === "completed") return "bg-teal-100 text-teal-900 border-teal-400 font-bold";
+    if (status === "cash") return "bg-blue-100 text-blue-800 border-blue-300 font-bold";
+    if (status === "cancelled") return "bg-slate-100 text-slate-700 border-slate-300 font-bold";
+    return "bg-slate-100 text-slate-700 border-slate-200";
   };
 
   const getStatusIcon = (status: SavedDcStatus) => {
@@ -799,176 +802,76 @@ const SavedDcs = () => {
         {/* Main Content */}
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
           {/* Top toolbar */}
-          <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-4">
-            <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md px-3 py-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="md:hidden w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-                  <Activity className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-display font-semibold truncate">DC Tracker</div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {savedDcs.length} DCs · {statusCounts.pending} pending
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="hidden md:inline-flex border-slate-300 text-slate-700">
-                  {activeQueue.toUpperCase()} • {statusCounts[activeQueue]}
-                </Badge>
-
-                <div className="hidden md:flex flex-wrap items-center gap-2">
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/?mode=procedure") }>
-                    Procedure List
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/?mode=manual") }>
-                    Manual DC
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate("/images") }>
-                    Image Database
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={handleExportCSV}>
-                    <Download className="w-4 h-4" /> Export
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={handleAdminClick}>
-                    <Wrench className="w-4 h-4" /> Admin
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2 text-red-600" onClick={handleLogout}>
-                    Logout
-                  </Button>
-                </div>
-
-                <div className="hidden md:flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
-                    {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                  </Button>
-                </div>
-
-                {/* Mobile menu - shows on tablets and mobile */}
-                <div className="lg:hidden">
-                  <Sheet>
-                    <SheetTrigger asChild>
-                      <Button variant="outline" size="icon" className="h-9 w-9">
-                        <Menu className="h-4 w-4" />
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent side="left" className="p-4">
-                      <SheetHeader className="pr-10">
-                        <SheetTitle>Menu</SheetTitle>
-                      </SheetHeader>
-
-                      <div className="mt-4 space-y-4">
-                        <div className="space-y-2">
-                          <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=procedure")}>
-                              <Plus className="w-4 h-4" /> Procedure List
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/?mode=manual")}>
-                              <Plus className="w-4 h-4" /> Manual DC
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate("/images")}>
-                              <Images className="w-4 h-4" /> Image Database
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="default" className="w-full justify-start gap-2" disabled>
-                              <List className="w-4 h-4" /> DC Tracker
-                            </Button>
-                          </SheetClose>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="text-xs font-semibold text-muted-foreground">Actions</div>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={handleExportCSV}>
-                              <Download className="w-4 h-4" /> Export CSV
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={handleAdminClick}>
-                              <Wrench className="w-4 h-4" /> Admin Panel
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2" onClick={toggleTheme}>
-                              {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                              Toggle Theme
-                            </Button>
-                          </SheetClose>
-                          <SheetClose asChild>
-                            <Button variant="outline" className="w-full justify-start gap-2 text-red-600" onClick={handleLogout}>
-                              <LogOut className="w-4 h-4" /> Logout
-                            </Button>
-                          </SheetClose>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
-                </div>
-              </div>
-            </div>
-          </div>
+          <TopToolbar
+            theme={theme}
+            toggleTheme={toggleTheme}
+            fetchProcedures={fetchProcedures}
+            loading={proceduresLoading}
+            handlePrint={() => {}}
+            navigate={navigate}
+            handleLogout={handleLogout}
+            setDcMode={(mode) => navigate(`/?mode=${mode}`)}
+            setInitialFilterType={() => {}}
+            setShowProcedureSelector={() => {}}
+            setActiveProcedures={() => {}}
+            setCollapsedProcedures={() => {}}
+          />
 
           <div className="space-y-8">
             {/* Dashboard Metrics */}
             {savedDcs.length > 0 && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-lg transition-all duration-200">
+                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10px] sm:text-sm font-medium text-slate-600">Total DCs</p>
-                        <p className="text-xl sm:text-3xl font-bold text-blue-700">{dashboardMetrics.totalDcs}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Total DCs</p>
+                        <p className="text-xl sm:text-3xl font-extrabold text-teal-700">{dashboardMetrics.totalDcs}</p>
                       </div>
-                      <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-4 h-4 sm:w-6 sm:h-6 text-blue-700" />
+                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-teal-700" />
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-lg transition-all duration-200">
+                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10px] sm:text-sm font-medium text-slate-600">Pending</p>
-                        <p className="text-xl sm:text-3xl font-bold text-red-600">{dashboardMetrics.pendingDcs}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Pending</p>
+                        <p className="text-xl sm:text-3xl font-extrabold text-rose-600">{dashboardMetrics.pendingDcs}</p>
                       </div>
-                      <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center flex-shrink-0">
-                        <AlertCircle className="w-4 h-4 sm:w-6 sm:h-6 text-red-600" />
+                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center flex-shrink-0">
+                        <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-rose-600" />
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-lg transition-all duration-200">
+                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10px] sm:text-sm font-medium text-slate-600">Avg. Turn</p>
-                        <p className="text-xl sm:text-3xl font-bold text-green-700">{dashboardMetrics.avgTurnaround}d</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Avg. Turn</p>
+                        <p className="text-xl sm:text-3xl font-extrabold text-teal-800">{dashboardMetrics.avgTurnaround}d</p>
                       </div>
-                      <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-green-50 border border-green-200 flex items-center justify-center flex-shrink-0">
-                        <TrendingUp className="w-4 h-4 sm:w-6 sm:h-6 text-green-700" />
+                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center flex-shrink-0">
+                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-teal-800" />
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-lg transition-all duration-200">
+                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10px] sm:text-sm font-medium text-slate-600">Items Out</p>
-                        <p className="text-xl sm:text-3xl font-bold text-indigo-700">{dashboardMetrics.totalItemsOut}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Items Out</p>
+                        <p className="text-xl sm:text-3xl font-extrabold text-blue-700">{dashboardMetrics.totalItemsOut}</p>
                       </div>
-                      <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center flex-shrink-0">
-                        <Package className="w-4 h-4 sm:w-6 sm:h-6 text-indigo-700" />
+                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
+                        <Package className="w-4 h-4 sm:w-5 sm:h-5 text-blue-700" />
                       </div>
                     </div>
                   </CardContent>
@@ -993,147 +896,81 @@ const SavedDcs = () => {
             ) : (
               <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md">
                 <CardHeader className="p-3 sm:p-4 space-y-3 sm:space-y-4">
-                  {/* Modern Filters */}
-                  <div className="space-y-4 sm:space-y-6">
-                    {/* Quick Actions Bar */}
-                    <div className="flex flex-col gap-3 p-3 sm:p-4 rounded-xl bg-gradient-to-r from-muted/30 to-muted/10 border border-border/50">
-                      <div className="flex items-center gap-2">
-                        <Filter className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                        <span className="font-semibold text-xs sm:text-sm">Quick Filters</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                        <Button
-                          size="sm"
-                          variant={quickFilter === "all" ? "default" : "ghost"}
-                          onClick={() => setQuickFilter("all")}
-                          className="rounded-full h-7 sm:h-8 text-xs px-2.5 sm:px-3"
-                        >
-                          All
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={quickFilter === "today" ? "default" : "ghost"}
-                          onClick={() => setQuickFilter("today")}
-                          className="rounded-full h-7 sm:h-8 text-xs px-2.5 sm:px-3"
-                        >
-                          Today
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={quickFilter === "week" ? "default" : "ghost"}
-                          onClick={() => setQuickFilter("week")}
-                          className="rounded-full h-7 sm:h-8 text-xs px-2.5 sm:px-3"
-                        >
-                          Week
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={quickFilter === "month" ? "default" : "ghost"}
-                          onClick={() => setQuickFilter("month")}
-                          className="rounded-full h-7 sm:h-8 text-xs px-2.5 sm:px-3"
-                        >
-                          Month
-                        </Button>
-                        {activeQueue === "pending" && (
-                          <Button
-                            size="sm"
-                            variant={quickFilter === "overdue" ? "destructive" : "ghost"}
-                            onClick={() => setQuickFilter("overdue")}
-                            className="rounded-full h-7 sm:h-8 text-xs px-2.5 sm:px-3"
-                          >
-                            Overdue
-                          </Button>
-                        )}
-                      </div>
-                    </div>
+                    {/* Modern Advanced Control Toolbar */}
+                    <div className="space-y-4">
+                      {/* Top Bar: Search, Quick Filters & Export */}
+                      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900/60 p-3 sm:p-4 rounded-xl border border-slate-200/80">
+                        {/* Search Input */}
+                        <div className="relative flex-1 min-w-[240px]">
+                          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                          <Input
+                            value={filterText}
+                            onChange={(e) => setFilterText(e.target.value)}
+                            placeholder="Search Party, DC No, or Personnel..."
+                            className="pl-9 h-9 text-xs sm:text-sm border-slate-300 bg-white focus:border-teal-600 focus:ring-teal-600 rounded-lg"
+                          />
+                          {filterText && (
+                            <button
+                              onClick={() => setFilterText("")}
+                              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
 
-                    {/* Advanced Filters */}
-                    <div className="space-y-2 sm:space-y-0 sm:grid sm:grid-cols-3 sm:gap-4">
-                      {/* Search */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] sm:text-xs font-medium text-slate-700 flex items-center gap-1">
-                          <Search className="h-3 w-3 text-slate-600" />
-                          Search
-                        </label>
-                        <Input
-                          value={filterText}
-                          onChange={(e) => setFilterText(e.target.value)}
-                          placeholder="Party or DC no..."
-                          className="h-7 sm:h-9 text-[11px] sm:text-sm border-slate-300 bg-slate-50 focus:border-blue-500 focus:ring-blue-500 px-2"
-                        />
+                        {/* Quick Time Pills */}
+                        <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-800 p-1 rounded-lg">
+                          {["all", "today", "week", "month", ...(activeQueue === "pending" ? ["overdue"] : [])].map((filter) => (
+                            <button
+                              key={filter}
+                              onClick={() => setQuickFilter(filter)}
+                              className={`px-3 py-1 text-xs font-bold rounded-md transition-all capitalize ${
+                                quickFilter === filter
+                                  ? filter === 'overdue'
+                                    ? 'bg-rose-600 text-white shadow-xs'
+                                    : 'bg-teal-700 text-white shadow-xs'
+                                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-300'
+                              }`}
+                            >
+                              {filter}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Export CSV Button */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleExportCSV}
+                          className="h-9 px-3 text-xs font-bold border-slate-300 bg-white hover:bg-teal-50 hover:text-teal-800 text-slate-700 gap-1.5 shrink-0"
+                        >
+                          <Download className="h-3.5 w-3.5 text-teal-700" /> Export CSV
+                        </Button>
                       </div>
 
-                      {/* Date Range - inline on mobile */}
-                      <div className="sm:col-span-2">
-                        <label className="text-[10px] sm:text-xs font-medium text-slate-700 flex items-center gap-1 mb-1">
-                          <Calendar className="h-3 w-3 text-slate-600" />
-                          Date Range
-                        </label>
-                        <div className="flex items-center gap-1.5">
+                      {/* Date Filter & Active Badges Row */}
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5 text-teal-700" /> Date:
+                          </span>
                           <Input
                             type="date"
                             value={dateFrom}
                             onChange={(e) => setDateFrom(e.target.value)}
-                            className="h-7 sm:h-9 text-[11px] sm:text-sm border-slate-300 bg-slate-50 focus:border-blue-500 focus:ring-blue-500 px-2 flex-1 min-w-0 [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-calendar-picker-indicator]:w-3 [&::-webkit-calendar-picker-indicator]:h-3"
+                            className="h-8 text-xs border-slate-300 bg-white focus:border-teal-600 w-32 px-2"
                           />
-                          <span className="text-slate-400 text-[10px] flex-shrink-0">to</span>
+                          <span className="text-slate-400 text-xs font-bold">to</span>
                           <Input
                             type="date"
                             value={dateTo}
                             onChange={(e) => setDateTo(e.target.value)}
-                            className="h-7 sm:h-9 text-[11px] sm:text-sm border-slate-300 bg-slate-50 focus:border-blue-500 focus:ring-blue-500 px-2 flex-1 min-w-0 [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-calendar-picker-indicator]:w-3 [&::-webkit-calendar-picker-indicator]:h-3"
+                            className="h-8 text-xs border-slate-300 bg-white focus:border-teal-600 w-32 px-2"
                           />
                         </div>
-                      </div>
-                    </div>
 
-                    {(filterText || dateFrom || dateTo || quickFilter !== "all") && (
-                      <div className="flex flex-col gap-2 p-2.5 sm:p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-xs font-medium text-slate-600 mr-1">Filters:</span>
-                          {filterText && (
-                            <Badge variant="default" className="gap-1 bg-slate-100 text-slate-700 border-slate-300 text-[10px] sm:text-xs h-6">
-                              <Search className="h-2.5 w-2.5" />
-                              <span className="truncate max-w-[80px] sm:max-w-none">{filterText}</span>
-                              <X
-                                className="h-3 w-3 cursor-pointer hover:text-red-600 flex-shrink-0"
-                                onClick={() => setFilterText("")}
-                              />
-                            </Badge>
-                          )}
-                          {dateFrom && (
-                            <Badge variant="default" className="gap-1 bg-slate-100 text-slate-700 border-slate-300 text-[10px] sm:text-xs h-6">
-                              <Calendar className="h-2.5 w-2.5" />
-                              {formatDate(dateFrom)}
-                              <X
-                                className="h-3 w-3 cursor-pointer hover:text-red-600 flex-shrink-0"
-                                onClick={() => setDateFrom("")}
-                              />
-                            </Badge>
-                          )}
-                          {dateTo && (
-                            <Badge variant="default" className="gap-1 bg-slate-100 text-slate-700 border-slate-300 text-[10px] sm:text-xs h-6">
-                              <Calendar className="h-2.5 w-2.5" />
-                              {formatDate(dateTo)}
-                              <X
-                                className="h-3 w-3 cursor-pointer hover:text-red-600 flex-shrink-0"
-                                onClick={() => setDateTo("")}
-                              />
-                            </Badge>
-                          )}
-                          {quickFilter !== "all" && (
-                            <Badge variant="default" className="gap-1 bg-slate-100 text-slate-700 border-slate-300 text-[10px] sm:text-xs h-6">
-                              <Filter className="h-2.5 w-2.5" />
-                              {quickFilter === "today" ? "Today" :
-                                quickFilter === "week" ? "Week" :
-                                  quickFilter === "month" ? "Month" :
-                                    quickFilter === "overdue" ? "Overdue" : quickFilter}
-                              <X
-                                className="h-3 w-3 cursor-pointer hover:text-red-600 flex-shrink-0"
-                                onClick={() => setQuickFilter("all")}
-                              />
-                            </Badge>
-                          )}
+                        {(filterText || dateFrom || dateTo || quickFilter !== "all") && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1143,28 +980,26 @@ const SavedDcs = () => {
                               setDateTo("");
                               setQuickFilter("all");
                             }}
-                            className="h-6 text-[10px] sm:text-xs text-red-600 hover:text-red-700 hover:bg-red-50 px-2 ml-auto"
+                            className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 font-bold"
                           >
-                            Clear
+                            Reset Filters
                           </Button>
-                        </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    </div>
 
                   {/* Queue Tabs */}
                   <Tabs value={activeQueue} onValueChange={(value) => setActiveQueue(value as SavedDcStatus)}>
-                    <TabsList className="grid grid-cols-5 gap-0.5 sm:gap-1 bg-muted/30 border border-border/50 h-auto p-0.5 sm:p-1 rounded-xl">
+                    <TabsList className="grid grid-cols-5 gap-1 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
                       <TabsTrigger
                         value="pending"
-                        className="gap-1 sm:gap-2 relative rounded-lg text-[10px] sm:text-sm py-1.5 sm:py-2 px-1 sm:px-3 data-[state=active]:bg-destructive data-[state=active]:text-destructive-foreground transition-all"
+                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-rose-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
-                        <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="font-medium hidden sm:inline">Pending</span>
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                        <span className="hidden sm:inline">Pending</span>
                         {statusCounts.pending > 0 && (
                           <Badge
-                            variant="destructive"
-                            className="h-4 sm:h-5 min-w-4 sm:min-w-5 flex items-center justify-center text-[9px] sm:text-xs px-0.5 sm:px-1"
+                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-rose-700 text-white font-extrabold"
                           >
                             {statusCounts.pending > 99 ? '99+' : statusCounts.pending}
                           </Badge>
@@ -1172,14 +1007,13 @@ const SavedDcs = () => {
                       </TabsTrigger>
                       <TabsTrigger
                         value="returned"
-                        className="gap-1 sm:gap-2 relative rounded-lg text-[10px] sm:text-sm py-1.5 sm:py-2 px-1 sm:px-3 data-[state=active]:bg-indigo-600 data-[state=active]:text-white transition-all"
+                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-teal-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
-                        <User className="h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="font-medium hidden sm:inline">Returned</span>
+                        <User className="h-4 w-4 shrink-0" />
+                        <span className="hidden sm:inline">Returned</span>
                         {statusCounts.returned > 0 && (
                           <Badge
-                            variant="default"
-                            className="h-4 sm:h-5 min-w-4 sm:min-w-5 flex items-center justify-center text-[9px] sm:text-xs px-0.5 sm:px-1"
+                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-teal-700 text-white font-extrabold"
                           >
                             {statusCounts.returned > 99 ? '99+' : statusCounts.returned}
                           </Badge>
@@ -1187,14 +1021,13 @@ const SavedDcs = () => {
                       </TabsTrigger>
                       <TabsTrigger
                         value="completed"
-                        className="gap-1 sm:gap-2 relative rounded-lg text-[10px] sm:text-sm py-1.5 sm:py-2 px-1 sm:px-3 data-[state=active]:bg-green-600 data-[state=active]:text-white transition-all"
+                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
-                        <Receipt className="h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="font-medium hidden sm:inline">Completed</span>
+                        <Receipt className="h-4 w-4 shrink-0" />
+                        <span className="hidden sm:inline">Completed</span>
                         {statusCounts.completed > 0 && (
                           <Badge
-                            variant="secondary"
-                            className="h-4 sm:h-5 min-w-4 sm:min-w-5 flex items-center justify-center text-[9px] sm:text-xs px-0.5 sm:px-1"
+                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-teal-800 text-white font-extrabold"
                           >
                             {statusCounts.completed > 99 ? '99+' : statusCounts.completed}
                           </Badge>
@@ -1202,14 +1035,13 @@ const SavedDcs = () => {
                       </TabsTrigger>
                       <TabsTrigger
                         value="cash"
-                        className="gap-1 sm:gap-2 relative rounded-lg text-[10px] sm:text-sm py-1.5 sm:py-2 px-1 sm:px-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white transition-all"
+                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
-                        <Wallet className="h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="font-medium hidden sm:inline">Cash</span>
+                        <Wallet className="h-4 w-4 shrink-0" />
+                        <span className="hidden sm:inline">Cash</span>
                         {statusCounts.cash > 0 && (
                           <Badge
-                            variant="outline"
-                            className="h-4 sm:h-5 min-w-4 sm:min-w-5 flex items-center justify-center text-[9px] sm:text-xs px-0.5 sm:px-1"
+                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-blue-700 text-white font-extrabold"
                           >
                             {statusCounts.cash > 99 ? '99+' : statusCounts.cash}
                           </Badge>
@@ -1217,14 +1049,13 @@ const SavedDcs = () => {
                       </TabsTrigger>
                       <TabsTrigger
                         value="cancelled"
-                        className="gap-1 sm:gap-2 relative rounded-lg text-[10px] sm:text-sm py-1.5 sm:py-2 px-1 sm:px-3 data-[state=active]:bg-slate-600 data-[state=active]:text-white transition-all"
+                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-slate-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
-                        <X className="h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="font-medium hidden sm:inline">Cancelled</span>
+                        <X className="h-4 w-4 shrink-0" />
+                        <span className="hidden sm:inline">Cancelled</span>
                         {statusCounts.cancelled > 0 && (
                           <Badge
-                            variant="outline"
-                            className="h-4 sm:h-5 min-w-4 sm:min-w-5 flex items-center justify-center text-[9px] sm:text-xs px-0.5 sm:px-1"
+                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-slate-700 text-white font-extrabold"
                           >
                             {statusCounts.cancelled > 99 ? '99+' : statusCounts.cancelled}
                           </Badge>
@@ -1236,22 +1067,76 @@ const SavedDcs = () => {
 
                 <CardContent className="p-0">
                   {selectedDc && (
-                    <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 sm:py-3 border-t-2 border-slate-200 bg-slate-50">
-                      <div className="text-xs sm:text-sm min-w-0 flex-1">
-                        <span className="text-slate-600">Selected:</span>{" "}
-                        <span className="font-semibold text-blue-700">{selectedDc.dcNo}</span>{" "}
-                        <span className="text-slate-500 hidden sm:inline">•</span>{" "}
-                        <span className="font-medium text-slate-800 hidden sm:inline truncate">{selectedDc.hospitalName}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t-2 border-teal-500 bg-gradient-to-r from-teal-900 to-slate-900 text-white shadow-md">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Badge className="bg-teal-500 text-white text-xs font-extrabold px-2 py-0.5">
+                          {selectedDc.dcNo}
+                        </Badge>
+                        <span className="font-bold text-sm text-slate-100 truncate max-w-[200px] sm:max-w-[320px]">
+                          {selectedDc.hospitalName}
+                        </span>
+                        <span className="text-teal-300/80 text-xs hidden sm:inline">• {getTotalQty(selectedDc)} Items</span>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 sm:h-8 sm:w-8 p-0 hover:bg-slate-200 flex-shrink-0"
-                        onClick={() => setSelectedDcId(null)}
-                        title="Clear selection"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+
+                      {/* Quick Action Trigger Buttons */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs font-bold text-white hover:bg-white/20 gap-1 px-2.5"
+                          onClick={() => setDetailsDialogOpen(true)}
+                        >
+                          <Eye className="h-3.5 w-3.5 text-teal-300" /> View Details
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs font-bold text-white hover:bg-white/20 gap-1 px-2.5"
+                          onClick={() => handlePrint(selectedDc)}
+                        >
+                          <Printer className="h-3.5 w-3.5 text-cyan-300" /> Print
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs font-bold text-white hover:bg-white/20 gap-1 px-2.5"
+                          onClick={() => handleShare(selectedDc)}
+                        >
+                          <Share2 className="h-3.5 w-3.5 text-amber-300" /> Share PDF
+                        </Button>
+
+                        {selectedDc.status === "pending" && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs font-bold bg-teal-500 hover:bg-teal-400 text-slate-950 gap-1 px-2.5"
+                            onClick={() => openActionDialog("return", selectedDc)}
+                          >
+                            <User className="h-3.5 w-3.5" /> Mark Returned
+                          </Button>
+                        )}
+
+                        {selectedDc.status === "returned" && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 gap-1 px-2.5"
+                            onClick={() => openActionDialog("invoice", selectedDc)}
+                          >
+                            <Receipt className="h-3.5 w-3.5" /> Link Invoice
+                          </Button>
+                        )}
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-white/20 rounded-lg ml-1"
+                          onClick={() => setSelectedDcId(null)}
+                          title="Deselect"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   )}
                   {/* DC Table */}
@@ -1447,55 +1332,55 @@ const SavedDcs = () => {
                         </div>
 
                         {/* Desktop Table View */}
-                        <div className="hidden md:block border-2 border-slate-300 rounded-lg overflow-hidden">
+                        <div className="hidden md:block border-2 border-slate-300 rounded-xl overflow-hidden shadow-xs bg-white">
                           <div className="max-h-[60vh] overflow-y-auto">
                             <table className="w-full border-separate border-spacing-0">
                               <thead>
-                                <tr className="bg-slate-100 border-b-2 border-slate-300 sticky top-0 z-10">
-                                  <th className="text-center p-3 text-sm font-bold text-slate-700 w-[50px] border-r-2 border-slate-300">
+                                <tr className="bg-slate-100/90 border-b-2 border-slate-300 sticky top-0 z-10 text-slate-800">
+                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[50px] border-r border-slate-300">
                                     Select
                                   </th>
-                                  <th className="text-left p-3 text-sm font-bold text-slate-700 w-[110px] border-r-2 border-slate-300">
+                                  <th className="text-left p-3 text-xs font-bold text-slate-700 w-[110px] border-r border-slate-300">
                                     <SortableHeader sortKey="date">
-                                      <Calendar className="h-4 w-4 mr-1" />
+                                      <Calendar className="h-3.5 w-3.5 mr-1" />
                                       Date
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-left p-3 text-sm font-bold text-slate-700 w-[100px] border-r-2 border-slate-300">
+                                  <th className="text-left p-3 text-xs font-bold text-slate-700 w-[100px] border-r border-slate-300">
                                     <SortableHeader sortKey="dcNo">
                                       DC No
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-left p-3 text-sm font-bold text-slate-700 border-r-2 border-slate-300">
+                                  <th className="text-left p-3 text-xs font-bold text-slate-700 border-r border-slate-300">
                                     <SortableHeader sortKey="party">
                                       Party Name
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-center p-3 text-sm font-bold text-slate-700 w-[80px] border-r-2 border-slate-300">
+                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[80px] border-r border-slate-300">
                                     <SortableHeader sortKey="items">
-                                      <Package className="h-4 w-4 mr-1" />
+                                      <Package className="h-3.5 w-3.5 mr-1" />
                                       Items
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-center p-3 text-sm font-bold text-slate-700 w-[70px] border-r-2 border-slate-300">
+                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[70px] border-r border-slate-300">
                                     <SortableHeader sortKey="days">
                                       Days
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-left p-3 text-sm font-bold text-slate-700 w-[120px] border-r-2 border-slate-300">
+                                  <th className="text-left p-3 text-xs font-bold text-slate-700 w-[120px] border-r border-slate-300">
                                     Delivered
                                   </th>
                                   {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash") && (
-                                    <th className="text-left p-3 text-sm font-bold text-slate-700 w-[120px] border-r-2 border-slate-300">
+                                    <th className="text-left p-3 text-xs font-bold text-slate-700 w-[120px] border-r border-slate-300">
                                       Returned
                                     </th>
                                   )}
-                                  <th className="text-center p-3 text-sm font-bold text-slate-700 w-[100px] border-r-2 border-slate-300">
+                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[100px] border-r border-slate-300">
                                     <SortableHeader sortKey="status">
                                       Status
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-center p-3 text-sm font-bold text-slate-700 w-[60px]">
+                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[60px]">
                                     Actions
                                   </th>
                                 </tr>
@@ -1507,8 +1392,8 @@ const SavedDcs = () => {
                                   return (
                                     <tr
                                       key={dc.id}
-                                      className={`border-b-2 transition-all duration-200 ${selectedDcId === dc.id
-                                        ? 'bg-gradient-to-r from-blue-100 to-blue-50 border-blue-300 shadow-md ring-1 ring-blue-200'
+                                      className={`border-b transition-colors cursor-pointer ${selectedDcId === dc.id
+                                        ? 'bg-teal-50/80 border-teal-300 shadow-2xs font-semibold'
                                         : 'border-slate-200 hover:bg-slate-50'
                                         }`}
                                       onClick={() => {
@@ -1548,7 +1433,7 @@ const SavedDcs = () => {
                                             setSelectedDcId(dc.id);
                                             setDetailsDialogOpen(true);
                                           }}
-                                          className="text-sm font-semibold text-blue-700 hover:underline transition-colors"
+                                          className="text-sm font-extrabold text-teal-800 hover:text-teal-900 hover:underline transition-colors"
                                         >
                                           {dc.dcNo}
                                         </button>
@@ -1560,7 +1445,7 @@ const SavedDcs = () => {
                                             setSelectedDcId(dc.id);
                                             setDetailsDialogOpen(true);
                                           }}
-                                          className="text-sm hover:text-blue-700 transition-colors text-left max-w-48 truncate"
+                                          className="text-sm hover:text-teal-800 transition-colors text-left max-w-48 truncate"
                                         >
                                           {dc.hospitalName}
                                         </button>

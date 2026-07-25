@@ -32,12 +32,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 const App = () => {
   useEffect(() => {
-    const savedTheme = localStorage.getItem("srrortho:theme") || "dark";
-    if (savedTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    localStorage.setItem("srrortho:theme", "light");
+    document.documentElement.classList.remove("dark");
   }, []);
 
   return (

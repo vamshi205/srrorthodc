@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
-import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon } from 'lucide-react';
+import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 // import { LoginScreen } from '@/components/ortho/LoginScreen'; // Removed
 import { ProcedureSelector } from '@/components/ortho/ProcedureSelector';
+import { TopToolbar } from '@/components/ortho/TopToolbar';
+
 import { ProcedureCard } from '@/components/ortho/ProcedureCard';
 import { SummaryPanel } from '@/components/ortho/SummaryPanel';
 import { PrintPreview } from '@/components/ortho/PrintPreview';
@@ -25,20 +27,8 @@ export default function OrthoApp() {
   const { toast } = useToast();
   const location = useLocation();
 
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'dark';
-  });
-
-  const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-    localStorage.setItem('srrortho:theme', nextTheme);
-    if (nextTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
+  const [theme] = useState<'light' | 'dark'>('light');
+  const toggleTheme = () => {};
   // Legacy authentication removed - handled by App.tsx ProtectedRoute
   // const [isAuthenticated, setIsAuthenticated] = useState(...)
 
@@ -90,7 +80,7 @@ export default function OrthoApp() {
     });
   }, []);
 
-  // Clear procedures and show selector on mount
+  // Clear procedures and update mode from URL
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const mode = params.get('mode');
@@ -100,10 +90,9 @@ export default function OrthoApp() {
       setActiveProcedures([]);
       setCollapsedProcedures(new Set());
       setShowProcedureSelector(false);
-    } else {
+    } else if (mode === 'procedure') {
       setDcMode('procedure');
-      setActiveProcedures([]);
-      setInitialFilterType('None');
+      setInitialFilterType('All');
       setShowProcedureSelector(true);
     }
   }, [location.search]);
@@ -133,7 +122,16 @@ export default function OrthoApp() {
         fixedItemLocationMapping: procedure.fixedItemLocationMapping || {},
         itemLocationMapping: procedure.itemLocationMapping || {},
       };
-      // Hide selector when a procedure is selected
+
+      // Auto collapse previous procedures when a new procedure is added
+      const previousNames = prev.map((p) => p.name);
+      setCollapsedProcedures((collapsedSet) => {
+        const nextSet = new Set(collapsedSet);
+        previousNames.forEach((name) => nextSet.add(name));
+        return nextSet;
+      });
+
+      // Collapse selector once a procedure is selected
       setShowProcedureSelector(false);
       return [...prev, activeProcedure];
     });
@@ -819,174 +817,35 @@ export default function OrthoApp() {
         {/* Main Content */}
         <main className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
           {/* Top toolbar (desktop & mobile) */}
-          <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-4">
-            <div className="rounded-xl border border-border bg-card/80 backdrop-blur-md px-3 py-3 flex flex-col gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="md:hidden w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-                  <Activity className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-display font-semibold truncate">DC Generator</div>
-                  <div className="text-xs text-muted-foreground truncate">{hospitalName || 'Hospital'} · {dcNo || 'DC'}</div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => {
-                    setDcMode('procedure');
-                    setInitialFilterType('All');
-                    setShowProcedureSelector(true);
-                  }}
-                >
-                  <Plus className="w-4 h-4" /> Procedure List
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => {
-                    setDcMode('manual');
-                    setActiveProcedures([]);
-                    setCollapsedProcedures(new Set());
-                    setShowProcedureSelector(false);
-                  }}
-                >
-                  <Plus className="w-4 h-4" /> Manual DC
-                </Button>
-                <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/images')}>
-                  <Images className="w-4 h-4" /> Image Database
-                </Button>
-                <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/saved')}>
-                  <List className="w-4 h-4" /> DC Tracker
-                </Button>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchProcedures(true)} disabled={loading}>
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={handlePrint}>
-                    <Printer className="w-4 h-4" /> Print
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/admin')}>
-                    <Wrench className="w-4 h-4" /> Admin
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="w-9 h-9 p-0 flex items-center justify-center" onClick={toggleTheme} title="Toggle Theme">
-                    {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100" onClick={handleLogout}>
-                    <LogOut className="w-4 h-4" /> Logout
-                  </Button>
-                  <div className="lg:hidden">
-                    <Sheet>
-                      <SheetTrigger asChild>
-                        <Button variant="outline" size="icon" className="h-9 w-9">
-                          <Menu className="h-4 w-4" />
-                        </Button>
-                      </SheetTrigger>
-                      <SheetContent side="left" className="p-4">
-                        <SheetHeader className="pr-10">
-                          <SheetTitle>Menu</SheetTitle>
-                        </SheetHeader>
-
-                        <div className="mt-4 space-y-4">
-                          <div className="space-y-2">
-                            <div className="text-xs font-semibold text-muted-foreground">Navigation</div>
-                            <SheetClose asChild>
-                              <Button
-                                variant="outline"
-                                className="w-full justify-start gap-2"
-                                onClick={() => {
-                                  setDcMode('procedure');
-                                  setInitialFilterType('All');
-                                  setShowProcedureSelector(true);
-                                }}
-                              >
-                                <Plus className="w-4 h-4" /> Procedure List
-                              </Button>
-                            </SheetClose>
-                            <SheetClose asChild>
-                              <Button
-                                variant="outline"
-                                className="w-full justify-start gap-2"
-                                onClick={() => {
-                                  setDcMode('manual');
-                                  setActiveProcedures([]);
-                                  setCollapsedProcedures(new Set());
-                                  setShowProcedureSelector(false);
-                                }}
-                              >
-                                <Plus className="w-4 h-4" /> Manual DC
-                              </Button>
-                            </SheetClose>
-                            <SheetClose asChild>
-                              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/images')}>
-                                <Images className="w-4 h-4" /> Image Database
-                              </Button>
-                            </SheetClose>
-                            <SheetClose asChild>
-                              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/saved')}>
-                                <List className="w-4 h-4" /> DC Tracker
-                              </Button>
-                            </SheetClose>
-                          </div>
-
-                          <div className="space-y-2">
-                            <div className="text-xs font-semibold text-muted-foreground">Actions</div>
-                            <SheetClose asChild>
-                              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => fetchProcedures(true)} disabled={loading}>
-                                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh Data
-                              </Button>
-                            </SheetClose>
-                            <SheetClose asChild>
-                              <Button variant="outline" className="w-full justify-start gap-2" onClick={handlePrint}>
-                                <Printer className="w-4 h-4" /> Print
-                              </Button>
-                            </SheetClose>
-                            <SheetClose asChild>
-                              <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/admin')}>
-                                <Wrench className="w-4 h-4" /> Admin Panel
-                              </Button>
-                            </SheetClose>
-                            <SheetClose asChild>
-                              <Button variant="outline" className="w-full justify-start gap-2" onClick={toggleTheme}>
-                                {theme === 'dark' ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
-                                Toggle Theme
-                              </Button>
-                            </SheetClose>
-                            <SheetClose asChild>
-                              <Button variant="outline" className="w-full justify-start gap-2 text-red-600" onClick={handleLogout}>
-                                <LogOut className="w-4 h-4" /> Logout
-                              </Button>
-                            </SheetClose>
-                          </div>
-                        </div>
-                      </SheetContent>
-                    </Sheet>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
-            {/* Left: Procedure Selection & Active Procedures */}
-            <div className="lg:col-span-2 space-y-4 sm:space-y-6 min-w-0">
+          <TopToolbar
+            theme={theme}
+            toggleTheme={toggleTheme}
+            fetchProcedures={fetchProcedures}
+            loading={loading}
+            handlePrint={handlePrint}
+            navigate={navigate}
+            handleLogout={handleLogout}
+            setDcMode={setDcMode}
+            setInitialFilterType={setInitialFilterType}
+            setShowProcedureSelector={setShowProcedureSelector}
+            setActiveProcedures={setActiveProcedures}
+            setCollapsedProcedures={setCollapsedProcedures}
+          />
+          {(() => {
+            const hasData = activeProcedures.length > 0 || manualItems.length > 0 || manualInstruments.length > 0 || manualBoxNumbers.length > 0;
+            return (
+              <div className={`grid ${hasData ? 'lg:grid-cols-3' : 'grid-cols-1'} gap-4 sm:gap-6`}>
+                {/* Left: Procedure Selection & Active Procedures */}
+                <div className={`${hasData ? 'lg:col-span-2' : 'col-span-1'} space-y-4 sm:space-y-6 min-w-0`}>
               {/* Active Procedures - Show first if they exist */}
               {activeProcedures.length > 0 && (
                 <div className="space-y-3 sm:space-y-4">
                   <h2 className="font-display font-semibold text-base sm:text-lg">Active Procedures</h2>
-                  {activeProcedures.map((procedure) => (
+                  {activeProcedures.map((procedure, index) => (
                     <ProcedureCard
                       key={procedure.name}
                       procedure={procedure}
+                      index={index}
                       isCollapsed={collapsedProcedures.has(procedure.name)}
                       onToggleCollapse={() => setCollapsedProcedures((prev) => { const next = new Set(prev); next.has(procedure.name) ? next.delete(procedure.name) : next.add(procedure.name); return next; })}
                       onRemove={() => handleRemoveProcedure(procedure.name)}
@@ -1011,11 +870,85 @@ export default function OrthoApp() {
                 </div>
               )}
 
-              {/* Mode Panel (Procedure List vs Manual DC) */}
-              {dcMode === 'procedure' ? (
+              {/* Mode Panel (Welcome Card Choice vs Procedure List vs Manual DC) */}
+              {!new URLSearchParams(location.search).get('mode') && activeProcedures.length === 0 ? (
+                <div className="glass-card rounded-2xl p-6 sm:p-10 border-2 border-teal-500/30 text-center space-y-6 shadow-xl max-w-3xl mx-auto my-4">
+                  <div className="space-y-2">
+                    <h2 className="text-2xl sm:text-3xl font-display font-extrabold text-slate-900 dark:text-slate-100">
+                      Welcome to SRR Ortho Plus Portal
+                    </h2>
+                    <p className="text-sm sm:text-base text-muted-foreground">
+                      Select a service to generate delivery challans, create quotations, or track saved records.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                    {/* Choice 1: Add New Procedure */}
+                    <button
+                      onClick={() => {
+                        setDcMode('procedure');
+                        setInitialFilterType('All');
+                        setShowProcedureSelector(true);
+                        navigate('/?mode=procedure');
+                      }}
+                      className="group p-5 rounded-xl border-2 border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 hover:border-teal-500 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md"
+                    >
+                      <div className="w-11 h-11 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                        <Plus className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400">
+                          Add New Procedure
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Browse procedures, select items & instruments for a new DC.
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Choice 2: Create Quotations */}
+                    <a
+                      href="https://docs.srrorthoplus.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group p-5 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 hover:border-blue-500 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md text-slate-900"
+                    >
+                      <div className="w-11 h-11 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                          Create Quotation
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Generate official price quotes & docs at docs.srrorthoplus.com.
+                        </p>
+                      </div>
+                    </a>
+
+                    {/* Choice 3: DC Tracker */}
+                    <button
+                      onClick={() => navigate('/saved')}
+                      className="group p-5 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/20 hover:border-amber-400 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md"
+                    >
+                      <div className="w-11 h-11 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                        <List className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-amber-500">
+                          DC Tracker
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          View, track, print, and manage saved Delivery Challans.
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              ) : dcMode === 'procedure' ? (
                 <>
-                  {/* Procedure Selector - Show full selector or compact button */}
-                  {showProcedureSelector ? (
+                  {/* Procedure Selector - Shown when no procedures selected OR when user clicks 'Add New Procedure' */}
+                  {(activeProcedures.length === 0 || showProcedureSelector) && (
                     <div className="glass-card rounded-xl p-2.5 sm:p-4 min-w-0">
                       <h2 className="font-display font-semibold text-base sm:text-lg mb-2 sm:mb-4">Select Procedures</h2>
                       {loading ? (
@@ -1030,21 +963,6 @@ export default function OrthoApp() {
                           initialFilterType={initialFilterType}
                         />
                       )}
-                    </div>
-                  ) : (
-                    <div className="glass-card rounded-xl p-2.5 sm:p-4 flex items-center justify-center min-w-0">
-                      <Button
-                        onClick={() => {
-                          setDcMode('procedure');
-                          setInitialFilterType('All');
-                          setShowProcedureSelector(true);
-                        }}
-                        className="btn-gradient w-full sm:w-auto"
-                        size="lg"
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add New Procedure
-                      </Button>
                     </div>
                   )}
                 </>
@@ -1499,7 +1417,7 @@ export default function OrthoApp() {
                     )}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-col sm:flex-row gap-3 pt-1">
                     <Button
                       onClick={() => {
                         if (!hospitalName || !dcNo || !receivedBy) {
@@ -1508,13 +1426,13 @@ export default function OrthoApp() {
                           setShowConfirmSaveDialog(true);
                         }
                       }}
-                      className="w-full sm:flex-1 gap-2"
+                      className="w-full sm:flex-1 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm h-11 shadow-md shadow-emerald-600/20"
                       disabled={isSavingDc}
                     >
                       {isSavingDc ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          Saving...
+                          Saving DC...
                         </>
                       ) : (
                         <>
@@ -1523,28 +1441,64 @@ export default function OrthoApp() {
                         </>
                       )}
                     </Button>
+
+                    <Button
+                      onClick={() => {
+                        setDcMode('procedure');
+                        setInitialFilterType('All');
+                        setShowProcedureSelector(true);
+                        // Immediately collapse all currently active procedures
+                        setCollapsedProcedures(new Set(activeProcedures.map((p) => p.name)));
+                        // Scroll smoothly to top procedure selector
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="w-full sm:flex-1 gap-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm h-11 shadow-md shadow-teal-600/20 border border-teal-500/40"
+                    >
+                      <Plus className="w-4.5 h-4.5" />
+                      Add New Procedure
+                    </Button>
                   </div>
                 </div>
               )}
             </div>
 
             {/* Right: Summary */}
-            <div className="lg:col-span-1 min-w-0 lg:border-l lg:border-border lg:pl-6">
-              {/* Mobile: Toggleable Summary */}
-              <div className="lg:hidden mb-4">
-                <button
-                  onClick={() => setShowSummaryMobile(!showSummaryMobile)}
-                  className="w-full glass-card rounded-xl p-3 flex items-center justify-between"
-                >
-                  <h2 className="font-display font-semibold text-base">Summary</h2>
-                  {showSummaryMobile ? (
-                    <ChevronUp className="w-5 h-5 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-muted-foreground" />
+            {hasData && (
+              <div className="lg:col-span-1 min-w-0 lg:border-l lg:border-border lg:pl-6">
+                {/* Mobile: Toggleable Summary */}
+                <div className="lg:hidden mb-4">
+                  <button
+                    onClick={() => setShowSummaryMobile(!showSummaryMobile)}
+                    className="w-full glass-card rounded-xl p-3 flex items-center justify-between"
+                  >
+                    <h2 className="font-display font-semibold text-base">Summary</h2>
+                    {showSummaryMobile ? (
+                      <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                    )}
+                  </button>
+                  {showSummaryMobile && (
+                    <div className="glass-card rounded-xl p-3 mt-4">
+                      <SummaryPanel
+                        activeProcedures={activeProcedures}
+                        hospitalName={hospitalName}
+                        dcNo={dcNo}
+                        deliveredBy={deliveredBy}
+                        receivedBy={receivedBy}
+                        manualItems={manualItems}
+                        manualInstruments={manualInstruments}
+                        manualBoxNumbers={manualBoxNumbers}
+                        manualMaterialType={manualMaterialType}
+                      />
+                    </div>
                   )}
-                </button>
-                {showSummaryMobile && (
-                  <div className="glass-card rounded-xl p-3 mt-4">
+                </div>
+
+                {/* Desktop: Always visible Summary when data exists */}
+                <div className="hidden lg:block">
+                  <div className="glass-card rounded-xl p-3 sm:p-4 sticky top-24">
+                    <h2 className="font-display font-semibold text-base sm:text-lg mb-3 sm:mb-4">Summary</h2>
                     <SummaryPanel
                       activeProcedures={activeProcedures}
                       hospitalName={hospitalName}
@@ -1557,28 +1511,12 @@ export default function OrthoApp() {
                       manualMaterialType={manualMaterialType}
                     />
                   </div>
-                )}
-              </div>
-
-              {/* Desktop: Always visible Summary */}
-              <div className="hidden lg:block">
-                <div className="glass-card rounded-xl p-3 sm:p-4 sticky top-24">
-                  <h2 className="font-display font-semibold text-base sm:text-lg mb-3 sm:mb-4">Summary</h2>
-                  <SummaryPanel
-                    activeProcedures={activeProcedures}
-                    hospitalName={hospitalName}
-                    dcNo={dcNo}
-                    deliveredBy={deliveredBy}
-                    receivedBy={receivedBy}
-                    manualItems={manualItems}
-                    manualInstruments={manualInstruments}
-                    manualBoxNumbers={manualBoxNumbers}
-                    manualMaterialType={manualMaterialType}
-                  />
                 </div>
               </div>
-            </div>
+            )}
           </div>
+        );
+      })()}
         </main>
       </div >
 
