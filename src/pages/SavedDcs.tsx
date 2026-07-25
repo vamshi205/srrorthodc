@@ -52,6 +52,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useProcedures } from "@/hooks/useProcedures";
 import { deleteSavedDc, loadSavedDcs, SavedDc, SavedDcHistoryEvent, SavedDcStatus, transitionSavedDc, updateSavedDc } from "@/lib/savedDcStorage";
@@ -89,6 +91,44 @@ const getDaysPending = (dc: SavedDc) => {
 
 const getTotalQty = (dc: SavedDc) =>
   dc.items.reduce((total, item) => total + item.sizes.reduce((sum, size) => sum + size.qty, 0), 0);
+const parseDateInput = (value: string) => {
+  if (!value) return undefined;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  return new Date(year, month - 1, day);
+};
+
+const toDateInputValue = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const formatFilterDate = (value: string) => {
+  const date = parseDateInput(value);
+  return date ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date) : "Select date";
+};
+
+const DateFilterPicker = ({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) => {
+  const [open, setOpen] = useState(false);
+  const selectedDate = parseDateInput(value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" aria-label={`${label}: ${formatFilterDate(value)}`} className="h-8 w-36 justify-start gap-1.5 border-slate-300 bg-white px-2 text-left text-xs font-normal text-slate-700 hover:bg-slate-50 focus-visible:ring-teal-600">
+          <Calendar className="h-3.5 w-3.5 shrink-0 text-teal-700" />
+          <span className="truncate">{formatFilterDate(value)}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="bottom" sideOffset={6} collisionPadding={16} className="z-[100] w-auto p-0">
+        <DatePickerCalendar mode="single" selected={selectedDate} onSelect={(date) => {
+          if (!date) return;
+          onChange(toDateInputValue(date));
+          setOpen(false);
+        }} initialFocus />
+        {value && <div className="border-t border-slate-200 p-2 text-right"><Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-rose-600 hover:text-rose-700" onClick={() => onChange("")}>Clear date</Button></div>}
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 const SavedDcs = () => {
   const navigate = useNavigate();
@@ -951,23 +991,13 @@ const SavedDcs = () => {
 
                       {/* Date Filter & Active Badges Row */}
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
+                        <div className="order-2 ml-auto flex items-center gap-2">
                           <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
                             <Calendar className="h-3.5 w-3.5 text-teal-700" /> Date:
                           </span>
-                          <Input
-                            type="date"
-                            value={dateFrom}
-                            onChange={(e) => setDateFrom(e.target.value)}
-                            className="h-8 text-xs border-slate-300 bg-white focus:border-teal-600 w-32 px-2"
-                          />
+                          <DateFilterPicker label="From date" value={dateFrom} onChange={setDateFrom} />
                           <span className="text-slate-400 text-xs font-bold">to</span>
-                          <Input
-                            type="date"
-                            value={dateTo}
-                            onChange={(e) => setDateTo(e.target.value)}
-                            className="h-8 text-xs border-slate-300 bg-white focus:border-teal-600 w-32 px-2"
-                          />
+                          <DateFilterPicker label="To date" value={dateTo} onChange={setDateTo} />
                         </div>
 
                         {(filterText || dateFrom || dateTo || quickFilter !== "all") && (
@@ -980,7 +1010,7 @@ const SavedDcs = () => {
                               setDateTo("");
                               setQuickFilter("all");
                             }}
-                            className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 font-bold"
+                            className="order-1 h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                           >
                             Reset Filters
                           </Button>
@@ -990,10 +1020,10 @@ const SavedDcs = () => {
 
                   {/* Queue Tabs */}
                   <Tabs value={activeQueue} onValueChange={(value) => setActiveQueue(value as SavedDcStatus)}>
-                    <TabsList className="grid grid-cols-5 gap-1 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                    <TabsList className="grid h-auto min-h-[52px] grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1.5">
                       <TabsTrigger
                         value="pending"
-                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-rose-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
+                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-rose-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
                         <AlertCircle className="h-4 w-4 shrink-0" />
                         <span className="hidden sm:inline">Pending</span>
@@ -1007,7 +1037,7 @@ const SavedDcs = () => {
                       </TabsTrigger>
                       <TabsTrigger
                         value="returned"
-                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-teal-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
+                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-teal-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
                         <User className="h-4 w-4 shrink-0" />
                         <span className="hidden sm:inline">Returned</span>
@@ -1021,7 +1051,7 @@ const SavedDcs = () => {
                       </TabsTrigger>
                       <TabsTrigger
                         value="completed"
-                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-teal-700 data-[state=active]:text-white font-bold transition-all shadow-2xs"
+                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-teal-700 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
                         <Receipt className="h-4 w-4 shrink-0" />
                         <span className="hidden sm:inline">Completed</span>
@@ -1035,7 +1065,7 @@ const SavedDcs = () => {
                       </TabsTrigger>
                       <TabsTrigger
                         value="cash"
-                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
+                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
                         <Wallet className="h-4 w-4 shrink-0" />
                         <span className="hidden sm:inline">Cash</span>
@@ -1049,7 +1079,7 @@ const SavedDcs = () => {
                       </TabsTrigger>
                       <TabsTrigger
                         value="cancelled"
-                        className="gap-1.5 relative rounded-lg text-xs sm:text-sm py-2 px-2 data-[state=active]:bg-slate-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
+                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-slate-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
                       >
                         <X className="h-4 w-4 shrink-0" />
                         <span className="hidden sm:inline">Cancelled</span>
