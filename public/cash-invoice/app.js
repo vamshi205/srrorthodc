@@ -32,10 +32,10 @@ const DEFAULT_COMPANY = {
 
 // Default Client Data
 const DEFAULT_CLIENT = {
-    name: "Dr. Rajesh Sharma (Fortis Hospital)",
-    address: "Orthopedics Dept, Fortis Hospital, Vasant Kunj, New Delhi - 110070",
-    mobile: "+91 98765 00000",
-    email: "customer@email.com",
+    name: "",
+    address: "",
+    mobile: "",
+    email: "",
     invNumber: "",
     dcNumber: "",
     invDate: new Date().toISOString().split('T')[0],
@@ -151,10 +151,10 @@ function loadPersistedData() {
     if (invDueEl) invDueEl.value = state.clientInfo.invDue || "";
     
     // Sync Preview text
-    document.getElementById("preview-client-name").innerText = state.clientInfo.name || "Customer Name";
-    document.getElementById("preview-client-address").innerText = state.clientInfo.address || "Client Address";
-    document.getElementById("preview-client-mobile").innerText = state.clientInfo.mobile || "";
-    document.getElementById("preview-client-email").innerText = state.clientInfo.email || "";
+    document.getElementById("preview-client-name").innerText = state.clientInfo.name || "Click to enter Hospital / Customer Name";
+    document.getElementById("preview-client-address").innerText = state.clientInfo.address || "Click to enter Customer Address";
+    document.getElementById("preview-client-mobile").innerText = state.clientInfo.mobile || "+91 Mobile Number";
+    document.getElementById("preview-client-email").innerText = state.clientInfo.email || "customer@email.com";
     document.getElementById("preview-inv-number").innerText = state.clientInfo.invNumber || "";
     document.getElementById("preview-dc-number").innerText = state.clientInfo.dcNumber || "-";
     document.getElementById("preview-inv-date").innerText = formatDateString(state.clientInfo.invDate);
@@ -883,7 +883,8 @@ function setupEventListeners() {
 
     const clearActiveInvoiceData = () => {
         state.invoiceItems = [{ description: "", sku: "", size: "", qty: 1, rate: 0 }];
-        document.getElementById("discount-flat-input").value = 0;
+        const discountInput = document.getElementById("discount-flat-input");
+        if (discountInput) discountInput.value = 0;
         
         // Clear customer details
         state.clientInfo = {
@@ -897,7 +898,11 @@ function setupEventListeners() {
             invDue: new Date().toISOString().split('T')[0]
         };
         
-        // Reload and render
+        // Reload input values safely
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+        };
         setVal("client-name", "");
         setVal("client-address", "");
         setVal("client-mobile", "");
@@ -907,15 +912,21 @@ function setupEventListeners() {
         setVal("inv-date", state.clientInfo.invDate);
         const invDueEl = document.getElementById("inv-due");
         if (invDueEl) invDueEl.value = state.clientInfo.invDue;
+        const custSelector = document.getElementById("customer-selector");
         if (custSelector) custSelector.value = "";
         
-        document.getElementById("preview-client-name").innerText = "Customer Name";
-        document.getElementById("preview-client-address").innerText = "Client Address";
-        document.getElementById("preview-client-mobile").innerText = "";
-        document.getElementById("preview-client-email").innerText = "";
-        document.getElementById("preview-inv-number").innerText = state.clientInfo.invNumber;
-        document.getElementById("preview-dc-number").innerText = "-";
-        document.getElementById("preview-inv-date").innerText = formatDateString(state.clientInfo.invDate);
+        // Reset preview texts
+        const setInner = (id, text) => {
+            const el = document.getElementById(id);
+            if (el) el.innerText = text;
+        };
+        setInner("preview-client-name", "Click to enter Hospital / Customer Name");
+        setInner("preview-client-address", "Click to enter Customer Address");
+        setInner("preview-client-mobile", "+91 Mobile Number");
+        setInner("preview-client-email", "customer@email.com");
+        setInner("preview-inv-number", state.clientInfo.invNumber);
+        setInner("preview-dc-number", "-");
+        setInner("preview-inv-date", formatDateString(state.clientInfo.invDate));
         const previewInvDueEl = document.getElementById("preview-inv-due");
         if (previewInvDueEl) previewInvDueEl.innerText = formatDateString(state.clientInfo.invDue);
         
@@ -929,11 +940,12 @@ function setupEventListeners() {
     // Clean All / Reset
     const clearAllBtn = document.getElementById("clear-all-btn");
     if (clearAllBtn) {
-        clearAllBtn.addEventListener("click", () => {
-            if (confirm("Are you sure you want to clear the entire invoice items and customer details?")) {
+        clearAllBtn.onclick = function(e) {
+            e.preventDefault();
+            if (confirm("Are you sure you want to clear the active invoice items and customer details?")) {
                 clearActiveInvoiceData();
             }
-        });
+        };
     }
 
     // Add Invoice Click
@@ -1927,10 +1939,10 @@ function preloadCustomer(cust) {
     setVal("client-mobile", cust.mobile || "");
     setVal("client-email", cust.email || "");
     
-    document.getElementById("preview-client-name").innerText = cust.name || "Customer Name";
-    document.getElementById("preview-client-address").innerText = cust.address || "Client Address";
-    document.getElementById("preview-client-mobile").innerText = cust.mobile || "";
-    document.getElementById("preview-client-email").innerText = cust.email || "";
+    document.getElementById("preview-client-name").innerText = cust.name || "Click to enter Hospital / Customer Name";
+    document.getElementById("preview-client-address").innerText = cust.address || "Click to enter Customer Address";
+    document.getElementById("preview-client-mobile").innerText = cust.mobile || "+91 Mobile Number";
+    document.getElementById("preview-client-email").innerText = cust.email || "customer@email.com";
     
     localStorage.setItem("im_client_info", JSON.stringify(state.clientInfo));
     showStatus(`Preloaded customer details for: ${cust.name}`);
@@ -2096,7 +2108,8 @@ function showCustomerRecommendations(query, container) {
     const queryLower = query.toLowerCase().trim();
     const matched = state.customers.filter(cust => 
         (cust.name && cust.name.toLowerCase().includes(queryLower)) ||
-        (cust.mobile && cust.mobile.includes(queryLower))
+        (cust.mobile && cust.mobile.includes(queryLower)) ||
+        (cust.address && cust.address.toLowerCase().includes(queryLower))
     );
     
     if (matched.length > 0) {
@@ -2104,13 +2117,18 @@ function showCustomerRecommendations(query, container) {
             const div = document.createElement("div");
             div.className = "recommendation-item";
             div.style.padding = "8px 12px";
+            div.style.cursor = "pointer";
+            div.style.borderBottom = "1px solid var(--border-color, #f1f5f9)";
+            div.style.background = "#ffffff";
             div.innerHTML = `
-                <div style="font-weight: 600; font-size: 11.5px; color: #1f2937;">${cust.name}</div>
-                <div style="font-size: 9.5px; color: #6b7280; margin-top: 2px;">
+                <div style="font-weight: 600; font-size: 12px; color: #0f172a;">${cust.name}</div>
+                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
                     ${cust.mobile ? `📞 ${cust.mobile}` : ''} ${cust.email ? ` | ✉️ ${cust.email}` : ''}
                 </div>
+                ${cust.address ? `<div style="font-size: 9.5px; color: #64748b; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">📍 ${cust.address}</div>` : ''}
             `;
-            div.addEventListener("click", () => {
+            div.addEventListener("click", (e) => {
+                e.stopPropagation();
                 preloadCustomer(cust);
                 container.style.display = "none";
             });

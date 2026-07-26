@@ -128,14 +128,16 @@
                     <!-- BILL TO / SHIP TO SECTION -->
                     <div class="inv-bill-details">
                         <div class="bill-to" style="position: relative;">
-                            <h3>Bill To:</h3>
-                            <p class="editable-text client-name" id="preview-client-name" contenteditable="true">Hospital / Customer Name</p>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <h3 style="margin: 0;">Bill To:</h3>
+                                <span style="font-size: 10px; background: rgba(15, 118, 110, 0.1); color: #0f766e; border: 1px solid rgba(15, 118, 110, 0.2); padding: 1px 6px; rounded-radius: 4px; font-weight: 600;" class="no-print">Click any field below to edit</span>
+                            </div>
+                            <p class="editable-text client-name" id="preview-client-name" contenteditable="true" data-placeholder="Enter Hospital / Customer Name...">Hospital / Customer Name</p>
                             <div class="recommendation-list" id="paper-cust-rec-list" style="width: 100%; left: 0;"></div>
-                            <p class="editable-text" id="preview-client-address" contenteditable="true">Clinical Department, Room 302, Fortis Hospital, New Delhi</p>
-                            <p style="margin-top: 4px;">Mobile: <span class="editable-text" id="preview-client-mobile" contenteditable="true">+91 98765 00000</span></p>
-                            <p>Email: <span class="editable-text" id="preview-client-email" contenteditable="true">customer@email.com</span></p>
+                            <p class="editable-text" id="preview-client-address" contenteditable="true" data-placeholder="Enter Full Customer Address...">Enter Customer Address (e.g. Dept, Hospital, City)</p>
+                            <p style="margin-top: 4px;">Mobile: <span class="editable-text" id="preview-client-mobile" contenteditable="true" data-placeholder="+91 90000 00000">+91 Mobile Number</span></p>
+                            <p>Email: <span class="editable-text" id="preview-client-email" contenteditable="true" data-placeholder="customer@email.com">customer@email.com</span></p>
                         </div>
-
                     </div>
 
                     <!-- INVOICE ITEMS TABLE -->

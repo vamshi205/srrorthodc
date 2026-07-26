@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { auth } from '@/firebase';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Mail, Lock, Eye, EyeOff, Activity } from 'lucide-react';
+import { Shield, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,74 +46,106 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-4 overflow-hidden relative">
-      {/* Background decoration */}
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 overflow-hidden relative selection:bg-teal-500 selection:text-white">
+      {/* Light Theme Dynamic Ambient Orbs & Subtle Grid */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-accent/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/4 -left-20 w-96 h-96 bg-teal-200/50 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '6s' }} />
+        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-emerald-200/50 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '8s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-cyan-100/60 rounded-full blur-[120px]" />
+        
+        {/* Subtle dot matrix grid overlay */}
+        <div 
+          className="absolute inset-0 opacity-[0.4]" 
+          style={{
+            backgroundImage: `radial-gradient(rgba(15, 118, 110, 0.12) 1px, transparent 1px)`,
+            backgroundSize: '24px 24px'
+          }}
+        />
       </div>
 
       <div className="relative w-full max-w-md animate-slide-up z-10">
-        {/* Logo & Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary text-primary-foreground mb-4 shadow-glow">
-            <Activity className="w-8 h-8" />
+        {/* Header with Prominent Logo */}
+        <div className="text-center mb-8 group">
+          <div className="inline-flex items-center justify-center p-5 rounded-3xl bg-white mb-6 shadow-xl shadow-slate-200/60 border border-slate-200/80 ring-1 ring-slate-100 transition-all duration-500 group-hover:scale-105 group-hover:shadow-teal-500/20 group-hover:shadow-2xl">
+            <img
+              src="/srr-logo.png"
+              alt="SRR Ortho Plus Logo"
+              className="h-28 w-auto object-contain transition-transform duration-500 group-hover:scale-105"
+            />
           </div>
-          <h1 className="font-display text-3xl font-bold text-foreground mb-2">
-            SRR Ortho Implant
-          </h1>
-          <p className="text-muted-foreground">
-            Delivery Challan Generator
-          </p>
+
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-teal-50 border border-teal-200/80 text-teal-700 text-xs font-semibold tracking-wide uppercase shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
+              Operations Portal
+            </div>
+
+            <p className="text-slate-600 text-sm font-medium">
+              Delivery Challan & Inventory System
+            </p>
+          </div>
         </div>
 
-        {/* Login Card */}
-        <div className="glass-card rounded-2xl p-8 border border-white/20 shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center gap-2 mb-6">
-            <Shield className="w-5 h-5 text-primary" />
-            <h2 className="font-display text-xl font-semibold text-slate-800 dark:text-slate-100">Sign In</h2>
+        {/* Interactive Light Glass Card */}
+        <div className="rounded-3xl p-8 bg-white/90 border border-slate-200/90 shadow-2xl shadow-slate-200/80 backdrop-blur-xl transition-all duration-300 hover:border-slate-300">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-teal-50 text-teal-600 border border-teal-100">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-display text-lg font-bold text-slate-900 leading-none">Sign In</h2>
+                <span className="text-xs text-slate-500 font-medium">Access your workspace</span>
+              </div>
+            </div>
+            <span className="text-xs font-mono px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-medium">
+              v2.0
+            </span>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              <Label htmlFor="email" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Email Address
               </Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <div className="relative group/input">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within/input:text-teal-600 transition-colors" />
                 <Input
                   id="email"
                   type="email"
-                  placeholder="Enter your email"
+                  placeholder="name@srrortho.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-12 bg-white/30 dark:bg-slate-900/30 border-white/10 rounded-xl"
+                  className="pl-10 h-12 bg-slate-50/80 border-slate-200 text-slate-900 placeholder:text-slate-400 rounded-xl focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-500 focus-visible:bg-white transition-all text-sm font-medium"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                Password
-              </Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Password
+                </Label>
+              </div>
+              <div className="relative group/input">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within/input:text-teal-600 transition-colors" />
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
+                  placeholder="••••••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 h-12 bg-white/30 dark:bg-slate-900/30 border-white/10 rounded-xl"
+                  className="pl-10 pr-10 h-12 bg-slate-50/80 border-slate-200 text-slate-900 placeholder:text-slate-400 rounded-xl focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-500 focus-visible:bg-white transition-all text-sm font-medium"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-lg hover:bg-slate-100"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -121,22 +153,27 @@ const Login = () => {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full h-12 btn-gradient rounded-xl shadow-lg transition-all duration-200 active:scale-[0.98] font-semibold"
+              className="w-full h-12 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-semibold rounded-xl shadow-lg shadow-teal-600/25 hover:shadow-teal-600/35 transition-all duration-300 active:scale-[0.98] mt-2 group/btn"
             >
               {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Signing in...
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Authenticating...
                 </span>
               ) : (
-                'Sign In'
+                <span className="flex items-center justify-center gap-2">
+                  Sign In to Dashboard
+                  <span className="text-lg transition-transform duration-300 group-hover/btn:translate-x-1">→</span>
+                </span>
               )}
             </Button>
           </form>
         </div>
 
-        <p className="text-center text-muted-foreground text-sm mt-6">
-          Secure access for authorized personnel only
+        {/* Footer info */}
+        <p className="text-center text-slate-500 text-xs mt-6 flex items-center justify-center gap-1.5 font-medium">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          End-to-End Encrypted Access
         </p>
       </div>
     </div>

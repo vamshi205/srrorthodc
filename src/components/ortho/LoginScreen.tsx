@@ -11,7 +11,7 @@ interface LoginScreenProps {
 const VALID_EMAIL = 'srrorthoplus999@gmail.com';
 const VALID_PASSWORD = 'srrOrthOSat';
 
-const LOGO_URL = 'https://srrorthoplus.com/srrlogoo-removebg-preview.png';
+const LOGO_URL = '/srr-logo.png';
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [email, setEmail] = useState('');
@@ -55,10 +55,10 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             />
           </div>
           <h1 className="font-display text-3xl font-bold text-foreground mb-2">
-            SRR Ortho Implant
+            SRR Ortho Plus
           </h1>
           <p className="text-muted-foreground">
-            Delivery Challan Generator
+            Delivery Challan & Operations Management Portal
           </p>
         </div>
 
