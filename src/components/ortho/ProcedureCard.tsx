@@ -446,10 +446,10 @@ export function ProcedureCard({
   return (
     <div className="glass-card rounded-2xl overflow-hidden animate-fade-in border-2 border-teal-500/30 shadow-lg bg-white mb-6">
       {/* Premium Active Procedure Header */}
-      <div className="flex flex-wrap items-center justify-between p-4 bg-gradient-to-r from-teal-50 via-slate-50 to-teal-50/40 border-b-2 border-teal-500/20 gap-3">
+      <div className="flex flex-col items-stretch gap-1.5 border-b-2 border-teal-500/20 bg-gradient-to-r from-teal-50 via-slate-50 to-teal-50/40 p-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-4">
         <button
           onClick={onToggleCollapse}
-          className="flex items-center gap-2.5 flex-1 text-left min-w-0"
+          className="flex w-full min-w-0 items-center gap-2.5 text-left sm:flex-1"
         >
           <div className="w-8 h-8 rounded-lg bg-teal-600/10 border border-teal-500/30 flex items-center justify-center text-teal-700 shrink-0">
             {isCollapsed ? (
@@ -460,21 +460,22 @@ export function ProcedureCard({
           </div>
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             {typeof index === 'number' && (
-              <Badge className="bg-teal-700 text-white font-extrabold text-xs px-2.5 py-0.5 shadow-sm shrink-0">
-                Procedure #{index + 1}
+              <Badge className="shrink-0 bg-teal-700 px-2 py-0.5 text-xs font-extrabold text-white shadow-sm">
+                <span className="sm:hidden">P{index + 1}</span>
+                <span className="hidden sm:inline">Procedure #{index + 1}</span>
               </Badge>
             )}
-            <h3 className="font-display font-extrabold text-slate-900 text-base sm:text-lg truncate tracking-tight">{procedure.name}</h3>
-            <Badge variant="outline" className="text-teal-700 bg-teal-100/60 border-teal-300 font-semibold text-xs shrink-0">
+            <h3 className="break-words font-display text-base font-extrabold leading-tight tracking-tight text-slate-900 sm:text-lg sm:truncate">{procedure.name}</h3>
+            <Badge variant="outline" className="hidden shrink-0 border-teal-300 bg-teal-100/60 text-xs font-semibold text-teal-700 sm:inline-flex">
               {procedure.type}
             </Badge>
           </div>
         </button>
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-slate-300 shadow-xs">
-            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Material:</span>
+        <div className="flex items-center gap-2 self-end sm:shrink-0 sm:self-auto sm:gap-2.5">
+          <div className="rounded-lg border border-slate-300 bg-white px-1.5 py-0.5 shadow-xs sm:flex sm:items-center sm:gap-1.5 sm:px-2 sm:py-1">
+            <span className="hidden text-[11px] font-bold uppercase tracking-wider text-slate-600 sm:inline">Material:</span>
             <Select value={procedure.materialType} onValueChange={onMaterialTypeChange}>
-              <SelectTrigger className="h-7 w-[105px] text-xs bg-white font-bold text-teal-800 border-none focus:ring-0 shadow-none p-0">
+              <SelectTrigger aria-label="Material type" className="h-7 w-[92px] border-none bg-white p-0 text-xs font-bold text-teal-800 shadow-none focus:ring-0 sm:w-[105px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

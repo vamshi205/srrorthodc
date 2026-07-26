@@ -321,12 +321,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                         <Printer className="w-4 h-4 text-cyan-400" /> Print Delivery Challan
                       </Button>
                     </SheetClose>
-                    <SheetClose asChild>
-                      <Button variant="ghost" className="w-full justify-start gap-3 text-slate-200 hover:text-white hover:bg-white/10 h-10 text-sm font-medium" onClick={toggleTheme}>
-                        {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4 text-sky-300" />}
-                        Toggle Theme
-                      </Button>
-                    </SheetClose>
                   </div>
 
                   {/* Logout Action */}

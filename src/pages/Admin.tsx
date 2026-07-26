@@ -4,10 +4,29 @@ import { AddProcedureForm } from '@/components/admin/AddProcedureForm';
 import { TopToolbar } from '@/components/ortho/TopToolbar';
 import { useProcedures } from '@/hooks/useProcedures';
 import { auth } from '@/firebase';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const Admin = () => {
   const navigate = useNavigate();
   const { fetchProcedures, loading } = useProcedures();
+
+  const [adminAccessOpen, setAdminAccessOpen] = useState(true);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isAdminAuthorized, setIsAdminAuthorized] = useState(false);
+
+  const confirmAdminAccess = () => {
+    if (adminPassword.trim() !== 'srrortho') {
+      setPasswordError('Incorrect password. Please try again.');
+      return;
+    }
+    setPasswordError('');
+    setIsAdminAuthorized(true);
+    setAdminAccessOpen(false);
+  };
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'dark';
@@ -52,13 +71,49 @@ const Admin = () => {
           setCollapsedProcedures={() => {}}
         />
 
-        {/* Main Content */}
-        <main className="container mx-auto py-4 sm:py-6 max-w-4xl">
-          <div className="space-y-6">
-            {/* Add Procedure Form */}
-            <AddProcedureForm />
-          </div>
-        </main>
+        <Dialog
+          open={adminAccessOpen}
+          onOpenChange={(open) => {
+            if (!open && !isAdminAuthorized) navigate('/');
+            setAdminAccessOpen(open);
+          }}
+        >
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Admin Access</DialogTitle>
+              <DialogDescription>Enter the administrator password to open the Admin panel.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Label htmlFor="admin-access-password">Password</Label>
+              <Input
+                id="admin-access-password"
+                type="password"
+                autoFocus
+                value={adminPassword}
+                onChange={(event) => {
+                  setAdminPassword(event.target.value);
+                  setPasswordError('');
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') confirmAdminAccess();
+                }}
+              />
+              {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
+              <div className="flex justify-end gap-2 pt-1">
+                <Button variant="outline" onClick={() => navigate('/')}>Cancel</Button>
+                <Button onClick={confirmAdminAccess}>Enter Admin Panel</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {isAdminAuthorized && (
+          <main className="container mx-auto max-w-4xl py-4 sm:py-6">
+            <div className="space-y-6">
+              <AddProcedureForm />
+            </div>
+          </main>
+        )}
       </div>
     </div>
   );

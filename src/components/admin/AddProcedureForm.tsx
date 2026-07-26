@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,9 +43,6 @@ export function AddProcedureForm() {
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [enteredPassword, setEnteredPassword] = useState('');
-  const [pendingAction, setPendingAction] = useState<'save' | 'delete' | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
 
@@ -260,14 +256,11 @@ export function AddProcedureForm() {
       toast({ title: 'Error', description: 'Procedure name is required', variant: 'destructive' });
       return;
     }
-    setPendingAction('save');
-    setPasswordDialogOpen(true);
+    await executeSave();
   };
 
   const executeSave = async () => {
     setIsSaving(true);
-    setPasswordDialogOpen(false);
-    setEnteredPassword('');
 
     try {
       const fixedItemsList = items.filter(item => item.isFixed);
@@ -346,20 +339,16 @@ export function AddProcedureForm() {
       });
     } finally {
       setIsSaving(false);
-      setPendingAction(null);
     }
   };
 
   const handleDelete = async () => {
     if (!isEditMode || !originalProcedureName) return;
-    setPendingAction('delete');
-    setPasswordDialogOpen(true);
+    await executeDelete();
   };
 
   const executeDelete = async () => {
     setIsDeleting(true);
-    setPasswordDialogOpen(false);
-    setEnteredPassword('');
     try {
       await procedureService.delete(originalProcedureName);
       toast({ title: 'Deleted', description: `Procedure "${originalProcedureName}" deleted.` });
@@ -370,20 +359,6 @@ export function AddProcedureForm() {
       toast({ title: 'Error', description: 'Failed to delete: ' + error.message, variant: 'destructive' });
     } finally {
       setIsDeleting(false);
-      setPendingAction(null);
-    }
-  };
-
-  const handleConfirmPassword = () => {
-    if (enteredPassword.trim() !== "srrortho") {
-      toast({ title: "Incorrect password", variant: "destructive" });
-      return;
-    }
-
-    if (pendingAction === 'save') {
-      executeSave();
-    } else if (pendingAction === 'delete') {
-      executeDelete();
     }
   };
 
@@ -892,43 +867,6 @@ export function AddProcedureForm() {
           </div>
         </div>
       </div>
-
-      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Confirm Action</DialogTitle>
-            <DialogDescription>
-              Please enter password to {pendingAction === 'delete' ? 'delete' : 'save/update'} this procedure.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="admin-password">Password</Label>
-              <Input
-                id="admin-password"
-                type="password"
-                value={enteredPassword}
-                onChange={(e) => setEnteredPassword(e.target.value)}
-                placeholder="Enter password"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleConfirmPassword();
-                }}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant={pendingAction === 'delete' ? "destructive" : "default"}
-                onClick={handleConfirmPassword}
-              >
-                Confirm
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
