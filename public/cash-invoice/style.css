@@ -1441,6 +1441,8 @@ select.table-input {
 
 /* Editable Text styles on screen */
 .editable-text {
+    display: inline-block;
+    min-width: 150px;
     border-bottom: 1px dashed var(--paper-border, #cbd5e1);
     padding-bottom: 1px;
     transition: var(--transition-fast);
@@ -1456,9 +1458,7 @@ select.table-input {
     background: rgba(79, 70, 229, 0.05);
 }
 .editable-text:empty::before {
-    content: "Click to enter...";
-    color: #9ca3af;
-    font-style: italic;
+    content: attr(data-placeholder);
 }
 
 /* ==========================================

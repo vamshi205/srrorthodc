@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
 import { auth } from "@/firebase";
+import {
+  fetchCashInvoicesFromFirestore,
+  saveCashInvoiceToFirestore,
+  deleteCashInvoiceFromFirestore,
+  fetchCashCustomersFromFirestore,
+  saveCashCustomerToFirestore,
+} from "@/services/cashInvoiceFirebaseService";
 
 export default function CashInvoice() {
   const navigate = useNavigate();
@@ -20,7 +27,7 @@ export default function CashInvoice() {
     }
   };
 
-  const [iframeSrc, setIframeSrc] = useState("/cash-invoice/index.html");
+  const [iframeSrc, setIframeSrc] = useState(`/cash-invoice/index.html?t=${Date.now()}`);
 
   useEffect(() => {
     // Skip the inner auth overlay screen in Cash Invoice Maker
@@ -29,12 +36,45 @@ export default function CashInvoice() {
     // Pass the Google OAuth redirect hash to the iframe if present
     const parentHash = window.location.hash;
     if (parentHash && parentHash.includes("access_token")) {
-      setIframeSrc(`/cash-invoice/index.html${parentHash}`);
+      setIframeSrc(`/cash-invoice/index.html?t=${Date.now()}${parentHash}`);
       // Clean parent URL hash so it doesn't linger in the address bar
       setTimeout(() => {
         window.history.replaceState(null, "", window.location.pathname + window.location.search);
       }, 800);
     }
+    // Listen for postMessages from the Cash Invoice iframe to store/fetch directly in Firestore
+    const handleMessage = async (event: MessageEvent) => {
+      const { action, payload, requestId } = event.data || {};
+      if (!action) return;
+
+      console.log('[CashInvoice Host] Received postMessage action:', action, payload);
+      const targetWindow = (event.source as Window) || (document.querySelector('iframe') as HTMLIFrameElement | null)?.contentWindow;
+
+      if (action === 'FETCH_CASH_INVOICES') {
+        const invoices = await fetchCashInvoicesFromFirestore();
+        console.log('[CashInvoice Host] Fetched invoices from Firestore:', invoices);
+        targetWindow?.postMessage({ action: 'FETCH_CASH_INVOICES_RESPONSE', payload: invoices, requestId }, '*');
+      } else if (action === 'SAVE_CASH_INVOICE') {
+        const success = await saveCashInvoiceToFirestore(payload);
+        console.log('[CashInvoice Host] Save invoice result:', success);
+        targetWindow?.postMessage({ action: 'SAVE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
+      } else if (action === 'DELETE_CASH_INVOICE') {
+        const success = await deleteCashInvoiceFromFirestore(payload);
+        console.log('[CashInvoice Host] Delete invoice result:', success);
+        targetWindow?.postMessage({ action: 'DELETE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
+      } else if (action === 'FETCH_CASH_CUSTOMERS') {
+        const customers = await fetchCashCustomersFromFirestore();
+        console.log('[CashInvoice Host] Fetched customers from Firestore:', customers);
+        targetWindow?.postMessage({ action: 'FETCH_CASH_CUSTOMERS_RESPONSE', payload: customers, requestId }, '*');
+      } else if (action === 'SAVE_CASH_CUSTOMER') {
+        const success = await saveCashCustomerToFirestore(payload);
+        console.log('[CashInvoice Host] Save customer result:', success);
+        targetWindow?.postMessage({ action: 'SAVE_CASH_CUSTOMER_RESPONSE', success, requestId }, '*');
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   const handleLogout = async () => {

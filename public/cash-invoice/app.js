@@ -91,19 +91,43 @@ document.addEventListener("DOMContentLoaded", () => {
     loadPersistedData();
     setupEventListeners();
     renderInvoiceRows();
-    updateCalculations();
     initGoogleDriveSyncQuietly();
+
+    // Handle incoming Firestore responses from top window frame
+    window.addEventListener("message", (e) => {
+        const { action, payload } = e.data || {};
+        console.log("[CashInvoice Iframe] Received message:", action, payload);
+        if (action === "FETCH_CASH_INVOICES_RESPONSE" && Array.isArray(payload)) {
+            console.log("[CashInvoice Iframe] Setting savedInvoices from Firestore:", payload);
+            state.savedInvoices = payload;
+            renderSavedInvoicesList();
+            renderDashboardInvoicesList();
+        } else if (action === "SAVE_CASH_INVOICE_RESPONSE") {
+            renderSavedInvoicesList();
+            renderDashboardInvoicesList();
+        } else if (action === "FETCH_CASH_CUSTOMERS_RESPONSE" && Array.isArray(payload)) {
+            state.customers = payload;
+            renderCustomerList();
+            populateCustomerSelector();
+        }
+    });
 });
 
-// Load Data from LocalStorage
+// Load Data from LocalStorage & Firestore DB
 function loadPersistedData() {
-    // 1. Saved Invoices (Load first so sequential numbering helper can access it)
-    const savedInvs = localStorage.getItem("im_saved_invoices");
-    if (savedInvs) {
-        state.savedInvoices = JSON.parse(savedInvs);
-    } else {
-        state.savedInvoices = [];
-    }
+    // 1. Fetch Saved Invoices & Customers from Firestore DB via Parent React Window
+    setTimeout(() => {
+        console.log("[CashInvoice Iframe] Sending FETCH_CASH_INVOICES request to parent");
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ action: "FETCH_CASH_INVOICES" }, "*");
+            window.parent.postMessage({ action: "FETCH_CASH_CUSTOMERS" }, "*");
+        } else {
+            window.postMessage({ action: "FETCH_CASH_INVOICES" }, "*");
+            window.postMessage({ action: "FETCH_CASH_CUSTOMERS" }, "*");
+        }
+    }, 100);
+
+    state.savedInvoices = []; // loaded from Firestore only
     renderSavedInvoicesList();
 
     // 2. Company Profile
@@ -151,10 +175,10 @@ function loadPersistedData() {
     if (invDueEl) invDueEl.value = state.clientInfo.invDue || "";
     
     // Sync Preview text
-    document.getElementById("preview-client-name").innerText = state.clientInfo.name || "Click to enter Hospital / Customer Name";
-    document.getElementById("preview-client-address").innerText = state.clientInfo.address || "Click to enter Customer Address";
-    document.getElementById("preview-client-mobile").innerText = state.clientInfo.mobile || "+91 Mobile Number";
-    document.getElementById("preview-client-email").innerText = state.clientInfo.email || "customer@email.com";
+    document.getElementById("preview-client-name").innerText = state.clientInfo.name || "";
+    document.getElementById("preview-client-address").innerText = state.clientInfo.address || "";
+    document.getElementById("preview-client-mobile").innerText = state.clientInfo.mobile || "";
+    document.getElementById("preview-client-email").innerText = state.clientInfo.email || "";
     document.getElementById("preview-inv-number").innerText = state.clientInfo.invNumber || "";
     document.getElementById("preview-dc-number").innerText = state.clientInfo.dcNumber || "-";
     document.getElementById("preview-inv-date").innerText = formatDateString(state.clientInfo.invDate);
@@ -183,12 +207,7 @@ function loadPersistedData() {
     }
 
     // 6. Customer Directory
-    const savedCust = localStorage.getItem("im_customers");
-    if (savedCust) {
-        state.customers = JSON.parse(savedCust);
-    } else {
-        state.customers = [];
-    }
+    state.customers = []; // loaded from Firestore only
     renderCustomerList();
     populateCustomerSelector();
 
@@ -279,7 +298,6 @@ function setupEventListeners() {
             
             const newCustomer = { name, mobile, email, address };
             state.customers.push(newCustomer);
-            localStorage.setItem("im_customers", JSON.stringify(state.customers));
             
             // Re-render UI list & dropdown
             renderCustomerList();
@@ -647,8 +665,11 @@ function setupEventListeners() {
     }
 
     const validateInvoice = () => {
-        // 1. Validate Customer/Client Name
-        const clientName = (state.clientInfo.name || "").trim();
+        // 1. Validate Customer/Client Name — read from DOM or state
+        const domClientName = (document.getElementById("preview-client-name")?.innerText || "").trim();
+        const clientName = domClientName || (state.clientInfo.name || "").trim();
+        // Sync into state in case only DOM was updated
+        if (domClientName) state.clientInfo.name = domClientName;
         if (!clientName || clientName === "Customer Name" || clientName === "Hospital / Customer Name") {
             alert("Mandatory Error: Please click and enter a valid Client/Customer Name directly on the invoice sheet.");
             const previewEl = document.getElementById("preview-client-name");
@@ -656,8 +677,10 @@ function setupEventListeners() {
             return false;
         }
 
-        // 2. Validate Invoice Number
-        const invNum = (state.clientInfo.invNumber || "").trim();
+        // 2. Validate Invoice Number — read from DOM or state
+        const domInvNum = (document.getElementById("preview-inv-number")?.innerText || "").trim();
+        const invNum = domInvNum || (state.clientInfo.invNumber || "").trim();
+        if (domInvNum) state.clientInfo.invNumber = domInvNum;
         if (!invNum) {
             alert("Mandatory Error: Please click and enter an Invoice Number directly on the invoice sheet.");
             const previewEl = document.getElementById("preview-inv-number");
@@ -748,6 +771,18 @@ function setupEventListeners() {
 
     // Reusable function to save the current invoice in the workspace
     const saveActiveInvoice = () => {
+        // Sync DOM values into state before validation
+        const domName = document.getElementById("preview-client-name")?.innerText.trim();
+        const domAddress = document.getElementById("preview-client-address")?.innerText.trim();
+        const domMobile = document.getElementById("preview-client-mobile")?.innerText.trim();
+        const domEmail = document.getElementById("preview-client-email")?.innerText.trim();
+        const domInvNum = document.getElementById("preview-inv-number")?.innerText.trim();
+        if (domName) state.clientInfo.name = domName;
+        if (domAddress) state.clientInfo.address = domAddress;
+        if (domMobile) state.clientInfo.mobile = domMobile;
+        if (domEmail) state.clientInfo.email = domEmail;
+        if (domInvNum) state.clientInfo.invNumber = domInvNum;
+
         if (!validateInvoice()) return;
 
         let subtotal = 0;
@@ -756,7 +791,7 @@ function setupEventListeners() {
         });
         const flatDiscount = parseFloat(document.getElementById("discount-flat-input").value) || 0;
         const grandTotal = Math.round(subtotal - flatDiscount);
-        
+
         const invoiceToSave = {
             invNumber: state.clientInfo.invNumber || getNextInvoiceNumber(),
             dcNumber: state.clientInfo.dcNumber || "",
@@ -772,11 +807,10 @@ function setupEventListeners() {
             paymentReceived: 0,
             savedAt: new Date().getTime()
         };
-        
+
         const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === invoiceToSave.invNumber);
         if (existingIdx !== -1) {
             if (confirm(`Invoice ${invoiceToSave.invNumber} already exists. Do you want to update it?`)) {
-                // Preserve paymentReceived from existing invoice
                 invoiceToSave.paymentReceived = state.savedInvoices[existingIdx].paymentReceived || 0;
                 state.savedInvoices[existingIdx] = invoiceToSave;
                 showStatus(`Updated saved invoice: ${invoiceToSave.invNumber}`);
@@ -787,10 +821,12 @@ function setupEventListeners() {
             state.savedInvoices.push(invoiceToSave);
             showStatus(`Saved invoice: ${invoiceToSave.invNumber}`);
         }
-        
-        localStorage.setItem("im_saved_invoices", JSON.stringify(state.savedInvoices));
-        renderSavedInvoicesList();
-        switchDashboardTab("invoices");
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ action: "SAVE_CASH_INVOICE", payload: invoiceToSave }, "*");
+        }
+
+        // Open dashboard first, then render inside it
+        activeDashboardTab = "invoices";
         openInvoicesDashboard();
 
         // Background Google Drive sync
@@ -834,8 +870,9 @@ function setupEventListeners() {
             state.savedInvoices.push(invoiceToSave);
             showStatus(`Saved invoice: ${invoiceToSave.invNumber}`);
         }
-        
-        localStorage.setItem("im_saved_invoices", JSON.stringify(state.savedInvoices));
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ action: "SAVE_CASH_INVOICE", payload: invoiceToSave }, "*");
+        }
         renderSavedInvoicesList();
 
         // Background Google Drive sync
@@ -920,10 +957,10 @@ function setupEventListeners() {
             const el = document.getElementById(id);
             if (el) el.innerText = text;
         };
-        setInner("preview-client-name", "Click to enter Hospital / Customer Name");
-        setInner("preview-client-address", "Click to enter Customer Address");
-        setInner("preview-client-mobile", "+91 Mobile Number");
-        setInner("preview-client-email", "customer@email.com");
+        setInner("preview-client-name", "");
+        setInner("preview-client-address", "");
+        setInner("preview-client-mobile", "");
+        setInner("preview-client-email", "");
         setInner("preview-inv-number", state.clientInfo.invNumber);
         setInner("preview-dc-number", "-");
         setInner("preview-inv-date", formatDateString(state.clientInfo.invDate));
@@ -976,28 +1013,35 @@ function setupEventListeners() {
     );
 
     // Clear Price List Catalog
-    document.getElementById("clear-catalog-btn").addEventListener("click", () => {
-        if (confirm("Are you sure you want to remove the loaded Price List? The app will revert to sample implants suggestions.")) {
-            state.priceList = [...SAMPLE_CATALOG];
-            localStorage.removeItem("im_price_list");
-            localStorage.removeItem("im_price_list_name");
-            updateCatalogBadge(state.priceList.length, "Sample Implants Catalog");
-            document.getElementById("catalog-status").style.display = "none";
-            showStatus("Price list catalog removed. Defaulting to sample data.");
+    const clearCatalogBtn = document.getElementById("clear-catalog-btn");
+    if (clearCatalogBtn) {
+        clearCatalogBtn.addEventListener("click", () => {
+            if (confirm("Are you sure you want to remove the loaded Price List? The app will revert to sample implants suggestions.")) {
+                state.priceList = [...SAMPLE_CATALOG];
+                localStorage.removeItem("im_price_list");
+                localStorage.removeItem("im_price_list_name");
+                updateCatalogBadge(state.priceList.length, "Sample Implants Catalog");
+                const catStatus = document.getElementById("catalog-status");
+                if (catStatus) catStatus.style.display = "none";
+                showStatus("Price list catalog removed. Defaulting to sample data.");
 
-            // Background Google Drive sync
-            if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
-                syncCatalogWithGDrive(true);
+                // Background Google Drive sync
+                if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
+                    syncCatalogWithGDrive(true);
+                }
             }
-        }
-    });
+        });
+    }
 
     // Print / PDF Button
-    document.getElementById("print-invoice-btn").addEventListener("click", () => {
-        if (!validateInvoice()) return;
-        showStatus("Opening Print Dialog...");
-        window.print();
-    });
+    const printInvoiceBtn = document.getElementById("print-invoice-btn");
+    if (printInvoiceBtn) {
+        printInvoiceBtn.addEventListener("click", () => {
+            if (!validateInvoice()) return;
+            showStatus("Opening Print Dialog...");
+            window.print();
+        });
+    }
 
     // Customer search on Client Name input in sidebar
     const clientNameInput = document.getElementById("client-name");
@@ -1089,8 +1133,8 @@ function setupPaperEditableSync() {
     const syncEdit = (previewId, inputId, storageKey, profileField = null) => {
         const preview = document.getElementById(previewId);
         if (preview) {
-            preview.addEventListener("blur", () => {
-                const val = preview.innerText;
+            const updateStateVal = () => {
+                const val = preview.innerText.trim();
                 const input = document.getElementById(inputId);
                 if (input) input.value = val;
                 
@@ -1102,7 +1146,9 @@ function setupPaperEditableSync() {
                     state.clientInfo[storageKey] = val;
                     localStorage.setItem("im_client_info", JSON.stringify(state.clientInfo));
                 }
-            });
+            };
+            preview.addEventListener("input", updateStateVal);
+            preview.addEventListener("blur", updateStateVal);
             
             // Disable Enter key from adding linebreaks in single-line headers
             if (previewId !== "preview-comp-address" && previewId !== "preview-client-address" && previewId !== "preview-comp-bank") {
@@ -1893,7 +1939,6 @@ function renderCustomerList() {
             e.stopPropagation();
             if (confirm(`Are you sure you want to delete customer ${cust.name}?`)) {
                 state.customers.splice(idx, 1);
-                localStorage.setItem("im_customers", JSON.stringify(state.customers));
                 renderCustomerList();
                 populateCustomerSelector();
                 showStatus(`Deleted customer ${cust.name}`);
@@ -1939,10 +1984,10 @@ function preloadCustomer(cust) {
     setVal("client-mobile", cust.mobile || "");
     setVal("client-email", cust.email || "");
     
-    document.getElementById("preview-client-name").innerText = cust.name || "Click to enter Hospital / Customer Name";
-    document.getElementById("preview-client-address").innerText = cust.address || "Click to enter Customer Address";
-    document.getElementById("preview-client-mobile").innerText = cust.mobile || "+91 Mobile Number";
-    document.getElementById("preview-client-email").innerText = cust.email || "customer@email.com";
+    document.getElementById("preview-client-name").innerText = cust.name || "";
+    document.getElementById("preview-client-address").innerText = cust.address || "";
+    document.getElementById("preview-client-mobile").innerText = cust.mobile || "";
+    document.getElementById("preview-client-email").innerText = cust.email || "";
     
     localStorage.setItem("im_client_info", JSON.stringify(state.clientInfo));
     showStatus(`Preloaded customer details for: ${cust.name}`);
@@ -1964,7 +2009,6 @@ function quickPayInvoice(inv, originalIdx) {
         if (confirm("Are you sure?")) {
             const grandTotal = inv.grandTotal || 0;
             state.savedInvoices[originalIdx].paymentReceived = grandTotal;
-            localStorage.setItem("im_saved_invoices", JSON.stringify(state.savedInvoices));
             
             renderSavedInvoicesList();
             
@@ -2027,7 +2071,6 @@ function renderSavedInvoicesList() {
             e.stopPropagation();
             if (confirm(`Are you sure you want to delete invoice ${inv.invNumber || 'Draft'}?`)) {
                 state.savedInvoices.splice(idx, 1);
-                localStorage.setItem("im_saved_invoices", JSON.stringify(state.savedInvoices));
                 renderSavedInvoicesList();
                 showStatus(`Deleted invoice ${inv.invNumber || 'Draft'}`);
             }
@@ -2200,7 +2243,6 @@ function renderModalCustomerList(filterText = "") {
             e.stopPropagation();
             if (confirm(`Are you sure you want to delete customer ${cust.name}?`)) {
                 state.customers.splice(originalIdx, 1);
-                localStorage.setItem("im_customers", JSON.stringify(state.customers));
                 renderModalCustomerList(filterText);
                 populateCustomerSelector();
                 showStatus(`Deleted customer ${cust.name}`);
@@ -2219,15 +2261,23 @@ function renderModalCustomerList(filterText = "") {
 // Render the Invoices list inside the Invoices Dashboard Page (with search & payment edit support)
 function renderDashboardInvoicesList(filterText = "") {
     const tbody = document.getElementById("dashboard-invoices-tbody");
-    if (!tbody) return;
-    
+    if (!tbody) {
+        console.warn("[CashInvoice] dashboard-invoices-tbody not found in DOM");
+        return;
+    }
+
+    console.log("[CashInvoice] renderDashboardInvoicesList called, state.savedInvoices count:", state.savedInvoices.length);
+
     const filter = filterText.toLowerCase().trim();
-    const filtered = state.savedInvoices.filter(inv => 
+    // When filter is empty, show ALL invoices
+    const filtered = filter === "" ? [...state.savedInvoices] : state.savedInvoices.filter(inv =>
         (inv.invNumber && inv.invNumber.toLowerCase().includes(filter)) ||
         (inv.dcNumber && inv.dcNumber.toLowerCase().includes(filter)) ||
         (inv.clientName && inv.clientName.toLowerCase().includes(filter))
     );
-    
+
+    console.log("[CashInvoice] filtered invoices count:", filtered.length);
+
     if (filtered.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7" class="empty-msg" style="text-align:center; padding: 25px 0;">${state.savedInvoices.length === 0 ? 'No saved invoices found.' : 'No matching invoices found.'}</td></tr>`;
         return;
@@ -2236,70 +2286,36 @@ function renderDashboardInvoicesList(filterText = "") {
     tbody.innerHTML = "";
     filtered.forEach((inv) => {
         const originalIdx = state.savedInvoices.findIndex(i => i.invNumber === inv.invNumber);
-        
-        const tr = document.createElement("tr");
-        tr.style.borderBottom = "1px solid var(--border-color)";
-        
-        const grandTotal = inv.grandTotal || 0;
-        const paymentReceived = inv.paymentReceived || 0;
+        const grandTotal = parseFloat(inv.grandTotal) || 0;
+        const paymentReceived = parseFloat(inv.paymentReceived) || 0;
         const balanceDue = grandTotal - paymentReceived;
-        
-        let balanceHtml = "";
-        if (balanceDue <= 0) {
-            balanceHtml = `<span style="color: #10b981; font-weight: 700;">Paid</span>`;
-        } else {
-            balanceHtml = `<span style="color: #ef4444; font-weight: 700;">₹${balanceDue.toFixed(2)}</span>`;
-        }
-        
-        tr.innerHTML = `
-            <td style="padding: 14px 16px; font-weight: 600; color: var(--paper-accent);">${inv.invNumber} ${inv.dcNumber ? `<span style="font-size: 10px; color: var(--text-muted); font-weight: 500; display: block; margin-top: 2px;">DC: ${inv.dcNumber}</span>` : ''}</td>
-            <td style="padding: 14px 16px; color: var(--text-muted); font-size:11px;">${formatDateString(inv.invDate)}</td>
-            <td style="padding: 14px 16px; font-weight: 500;">${inv.clientName}</td>
-            <td style="padding: 14px 16px; text-align: right; font-weight: 600;">₹${grandTotal.toFixed(2)}</td>
-            <td style="padding: 14px 16px; text-align: right; font-weight: 500;">₹${paymentReceived.toFixed(2)}</td>
-            <td style="padding: 14px 16px; text-align: right; font-weight: 600;" class="bal-due-cell">${balanceHtml}</td>
-            <td style="padding: 14px 16px; text-align: center;">
-                <div style="display: flex; gap: 10px; justify-content: center; align-items: center;">
-                    <button type="button" class="btn-pay-saved pay-quick-btn" title="Quick Pay (Mark Fully Paid)">
-                        <svg class="pay-icon" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-                    </button>
-                    <button type="button" class="btn btn-secondary btn-xs load-inv-btn" title="Load Invoice in Editor" style="padding: 6px 12px; font-size: 11px;">Load</button>
-                    <button type="button" class="btn-delete-saved delete-inv-btn" title="Delete Invoice" style="font-size: 16px; padding: 6px; background:transparent; border:none; cursor:pointer;">🗑️</button>
-                </div>
-            </td>
-        `;
-        
-        const quickPayBtn = tr.querySelector(".pay-quick-btn");
-        const loadBtn = tr.querySelector(".load-inv-btn");
-        const deleteBtn = tr.querySelector(".delete-inv-btn");
-        const balCell = tr.querySelector(".bal-due-cell");
-        
-        if (quickPayBtn) {
-            quickPayBtn.addEventListener("click", () => {
-                quickPayInvoice(inv, originalIdx);
-            });
-        }
-        
-        loadBtn.addEventListener("click", () => {
-            loadSavedInvoice(inv);
-            closeInvoicesDashboard();
-        });
-        
-        deleteBtn.addEventListener("click", () => {
-            if (confirm(`Are you sure you want to delete invoice ${inv.invNumber}?`)) {
+        const balanceHtml = balanceDue <= 0
+            ? '<span style="color:#10b981;font-weight:700;">Paid</span>'
+            : '<span style="color:#ef4444;font-weight:700;">₹' + balanceDue.toFixed(2) + '</span>';
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #f3f4f6';
+        tr.onmouseenter = () => tr.style.background = '#f0fdf4';
+        tr.onmouseleave = () => tr.style.background = '';
+        tr.innerHTML = '<td style="padding:12px 16px;"><a href="#" class="inv-num-link" style="font-weight:700;color:#2a9d8f;font-size:13px;text-decoration:underline;cursor:pointer;">' + (inv.invNumber||'-') + '</a>' + (inv.dcNumber ? '<span style="display:block;font-size:11px;color:#9ca3af;margin-top:2px;">DC: ' + inv.dcNumber + '</span>' : '') + '</td><td style="padding:12px 16px;color:#6b7280;font-size:12px;">' + (formatDateString(inv.invDate)||'-') + '</td><td style="padding:12px 16px;font-weight:600;color:#111827;font-size:13px;">' + (inv.clientName||'Walk-in') + '</td><td style="padding:12px 16px;text-align:right;font-weight:700;color:#111827;">₹' + grandTotal.toFixed(2) + '</td><td style="padding:12px 16px;text-align:right;color:#6b7280;">₹' + paymentReceived.toFixed(2) + '</td><td style="padding:12px 16px;text-align:right;">' + balanceHtml + '</td><td style="padding:12px 16px;text-align:center;"><div style="display:flex;gap:6px;justify-content:center;align-items:center;"><button type="button" class="view-inv-btn" style="padding:5px 10px;border-radius:6px;border:1px solid #3b82f6;background:#eff6ff;color:#2563eb;font-size:11px;cursor:pointer;font-weight:600;">&#128065; View</button><button type="button" class="load-inv-btn" style="padding:5px 10px;border-radius:6px;border:1px solid #2a9d8f;background:#2a9d8f;color:#fff;font-size:11px;cursor:pointer;font-weight:600;">&#9998; Edit</button><button type="button" class="pay-quick-btn" style="padding:5px 10px;border-radius:6px;border:1px solid #d1d5db;background:#f9fafb;color:#374151;font-size:11px;cursor:pointer;font-weight:600;">&#128179; Pay</button><button type="button" class="delete-inv-btn" style="padding:5px 8px;border-radius:6px;border:1px solid #fca5a5;background:#fff;color:#ef4444;font-size:13px;cursor:pointer;">X</button></div></td>';
+        const quickPayBtn = tr.querySelector('.pay-quick-btn');
+        const loadBtn = tr.querySelector('.load-inv-btn');
+        const deleteBtn = tr.querySelector('.delete-inv-btn');
+        const viewBtn = tr.querySelector('.view-inv-btn');
+        if (viewBtn) viewBtn.addEventListener('click', () => openViewInvoiceModal(inv));
+        const invNumLink = tr.querySelector('.inv-num-link');
+        if (invNumLink) invNumLink.addEventListener('click', (e) => { e.preventDefault(); openViewInvoiceModal(inv); });
+        if (quickPayBtn) quickPayBtn.addEventListener('click', () => quickPayInvoice(inv, originalIdx));
+        if (loadBtn) loadBtn.addEventListener('click', () => { loadSavedInvoice(inv); closeInvoicesDashboard(); });
+        if (deleteBtn) deleteBtn.addEventListener('click', () => {
+            if (confirm('Delete invoice ' + inv.invNumber + '?')) {
                 state.savedInvoices.splice(originalIdx, 1);
-                localStorage.setItem("im_saved_invoices", JSON.stringify(state.savedInvoices));
+                if (window.parent && window.parent !== window) window.parent.postMessage({ action: 'DELETE_CASH_INVOICE', payload: inv.invNumber }, '*');
                 renderDashboardInvoicesList(filterText);
                 renderSavedInvoicesList();
-                showStatus(`Deleted invoice ${inv.invNumber}`);
-
-                // Background Google Drive sync
-                if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
-                    syncInvoicesWithGDrive(true);
-                }
+                showStatus('Deleted invoice ' + inv.invNumber);
+                if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) syncInvoicesWithGDrive(true);
             }
         });
-        
         tbody.appendChild(tr);
     });
 }
@@ -2307,47 +2323,22 @@ function renderDashboardInvoicesList(filterText = "") {
 // Toggle Saved Invoices Dashboard view and visibility of editor controls
 function openInvoicesDashboard() {
     const invoicesDashboardContainer = document.getElementById("invoices-dashboard-container");
-    const invoiceEditorContainer = document.querySelector(".invoice-container");
-    const saveInvoiceBtn = document.getElementById("save-invoice-btn");
-    const bottomSaveBtn = document.getElementById("bottom-save-invoice-btn");
-    const printBtn = document.getElementById("print-invoice-btn");
-    const clearBtn = document.getElementById("clear-all-btn");
-
-    if (invoicesDashboardContainer && invoiceEditorContainer) {
-        invoiceEditorContainer.style.display = "none";
-        invoicesDashboardContainer.style.display = "block";
-        if (saveInvoiceBtn) saveInvoiceBtn.style.display = "none";
-        if (bottomSaveBtn) bottomSaveBtn.style.display = "none";
-        if (printBtn) printBtn.style.display = "none";
-        if (clearBtn) clearBtn.style.display = "none";
-        const floatingBar = document.getElementById("floating-bottom-bar");
-        if (floatingBar) floatingBar.style.display = "none";
-        
-        // Delegate tab layout rendering and configuration to switchDashboardTab
-        switchDashboardTab(activeDashboardTab);
-        showStatus("Saved Invoices Dashboard opened.");
+    if (!invoicesDashboardContainer) {
+        console.error("[DEBUG] invoices-dashboard-container not found!");
+        return;
     }
+    console.log("[DEBUG] openInvoicesDashboard: showing overlay, savedInvoices:", state.savedInvoices.length);
+    invoicesDashboardContainer.style.display = "block";
+    document.body.style.overflow = "hidden";
+    renderSavedInvoicesList();
+    switchDashboardTab(activeDashboardTab);
 }
 
 function closeInvoicesDashboard() {
     const invoicesDashboardContainer = document.getElementById("invoices-dashboard-container");
-    const invoiceEditorContainer = document.querySelector(".invoice-container");
-    const saveInvoiceBtn = document.getElementById("save-invoice-btn");
-    const bottomSaveBtn = document.getElementById("bottom-save-invoice-btn");
-    const printBtn = document.getElementById("print-invoice-btn");
-    const clearBtn = document.getElementById("clear-all-btn");
-
-    if (invoicesDashboardContainer && invoiceEditorContainer) {
-        invoicesDashboardContainer.style.display = "none";
-        invoiceEditorContainer.style.display = "flex";
-        if (saveInvoiceBtn) saveInvoiceBtn.style.display = "";
-        if (bottomSaveBtn) bottomSaveBtn.style.display = "";
-        if (printBtn) printBtn.style.display = "";
-        if (clearBtn) clearBtn.style.display = "";
-        const floatingBar = document.getElementById("floating-bottom-bar");
-        if (floatingBar) floatingBar.style.display = "flex";
-        showStatus("Invoice Editor opened.");
-    }
+    if (invoicesDashboardContainer) invoicesDashboardContainer.style.display = "none";
+    document.body.style.overflow = "";
+    showStatus("Invoice Editor opened.");
 }
 
 // Group and aggregate invoice items from all saved invoices
@@ -2399,14 +2390,111 @@ function renderDashboardReportsList(filterText = "") {
     tbody.innerHTML = "";
     filtered.forEach(item => {
         const tr = document.createElement("tr");
-        tr.style.borderBottom = "1px solid var(--border-color)";
-        tr.innerHTML = `
-            <td style="padding: 14px 16px; font-weight: 500; color: var(--text-main);">${item.name}</td>
-            <td style="padding: 14px 16px; color: var(--text-muted);">${item.size || '-'}</td>
-            <td style="padding: 14px 16px; text-align: center; font-weight: 700; color: var(--primary);">${item.qty}</td>
-        `;
+        tr.style.borderBottom = "1px solid #f3f4f6";
+        tr.onmouseenter = () => tr.style.background = "#f0fdf4";
+        tr.onmouseleave = () => tr.style.background = "";
+        tr.innerHTML = "<td style=\"padding:12px 16px;font-weight:600;color:#111827;font-size:13px;\">" + item.name + "</td><td style=\"padding:12px 16px;color:#6b7280;\">" + (item.size || "-") + "</td><td style=\"padding:12px 16px;text-align:center;font-weight:700;color:#2a9d8f;font-size:15px;\">" + item.qty + "</td>";
         tbody.appendChild(tr);
     });
+}
+
+
+// Open a read-only print view modal for a saved invoice
+function openViewInvoiceModal(inv) {
+    const modal = document.getElementById('view-invoice-modal');
+    const content = document.getElementById('view-invoice-content');
+    const printBtn = document.getElementById('view-modal-print-btn');
+    const closeBtn = document.getElementById('view-modal-close-btn');
+    if (!modal || !content) return;
+
+    const items = (inv.invoiceItems || []).filter(i => (i.description||'').trim());
+    const itemRows = items.map((item, idx) => {
+        const amt = (parseFloat(item.qty)||0) * (parseFloat(item.rate)||0);
+        return `<tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px 10px;text-align:center;color:#6b7280;">${idx+1}</td>
+            <td style="padding:8px 10px;font-weight:500;">${item.description||''}${item.sku ? ' <span style=\"color:#9ca3af;font-size:11px;\">['+item.sku+']</span>' : ''}</td>
+            <td style="padding:8px 10px;text-align:center;">${item.size||'-'}</td>
+            <td style="padding:8px 10px;text-align:center;">${item.qty||0}</td>
+            <td style="padding:8px 10px;text-align:right;">₹${parseFloat(item.rate||0).toFixed(2)}</td>
+            <td style="padding:8px 10px;text-align:right;font-weight:600;">₹${amt.toFixed(2)}</td>
+        </tr>`;
+    }).join('');
+
+    const grandTotal = parseFloat(inv.grandTotal)||0;
+    const discount = parseFloat(inv.discount)||0;
+    const subtotal = grandTotal + discount;
+    const paid = parseFloat(inv.paymentReceived)||0;
+    const balance = grandTotal - paid;
+
+    content.innerHTML = `
+    <div id="printable-inv-area" style="background:#fff;padding:24px 28px;border-radius:8px;font-family:'Outfit',sans-serif;max-width:800px;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:2px solid #2a9d8f;margin-bottom:16px;">
+            <div>
+                <h2 style="font-size:20px;font-weight:900;color:#111827;margin:0;">SRR ORTHO PLUS</h2>
+                <p style="font-size:11px;color:#6b7280;margin:3px 0;">217, Siddarth Nagar, Hyderabad - 500038</p>
+                <p style="font-size:11px;color:#6b7280;margin:1px 0;">GSTIN: 36AAECS6078M1ZN</p>
+            </div>
+            <div style="text-align:right;">
+                <p style="font-size:20px;font-weight:800;color:#2a9d8f;margin:0;">CASH INVOICE</p>
+                <p style="font-size:13px;font-weight:600;color:#374151;margin:4px 0;"># ${inv.invNumber||''}</p>
+                ${inv.dcNumber ? `<p style="font-size:11px;color:#6b7280;margin:1px 0;">DC: ${inv.dcNumber}</p>` : ''}
+                <p style="font-size:11px;color:#6b7280;margin:1px 0;">Date: ${inv.invDate ? new Date(inv.invDate).toLocaleDateString('en-IN') : ''}</p>
+            </div>
+        </div>
+        <div style="margin-bottom:16px;padding:10px 14px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
+            <p style="margin:0;font-size:13px;font-weight:700;color:#111827;">${inv.clientName||'Walk-in Customer'}</p>
+            ${inv.clientAddress ? `<p style="margin:2px 0;font-size:11px;color:#6b7280;">${inv.clientAddress}</p>` : ''}
+            ${inv.clientMobile ? `<p style="margin:2px 0;font-size:11px;color:#6b7280;">📞 ${inv.clientMobile}</p>` : ''}
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+            <thead>
+                <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
+                    <th style="padding:8px 10px;text-align:center;color:#6b7280;font-weight:700;width:5%;">#</th>
+                    <th style="padding:8px 10px;text-align:left;color:#6b7280;font-weight:700;width:40%;">Item Description</th>
+                    <th style="padding:8px 10px;text-align:center;color:#6b7280;font-weight:700;width:15%;">Size</th>
+                    <th style="padding:8px 10px;text-align:center;color:#6b7280;font-weight:700;width:10%;">Qty</th>
+                    <th style="padding:8px 10px;text-align:right;color:#6b7280;font-weight:700;width:15%;">Rate</th>
+                    <th style="padding:8px 10px;text-align:right;color:#6b7280;font-weight:700;width:15%;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+        </table>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+            <table style="font-size:12px;width:220px;">
+                ${discount > 0 ? `<tr><td style="padding:4px 8px;color:#6b7280;">Subtotal:</td><td style="padding:4px 8px;text-align:right;">₹${subtotal.toFixed(2)}</td></tr><tr><td style="padding:4px 8px;color:#6b7280;">Discount:</td><td style="padding:4px 8px;text-align:right;color:#ef4444;">-₹${discount.toFixed(2)}</td></tr>` : ''}
+                <tr style="border-top:2px solid #111827;"><td style="padding:6px 8px;font-weight:800;font-size:14px;">Grand Total:</td><td style="padding:6px 8px;text-align:right;font-weight:800;font-size:14px;color:#2a9d8f;">₹${grandTotal.toFixed(2)}</td></tr>
+                ${paid > 0 ? `<tr><td style="padding:4px 8px;color:#10b981;">Paid:</td><td style="padding:4px 8px;text-align:right;color:#10b981;">₹${paid.toFixed(2)}</td></tr><tr><td style="padding:4px 8px;color:#ef4444;font-weight:700;">Balance Due:</td><td style="padding:4px 8px;text-align:right;color:#ef4444;font-weight:700;">₹${balance.toFixed(2)}</td></tr>` : ''}
+            </table>
+        </div>
+        <div style="border-top:1px solid #e5e7eb;padding-top:12px;display:flex;justify-content:space-between;align-items:flex-end;">
+            <div style="font-size:10px;color:#9ca3af;">
+                <p style="margin:0;">Goods once sold will not be taken back.</p>
+                <p style="margin:2px 0;">All disputes subject to local jurisdiction.</p>
+            </div>
+            <div style="text-align:center;">
+                <div style="height:40px;"></div>
+                <p style="font-size:11px;font-weight:700;color:#374151;border-top:1px solid #d1d5db;padding-top:4px;margin:0;">Authorized Signatory</p>
+                <p style="font-size:10px;color:#9ca3af;margin:2px 0;">SRR ORTHO PLUS</p>
+            </div>
+        </div>
+    </div>`;
+
+    modal.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+
+    if (closeBtn) {
+        closeBtn.onclick = () => { modal.style.display = 'none'; document.body.style.overflow = ''; };
+    }
+    modal.onclick = (e) => { if (e.target === modal) { modal.style.display = 'none'; document.body.style.overflow = ''; } };
+    if (printBtn) {
+        printBtn.onclick = () => {
+            const printArea = document.getElementById('printable-inv-area');
+            if (!printArea) return;
+            const w = window.open('', '_blank', 'width=900,height=700');
+            w.document.write(`<!DOCTYPE html><html><head><title>Invoice ${inv.invNumber}</title><style>body{font-family:'Segoe UI',sans-serif;margin:0;padding:20px;background:#fff;}table{border-collapse:collapse;}@media print{body{padding:0;}}</style></head><body>` + printArea.outerHTML + `<script>window.onload=function(){window.print();window.close();}<\/script></body></html>`);
+            w.document.close();
+        };
+    }
 }
 
 // Switch between dashboard views (Invoices & Payments vs Used Items Report)
@@ -2417,6 +2505,8 @@ function switchDashboardTab(tab) {
     const searchInput = document.getElementById("dashboard-inv-search");
     const downloadReportBtn = document.getElementById("download-report-btn");
     const dashboardTitle = document.getElementById("dashboard-title");
+    const tabInvBtn = document.getElementById("tab-invoices-btn");
+    const tabRepBtn = document.getElementById("tab-reports-btn");
 
     if (dashboardTitle) {
         dashboardTitle.innerText = tab === "invoices" ? "Saved Invoices & Payments" : "Used Items Report";
@@ -2426,19 +2516,17 @@ function switchDashboardTab(tab) {
         if (invoicesContainer) invoicesContainer.style.display = "block";
         if (reportsContainer) reportsContainer.style.display = "none";
         if (downloadReportBtn) downloadReportBtn.style.display = "none";
-        if (searchInput) {
-            searchInput.placeholder = "Search invoice number or customer name...";
-            searchInput.value = "";
-        }
+        if (tabInvBtn) { tabInvBtn.style.background = "#2a9d8f"; tabInvBtn.style.color = "#fff"; tabInvBtn.style.borderColor = "#2a9d8f"; }
+        if (tabRepBtn) { tabRepBtn.style.background = "#fff"; tabRepBtn.style.color = "#374151"; tabRepBtn.style.borderColor = "#d1d5db"; }
+        if (searchInput) { searchInput.placeholder = "Search invoice # or customer..."; searchInput.value = ""; }
         renderDashboardInvoicesList();
     } else {
         if (invoicesContainer) invoicesContainer.style.display = "none";
         if (reportsContainer) reportsContainer.style.display = "block";
         if (downloadReportBtn) downloadReportBtn.style.display = "inline-block";
-        if (searchInput) {
-            searchInput.placeholder = "Search item name or size...";
-            searchInput.value = "";
-        }
+        if (tabInvBtn) { tabInvBtn.style.background = "#fff"; tabInvBtn.style.color = "#374151"; tabInvBtn.style.borderColor = "#d1d5db"; }
+        if (tabRepBtn) { tabRepBtn.style.background = "#2a9d8f"; tabRepBtn.style.color = "#fff"; tabRepBtn.style.borderColor = "#2a9d8f"; }
+        if (searchInput) { searchInput.placeholder = "Search item name or size..."; searchInput.value = ""; }
         renderDashboardReportsList();
     }
 }
@@ -2853,9 +2941,23 @@ function signInWithGoogle() {
     state.gdriveClientId = clientId;
     state.gdriveFolderId = folderId;
 
-    // Use OAuth Implicit flow to redirect back to current URL
-    const redirectUri = window.location.origin + window.location.pathname;
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent("https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile")}`;
+    // Use OAuth Implicit flow to redirect back to top-level window URL
+    let redirectUri = window.location.origin + window.location.pathname;
+    try {
+        if (window.parent && window.parent !== window) {
+            redirectUri = window.parent.location.origin + window.parent.location.pathname;
+        }
+    } catch (e) {
+        // Fallback to current window location if cross-origin
+        redirectUri = window.location.origin + window.location.pathname;
+    }
+    const scopes = [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile"
+    ].join(" ");
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scopes)}`;
     
     showStatus("Redirecting to Google Sign-In...");
     window.location.href = authUrl;
@@ -3053,7 +3155,12 @@ async function syncInvoicesWithGDrive(silent = false) {
                 });
 
                 if (mergedCount > 0) {
-                    localStorage.setItem("im_saved_invoices", JSON.stringify(state.savedInvoices));
+                    // Sync merged GDrive invoices to Firestore DB
+                    state.savedInvoices.forEach(inv => {
+                        if (window.parent && window.parent !== window) {
+                            window.parent.postMessage({ action: "SAVE_CASH_INVOICE", payload: inv }, "*");
+                        }
+                    });
                     renderSavedInvoicesList();
                     // update dashboard if active
                     const searchInput = document.getElementById("dashboard-inv-search");
@@ -3098,7 +3205,6 @@ async function syncCustomersWithGDrive(silent = false) {
                 });
 
                 if (mergedCount > 0) {
-                    localStorage.setItem("im_customers", JSON.stringify(state.customers));
                     renderCustomerList();
                     populateCustomerSelector();
                     console.log(`[GDrive] Merged ${mergedCount} cloud customers.`);
