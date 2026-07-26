@@ -22,6 +22,7 @@ import {
   Moon,
   LogOut,
   Menu,
+  Receipt,
 } from 'lucide-react';
 
 type TopToolbarProps = {
@@ -62,6 +63,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   const isManualDc = pathname === '/' && currentMode === 'manual';
   const isLandingScreen = pathname === '/' && !currentMode;
   const isImageDb = pathname === '/images';
+  const isCashInvoice = pathname === '/cash-invoice';
   const isDcTracker = pathname === '/saved';
   const isAdmin = pathname === '/admin';
 
@@ -143,6 +145,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             <Button
               variant="ghost"
               size="sm"
+              className={getNavBtnClass(isCashInvoice)}
+              onClick={() => navigate('/cash-invoice')}
+            >
+              <Receipt className={`w-3.5 h-3.5 ${isCashInvoice ? 'text-teal-800' : 'text-teal-200'}`} /> Cash Invoice
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
               className="gap-2 text-xs font-bold h-8 rounded-lg text-white/80 hover:bg-white/15 hover:text-white transition-all"
               onClick={() => window.open('https://docs.srrorthoplus.com', '_blank')}
             >
@@ -180,16 +191,18 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             </Button>
 
             {/* Print Action */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="hidden sm:flex text-white hover:bg-white/15 hover:text-white h-9 px-3 gap-1.5 text-xs font-medium border border-white/10"
-              onClick={handlePrint}
-              title="Print Challan"
-            >
-              <Printer className="w-3.5 h-3.5 text-teal-200" />
-              <span className="hidden md:inline">Print</span>
-            </Button>
+            {(isProcedureList || isManualDc) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden sm:flex text-white hover:bg-white/15 hover:text-white h-9 px-3 gap-1.5 text-xs font-medium border border-white/10"
+                onClick={handlePrint}
+                title="Print Challan"
+              >
+                <Printer className="w-3.5 h-3.5 text-teal-200" />
+                <span className="hidden md:inline">Print</span>
+              </Button>
+            )}
           <Button
             variant="ghost"
             size="icon"
@@ -277,6 +290,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                         onClick={() => navigate('/images')}
                       >
                         <Images className="w-4 h-4 text-teal-400" /> Image Database
+                      </Button>
+                    </SheetClose>
+                    <SheetClose asChild>
+                      <Button
+                        variant="ghost"
+                        className={getMobileNavClass(isCashInvoice)}
+                        onClick={() => navigate('/cash-invoice')}
+                      >
+                        <Receipt className="w-4 h-4 text-teal-400" /> Cash Invoice
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>

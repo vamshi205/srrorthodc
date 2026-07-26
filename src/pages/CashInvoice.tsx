@@ -1,0 +1,79 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { TopToolbar } from "@/components/ortho/TopToolbar";
+import { auth } from "@/firebase";
+
+export default function CashInvoice() {
+  const navigate = useNavigate();
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'light';
+  });
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    localStorage.setItem('srrortho:theme', nextTheme);
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  const [iframeSrc, setIframeSrc] = useState("/cash-invoice/index.html");
+
+  useEffect(() => {
+    // Skip the inner auth overlay screen in Cash Invoice Maker
+    sessionStorage.setItem("im_authorized", "true");
+
+    // Pass the Google OAuth redirect hash to the iframe if present
+    const parentHash = window.location.hash;
+    if (parentHash && parentHash.includes("access_token")) {
+      setIframeSrc(`/cash-invoice/index.html${parentHash}`);
+      // Clean parent URL hash so it doesn't linger in the address bar
+      setTimeout(() => {
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }, 800);
+    }
+  }, []);
+
+  const handleLogout = async () => {
+    localStorage.removeItem("srrortho:auth");
+    localStorage.removeItem('srrortho:procedures_cache');
+    try {
+      await auth.signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
+      <main className="flex-grow flex flex-col px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
+        <TopToolbar
+          theme={theme}
+          toggleTheme={toggleTheme}
+          fetchProcedures={() => {}}
+          loading={false}
+          handlePrint={() => {}}
+          navigate={navigate}
+          handleLogout={handleLogout}
+          setDcMode={(mode) => navigate(`/?mode=${mode}`)}
+          setInitialFilterType={() => {}}
+          setShowProcedureSelector={() => {}}
+          setActiveProcedures={() => {}}
+          setCollapsedProcedures={() => {}}
+        />
+        
+        {/* Floating dashboard card aligned with the main toolbar */}
+        <div className="mt-4 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[600px]">
+          <iframe
+            src={iframeSrc}
+            title="Cash Invoice Maker"
+            className="absolute inset-0 w-full h-full border-0"
+          />
+        </div>
+      </main>
+    </div>
+  );
+}

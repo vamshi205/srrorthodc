@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
-import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon, FileText } from 'lucide-react';
+import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon, FileText, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -872,7 +872,7 @@ export default function OrthoApp() {
 
               {/* Mode Panel (Welcome Card Choice vs Procedure List vs Manual DC) */}
               {!new URLSearchParams(location.search).get('mode') && activeProcedures.length === 0 ? (
-                <div className="glass-card rounded-2xl p-6 sm:p-10 border-2 border-teal-500/30 text-center space-y-6 shadow-xl max-w-3xl mx-auto my-4">
+                <div className="glass-card rounded-2xl p-6 sm:p-10 border-2 border-teal-500/30 text-center space-y-6 shadow-xl max-w-5xl mx-auto my-4">
                   <div className="space-y-2">
                     <h2 className="text-2xl sm:text-3xl font-display font-extrabold text-slate-900 dark:text-slate-100">
                       Welcome to SRR Ortho Plus Portal
@@ -882,7 +882,7 @@ export default function OrthoApp() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
                     {/* Choice 1: Add New Procedure */}
                     <button
                       onClick={() => {
@@ -906,7 +906,25 @@ export default function OrthoApp() {
                       </div>
                     </button>
 
-                    {/* Choice 2: Create Quotations */}
+                    {/* Choice 2: Cash Invoice */}
+                    <button
+                      onClick={() => navigate('/cash-invoice')}
+                      className="group p-5 rounded-xl border-2 border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 hover:border-purple-500 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md"
+                    >
+                      <div className="w-11 h-11 rounded-lg bg-purple-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                        <Receipt className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                          Cash Invoice
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Create cash bills and price recommendations for walk-in sales.
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Choice 3: Create Quotations */}
                     <a
                       href="https://docs.srrorthoplus.com"
                       target="_blank"
@@ -926,7 +944,7 @@ export default function OrthoApp() {
                       </div>
                     </a>
 
-                    {/* Choice 3: DC Tracker */}
+                    {/* Choice 4: DC Tracker */}
                     <button
                       onClick={() => navigate('/saved')}
                       className="group p-5 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/20 hover:border-amber-400 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md"
