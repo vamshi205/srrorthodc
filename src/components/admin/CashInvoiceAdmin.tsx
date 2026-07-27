@@ -171,22 +171,49 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
         const worksheet = workbook.Sheets[firstSheetName];
         const rawJson = XLSX.utils.sheet_to_json(worksheet);
 
+        const findRowValue = (row: any, synonyms: string[]): any => {
+          if (!row || typeof row !== 'object') return undefined;
+          const keys = Object.keys(row);
+          for (const syn of synonyms) {
+            for (const key of keys) {
+              if (key.toLowerCase().trim() === syn.toLowerCase().trim()) {
+                return row[key];
+              }
+            }
+          }
+          for (const syn of synonyms) {
+            for (const key of keys) {
+              const lowerKey = key.toLowerCase().trim();
+              const lowerSyn = syn.toLowerCase().trim();
+              if (lowerKey.includes(lowerSyn) || lowerSyn.includes(lowerKey)) {
+                return row[key];
+              }
+            }
+          }
+          return undefined;
+        };
+
         const parsedCatalog = rawJson.map((row: any) => {
-          const sku = row.SKU || row.sku || row.Code || row.code || "";
-          const desc = row.Description || row.description || row.Item || row.item || row.Name || row.name || "";
-          const size = row.Size || row.size || row.Specs || row.specs || "";
-          const rate = row.Price || row.price || row.Rate || row.rate || row.MRP || row.mrp || 0;
+          const skuVal = findRowValue(row, ['sku', 'code', 'product id', 'product_id', 'item code', 'id', 'item_code', 'matched sku/code']);
+          const descVal = findRowValue(row, ['description', 'desc', 'product name', 'product_name', 'item', 'item name', 'clean item name', 'product', 'name']);
+          const sizeVal = findRowValue(row, ['size', 'specification', 'spec', 'dimension', 'size/specification', 'sizes', 'specs']);
+          const priceVal = findRowValue(row, ['sell price', 'price', 'rate', 'unit price', 'rate (unit price)', 'mrp', 'cost', 'sell_price', 'sell price (inc tax)']);
+
+          const sku = skuVal !== undefined && skuVal !== null ? String(skuVal).trim() : "";
+          const desc = descVal !== undefined && descVal !== null ? String(descVal).trim() : "";
+          const size = sizeVal !== undefined && sizeVal !== null ? String(sizeVal).trim() : "";
+          const priceRaw = priceVal !== undefined && priceVal !== null ? String(priceVal).replace(/[^0-9.]/g, '') : "0";
 
           return {
-            sku: String(sku).trim(),
-            description: String(desc).trim(),
-            size: String(size).trim(),
-            price: parseFloat(rate) || 0
+            sku: sku,
+            description: desc,
+            size: size,
+            price: parseFloat(priceRaw) || 0
           };
-        }).filter(item => item.description);
+        }).filter(item => item.description !== "");
 
         if (parsedCatalog.length === 0) {
-          toast.error("No valid items found. Ensure headers match: SKU, Description, Size, Price");
+          toast.error("No valid items found. Ensure headers match: Product Name/Description, Sell Price/Price, Size");
           return;
         }
 
@@ -233,24 +260,52 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
         const worksheet = workbook.Sheets[firstSheetName];
         const rawJson = XLSX.utils.sheet_to_json(worksheet);
 
+        const findRowValue = (row: any, synonyms: string[]): any => {
+          if (!row || typeof row !== 'object') return undefined;
+          const keys = Object.keys(row);
+          for (const syn of synonyms) {
+            for (const key of keys) {
+              if (key.toLowerCase().trim() === syn.toLowerCase().trim()) {
+                return row[key];
+              }
+            }
+          }
+          for (const syn of synonyms) {
+            for (const key of keys) {
+              const lowerKey = key.toLowerCase().trim();
+              const lowerSyn = syn.toLowerCase().trim();
+              if (lowerKey.includes(lowerSyn) || lowerSyn.includes(lowerKey)) {
+                return row[key];
+              }
+            }
+          }
+          return undefined;
+        };
+
         const parsedItems = rawJson.map((row: any) => {
-          const desc = row.Description || row.description || row.Item || row.item || row.Name || row.name || "";
-          const sku = row.SKU || row.sku || row.Code || row.code || "";
-          const size = row.Size || row.size || row.Specs || row.specs || "";
-          const qty = parseInt(row.Qty || row.qty || row.Quantity || row.quantity || "1") || 1;
-          const rate = parseFloat(row.Price || row.price || row.Rate || row.rate || row.MRP || row.mrp || "0") || 0;
+          const descVal = findRowValue(row, ['description', 'desc', 'product name', 'product_name', 'item', 'item name', 'clean item name', 'product', 'name', 'original invoice description']);
+          const skuVal = findRowValue(row, ['sku', 'code', 'product id', 'product_id', 'item code', 'id', 'item_code', 'matched sku/code']);
+          const sizeVal = findRowValue(row, ['size', 'specification', 'spec', 'dimension', 'size/specification', 'sizes', 'specs']);
+          const qtyVal = findRowValue(row, ['qty', 'quantity', 'qnt']);
+          const rateVal = findRowValue(row, ['sell price', 'price', 'rate', 'unit price', 'rate (unit price)', 'mrp', 'cost', 'sell_price']);
+
+          const desc = descVal !== undefined && descVal !== null ? String(descVal).trim() : "";
+          const sku = skuVal !== undefined && skuVal !== null ? String(skuVal).trim() : "";
+          const size = sizeVal !== undefined && sizeVal !== null ? String(sizeVal).trim() : "";
+          const qtyRaw = qtyVal !== undefined && qtyVal !== null ? String(qtyVal).replace(/[^0-9]/g, '') : "1";
+          const rateRaw = rateVal !== undefined && rateVal !== null ? String(rateVal).replace(/[^0-9.]/g, '') : "0";
 
           return {
-            description: String(desc).trim(),
-            sku: String(sku).trim(),
-            size: String(size).trim(),
-            qty: qty,
-            rate: rate
+            description: desc,
+            sku: sku,
+            size: size,
+            qty: parseInt(qtyRaw) || 1,
+            rate: parseFloat(rateRaw) || 0
           };
-        }).filter(item => item.description);
+        }).filter(item => item.description !== "");
 
         if (parsedItems.length === 0) {
-          toast.error("No valid items found. Ensure sheet contains headers like Description, SKU, Size, Qty, Rate");
+          toast.error("No valid items found. Ensure sheet contains headers like Product Name/Description, Size, Qty, Sell Price/Rate");
           return;
         }
 

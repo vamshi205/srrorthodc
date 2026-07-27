@@ -789,13 +789,18 @@ body {
 .table-wrapper {
     margin-top: 20px;
     width: 100%;
-    overflow-x: auto;
+    overflow: visible;
 }
 
 .invoice-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 11px;
+}
+
+.invoice-table tbody tr {
+    position: relative;
+    z-index: 1;
 }
 
 .invoice-table th {
@@ -904,11 +909,12 @@ select.table-input {
     top: 100%;
     left: 0;
     width: 100%;
+    min-width: 250px;
     background: white;
     border: 1px solid #d1d5db;
     border-radius: 6px;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    z-index: 99;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    z-index: 999;
     max-height: 200px;
     overflow-y: auto;
     display: none;
@@ -1411,8 +1417,8 @@ select.table-input {
     background: white;
     border: 1px solid #d1d5db;
     border-radius: 6px;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    z-index: 99;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+    z-index: 999;
     max-height: 180px;
     overflow-y: auto;
     display: none;
@@ -1941,5 +1947,320 @@ select.table-input {
     background: rgba(30, 41, 59, 0.75);
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* ==========================================================================
+   MOBILE & TABLET RESPONSIVE SYSTEM
+   ========================================================================== */
+
+@media (max-width: 900px) {
+    .invoice-container {
+        padding: 16px 8px 100px 8px;
+    }
+    
+    .invoice-paper {
+        zoom: 1 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: auto !important;
+        padding: 16px 12px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    /* Main Layout */
+    .app-container {
+        flex-direction: column;
+    }
+
+    .workspace-header {
+        padding: 10px 12px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .header-left, .header-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .header-right {
+        gap: 6px;
+    }
+
+    .header-right .btn {
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+
+    /* Sidebar Drawer */
+    .sidebar {
+        width: 88vw;
+        max-width: 320px;
+        padding: 16px;
+    }
+
+    /* Invoice Canvas & Paper */
+    .invoice-container {
+        padding: 12px 6px 110px 6px;
+    }
+
+    .invoice-paper {
+        zoom: 1 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: auto !important;
+        padding: 14px 10px !important;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Invoice Header & Company Info */
+    .inv-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .company-info {
+        max-width: 100%;
+    }
+
+    .company-info h2 {
+        font-size: 17px;
+    }
+
+    .company-info p {
+        font-size: 10.5px;
+    }
+
+    .invoice-meta {
+        text-align: left;
+        width: 100%;
+    }
+
+    .meta-table {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .meta-table td:first-child {
+        text-align: left;
+        width: 75px;
+    }
+
+    .meta-table .editable-text {
+        width: 100%;
+        min-width: unset;
+    }
+
+    /* Bill Details Section */
+    .inv-bill-details {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .bill-to, .payment-method {
+        width: 100%;
+    }
+
+    /* Invoice Table Responsive Wrapper */
+    .table-wrapper {
+        margin-top: 14px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x pan-y;
+        padding-bottom: 6px;
+    }
+
+    .invoice-table {
+        min-width: 580px;
+    }
+
+    .invoice-table th, .invoice-table td {
+        padding: 6px 6px;
+    }
+
+    .table-input {
+        font-size: 11px;
+        padding: 6px 8px;
+        min-height: 32px;
+    }
+
+    textarea.table-input {
+        min-height: 32px;
+    }
+
+    .btn-delete-row {
+        min-width: 28px;
+        min-height: 28px;
+        font-size: 18px;
+    }
+
+    .btn-add-row {
+        width: 100%;
+        padding: 8px 12px;
+        font-size: 12px;
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Summary & Totals Section */
+    .inv-summary {
+        flex-direction: column-reverse;
+        gap: 16px;
+    }
+
+    .summary-left, .summary-right {
+        width: 100%;
+    }
+
+    .totals-table {
+        width: 100%;
+    }
+
+    .totals-table td {
+        padding: 6px 8px;
+    }
+
+    .upi-payment-block {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .qr-code-placeholder {
+        align-self: center;
+    }
+
+    /* Terms & Signatures */
+    .inv-footer {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .terms, .signature-section {
+        width: 100%;
+        text-align: left;
+    }
+
+    /* Floating Bottom Bar */
+    .floating-bottom-bar {
+        width: 94%;
+        max-width: 440px;
+        bottom: 12px;
+        padding: 8px 10px;
+        gap: 8px;
+        border-radius: 25px;
+    }
+
+    .floating-bottom-bar .btn {
+        padding: 8px 10px !important;
+        font-size: 11.5px !important;
+        height: 36px !important;
+        flex: 1;
+        justify-content: center;
+        border-radius: 18px !important;
+    }
+
+    /* Invoices Dashboard Page */
+    #invoices-dashboard-container > div {
+        padding: 16px 10px !important;
+    }
+
+    #dashboard-inv-search {
+        width: 100% !important;
+    }
+
+    #invoices-dashboard-container table {
+        min-width: 600px;
+    }
+
+    /* Modals */
+    .modal-card {
+        width: 95% !important;
+        margin: 15px auto !important;
+        padding: 16px !important;
+        max-height: 90vh;
+    }
+
+    /* Autocomplete dropdowns & Header Dropdown Menus */
+    .recommendation-list {
+        min-width: 240px;
+        max-height: 180px;
+    }
+
+    .dropdown-container {
+        position: relative;
+    }
+
+    .dropdown-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        min-width: 185px;
+        z-index: 10000;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 0 4px 10px rgba(0, 0, 0, 0.1);
+        border-radius: 10px;
+    }
+
+    #add-dropdown-menu {
+        left: 0;
+        right: auto;
+    }
+
+    #view-dropdown-menu {
+        right: 0;
+        left: auto;
+    }
+
+    .dropdown-item {
+        padding: 12px 14px;
+        font-size: 12.5px;
+        min-height: 42px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    [data-theme="dark"] .dropdown-item {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .dropdown-item:last-child {
+        border-bottom: none;
+    }
+
+    .dropdown-item:active {
+        background: var(--primary-glow);
+    }
+}
+
+@media (max-width: 480px) {
+    .workspace-header {
+        padding: 8px;
+    }
+
+    .header-left, .header-right {
+        gap: 4px;
+    }
+
+    .badge, .gdrive-sync-badge {
+        padding: 4px 8px;
+        font-size: 10px;
+    }
+
+    .floating-bottom-bar {
+        width: 96%;
+        padding: 6px 8px;
+        gap: 6px;
+    }
+
+    .floating-bottom-bar .btn {
+        font-size: 10.5px !important;
+        padding: 6px 6px !important;
+    }
+
+    .inv-title {
+        font-size: 20px;
+    }
 }
 

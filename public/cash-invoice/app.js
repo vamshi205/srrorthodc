@@ -196,16 +196,7 @@ function loadPersistedData() {
     if (previewInvDueEl) previewInvDueEl.innerText = formatDateString(state.clientInfo.invDue);
 
     // 4. Price List Catalog
-    const savedPriceList = localStorage.getItem("im_price_list");
-    const savedCatalogName = localStorage.getItem("im_price_list_name");
-    if (savedPriceList) {
-        state.priceList = JSON.parse(savedPriceList);
-        updateCatalogBadge(state.priceList.length, savedCatalogName || "Loaded from storage");
-    } else {
-        // Load sample catalog items by default so recommendations work out-of-the-box
-        state.priceList = [...SAMPLE_CATALOG];
-        updateCatalogBadge(state.priceList.length, "Sample Implants Catalog");
-    }
+    loadProjectCatalogIfPresent();
 
     // 5. Invoice Draft Items
     const savedItems = localStorage.getItem("im_invoice_items");
@@ -354,6 +345,14 @@ function setupEventListeners() {
         if (viewDropdownMenu && !viewMenuBtn.contains(e.target) && !viewDropdownMenu.contains(e.target)) {
             viewDropdownMenu.classList.remove("show");
         }
+    });
+
+    // Auto-close dropdown menus when selecting an option
+    document.querySelectorAll(".dropdown-item").forEach(item => {
+        item.addEventListener("click", () => {
+            if (addDropdownMenu) addDropdownMenu.classList.remove("show");
+            if (viewDropdownMenu) viewDropdownMenu.classList.remove("show");
+        });
     });
 
     // View Customers option click
@@ -1026,14 +1025,13 @@ function setupEventListeners() {
     const clearCatalogBtn = document.getElementById("clear-catalog-btn");
     if (clearCatalogBtn) {
         clearCatalogBtn.addEventListener("click", () => {
-            if (confirm("Are you sure you want to remove the loaded Price List? The app will revert to sample implants suggestions.")) {
-                state.priceList = [...SAMPLE_CATALOG];
+            if (confirm("Are you sure you want to remove the custom Price List? The app will revert to the default project catalog.")) {
                 localStorage.removeItem("im_price_list");
                 localStorage.removeItem("im_price_list_name");
-                updateCatalogBadge(state.priceList.length, "Sample Implants Catalog");
+                loadProjectCatalogIfPresent();
                 const catStatus = document.getElementById("catalog-status");
                 if (catStatus) catStatus.style.display = "none";
-                showStatus("Price list catalog removed. Defaulting to sample data.");
+                showStatus("Custom price list removed. Reverted to default project catalog.");
 
                 // Background Google Drive sync
                 if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
@@ -1247,6 +1245,45 @@ function handleExcelFileReading(file, callback) {
     reader.readAsArrayBuffer(file);
 }
 
+// Auto-load project folder catalog file (catalog.xlsx) if present and no local storage override exists
+async function loadProjectCatalogIfPresent() {
+    const savedPriceList = localStorage.getItem("im_price_list");
+    const savedCatalogName = localStorage.getItem("im_price_list_name");
+    
+    if (savedPriceList) {
+        try {
+            state.priceList = JSON.parse(savedPriceList);
+            updateCatalogBadge(state.priceList.length, savedCatalogName || "Loaded from storage");
+            return;
+        } catch (e) {
+            console.error("Error loading saved price list", e);
+        }
+    }
+
+    try {
+        const res = await fetch("catalog.xlsx");
+        if (res.ok) {
+            const buf = await res.arrayBuffer();
+            const data = new Uint8Array(buf);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+            if (jsonData && jsonData.length > 0) {
+                handleCatalogData(jsonData, "catalog.xlsx");
+                showStatus(`Auto-loaded catalog from project folder (${jsonData.length} items)`);
+                return;
+            }
+        }
+    } catch (err) {
+        // Fallback to sample catalog if catalog.xlsx is not present
+    }
+
+    // Default fallback
+    state.priceList = [...SAMPLE_CATALOG];
+    updateCatalogBadge(state.priceList.length, "Sample Implants Catalog");
+}
+
 // Handle Custom Catalog Import
 function handleCatalogData(data, filename) {
     // We need to parse headers to extract Code, Description, Size, Price
@@ -1295,10 +1332,10 @@ function handleInvoiceItemsImport(data, filename) {
         const skuKey = findKey(row, ['sku', 'code', 'item code', 'id', 'item_code', 'matched sku/code']);
         const sizeKey = findKey(row, ['size', 'specification', 'spec', 'dimension', 'size/specification']);
         const qtyKey = findKey(row, ['qty', 'quantity', 'qnt']);
-        const rateKey = findKey(row, ['price', 'rate', 'unit price', 'rate (unit price)', 'cost']);
+        const rateKey = findKey(row, ['sell price', 'price', 'rate', 'unit price', 'rate (unit price)', 'cost', 'sell_price']);
 
         const qty = qtyKey ? parseInt(String(row[qtyKey]).replace(/[^0-9]/g, '')) || 1 : 1;
-        const rate = rateKey ? parseFloat(String(row[priceKey] || row[rateKey]).replace(/[^0-9.]/g, '')) || 0 : 0;
+        const rate = rateKey ? parseFloat(String(row[rateKey]).replace(/[^0-9.]/g, '')) || 0 : 0;
 
         return {
             description: descKey ? String(row[descKey]).trim() : "Item",
@@ -1624,7 +1661,18 @@ function highlightRecommendation(items) {
     items.forEach((item, idx) => {
         if (idx === state.activeRecIndex) {
             item.classList.add("active");
-            item.scrollIntoView({ block: 'nearest' });
+            const parent = item.parentElement;
+            if (parent) {
+                const itemTop = item.offsetTop;
+                const itemBottom = itemTop + item.offsetHeight;
+                const parentTop = parent.scrollTop;
+                const parentBottom = parentTop + parent.clientHeight;
+                if (itemTop < parentTop) {
+                    parent.scrollTop = itemTop;
+                } else if (itemBottom > parentBottom) {
+                    parent.scrollTop = itemBottom - parent.clientHeight;
+                }
+            }
         } else {
             item.classList.remove("active");
         }
@@ -1871,24 +1919,31 @@ function showSizeRecommendations(query, container, idx, inputEl, rateInput, rowE
             const div = document.createElement("div");
             div.className = "recommendation-item";
             div.style.padding = "6px 10px";
+            
+            const itemPrice = (match.price !== undefined && match.price !== null && !isNaN(match.price)) ? parseFloat(match.price) : 0;
+            const priceLabel = itemPrice > 0 ? ` <span style="color:#6b7280; font-weight:500;">(₹${itemPrice})</span>` : '';
+            
             div.innerHTML = `
-                <div style="font-size:11px; font-weight:600; color:var(--paper-accent);">${match.size}</div>
+                <div style="font-size:11px; font-weight:600; color:var(--paper-accent); display:flex; justify-content:space-between; align-items:center;">
+                    <span>${match.size}</span>
+                    ${priceLabel}
+                </div>
             `;
             
             div.addEventListener("click", () => {
                 state.invoiceItems[idx].size = match.size;
-                state.invoiceItems[idx].sku = match.sku;
-                state.invoiceItems[idx].rate = 0; // Manual input required
+                state.invoiceItems[idx].sku = match.sku || "";
+                state.invoiceItems[idx].rate = itemPrice;
                 
                 inputEl.value = match.size;
-                rateInput.value = 0; // Manual input required
+                rateInput.value = itemPrice;
                 
-                recalculateRowAmount(rowEl, state.invoiceItems[idx].qty, 0);
+                recalculateRowAmount(rowEl, state.invoiceItems[idx].qty, itemPrice);
                 updateCalculations();
                 saveItemsToDraft();
                 
                 container.style.display = "none";
-                showStatus(`Selected size: ${match.size}. Please enter price rate manually.`);
+                showStatus(`Selected size: ${match.size} ${itemPrice > 0 ? '(Rate: ₹' + itemPrice + ')' : ''}`);
             });
             container.appendChild(div);
         });
@@ -1903,7 +1958,18 @@ function highlightSizeRecommendation(items) {
     items.forEach((item, idx) => {
         if (idx === state.activeSizeIndex) {
             item.classList.add("active");
-            item.scrollIntoView({ block: 'nearest' });
+            const parent = item.parentElement;
+            if (parent) {
+                const itemTop = item.offsetTop;
+                const itemBottom = itemTop + item.offsetHeight;
+                const parentTop = parent.scrollTop;
+                const parentBottom = parentTop + parent.clientHeight;
+                if (itemTop < parentTop) {
+                    parent.scrollTop = itemTop;
+                } else if (itemBottom > parentBottom) {
+                    parent.scrollTop = itemBottom - parent.clientHeight;
+                }
+            }
         } else {
             item.classList.remove("active");
         }
