@@ -1,0 +1,525 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Jost:wght@800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────
+   Concept Design Tokens - Premium Light Theme Glassmorphism
+   ───────────────────────────────────────── */
+:root {
+  --bg: #f1f5f9;
+  --bg2: rgba(255, 255, 255, 0.95);
+  --bg3: rgba(79, 70, 229, 0.04);
+  --surface: rgba(255, 255, 255, 0.7);
+  --border: rgba(0, 0, 0, 0.08);
+  --border2: rgba(0, 0, 0, 0.12);
+  --text: #0f172a;
+  --text2: #475569;
+  --text3: #64748b;
+  
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-glow: rgba(79, 70, 229, 0.15);
+
+  --accent: #4f46e5;
+  --accentFg: #ffffff;
+  
+  --danger: #e11d48;
+  --dangerBg: rgba(225, 29, 72, 0.08);
+  --warn: #d97706;
+  --warnBg: rgba(217, 119, 6, 0.08);
+  --success: #059669;
+  --successBg: rgba(5, 150, 105, 0.08);
+  --info: #1d4ed8;
+  --infoBg: rgba(29, 78, 216, 0.08);
+
+  /* Legacy Apple mapping to prevent Tailwind/Class breaks */
+  --apple-bg: var(--bg);
+  --apple-surface: var(--surface);
+  --apple-black: var(--text);
+  --apple-gray-1: var(--bg2);
+  --apple-gray-2: var(--border);
+  --apple-gray-3: var(--border2);
+  --apple-gray-4: var(--text3);
+  --apple-gray-5: var(--text2);
+  --apple-gray-6: var(--text);
+  
+  --emerald: #059669;
+  --emerald-dark: #047857;
+  --emerald-light: rgba(5, 150, 105, 0.08);
+  --coral: #e11d48;
+
+  /* Spacing & radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Shadows - softer for light mode */
+  --shadow-sm:  0 2px 8px rgba(15, 23, 42, 0.04);
+  --shadow-md:  0 8px 32px 0 rgba(15, 23, 42, 0.06);
+  --shadow-lg:  0 20px 60px rgba(15, 23, 42, 0.08);
+  --shadow-hover: 0 12px 40px 0 rgba(15, 23, 42, 0.1);
+
+  /* Nav height */
+  --nav-height: 60px;
+
+  /* SRR Ortho Plus Brand Colors */
+  --srr-green: #006039;
+  --srr-green-hover: #004d2e;
+  --srr-green-light: rgba(0, 96, 57, 0.08);
+  --srr-green-glow: rgba(0, 96, 57, 0.15);
+}
+
+/* ─────────────────────────────────────────
+   Base & Typography
+   ───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background-color: var(--bg);
+}
+
+body {
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Ambient Background Blobs */
+.blob {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  filter: blur(120px);
+  z-index: 0;
+  opacity: 0.12; /* Low opacity for light mode */
+  animation: float-blob 20s infinite alternate;
+  pointer-events: none;
+}
+
+.blob-1 {
+  background: radial-gradient(circle, var(--primary) 0%, rgba(0,0,0,0) 70%);
+  top: -100px;
+  left: -100px;
+}
+
+.blob-2 {
+  background: radial-gradient(circle, #ec4899 0%, rgba(0,0,0,0) 70%);
+  bottom: -100px;
+  right: -100px;
+  animation-delay: -5s;
+}
+
+@keyframes float-blob {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(60px, 40px) scale(1.1); }
+}
+
+/* ─────────────────────────────────────────
+   Scrollbar
+   ───────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text3);
+}
+
+/* ─────────────────────────────────────────
+   Apple Nav Bar (frosted glass)
+   ───────────────────────────────────────── */
+.apple-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-height);
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+}
+
+/* ─────────────────────────────────────────
+   Cards
+   ───────────────────────────────────────── */
+.apple-card {
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.apple-card:hover {
+  border-color: rgba(79, 70, 229, 0.25);
+  box-shadow: var(--shadow-hover), 0 0 20px rgba(79, 70, 229, 0.05);
+  transform: translateY(-3px) scale(1.01);
+}
+
+/* ─────────────────────────────────────────
+   Inputs
+   ───────────────────────────────────────── */
+.apple-input {
+  width: 100%;
+  background-color: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+input:not([type="file"]), textarea, select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+input:not([type="file"]):focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.no-internal-border {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.apple-input:focus {
+  border-color: var(--primary);
+  background-color: rgba(255, 255, 255, 1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+.apple-input::placeholder {
+  color: var(--text3);
+}
+textarea.apple-input {
+  resize: none;
+  line-height: 1.6;
+}
+
+/* ─────────────────────────────────────────
+   Buttons
+   ───────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--accent);
+  color: var(--accentFg);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 4px 12px var(--primary-glow);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+.btn-emerald {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--emerald);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.2);
+}
+.btn-emerald:hover {
+  background: var(--emerald-dark);
+  transform: translateY(-1px);
+}
+.btn-emerald:active {
+  transform: translateY(0);
+}
+
+/* ─────────────────────────────────────────
+   Labels & Typography
+   ───────────────────────────────────────── */
+.apple-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.apple-title-1 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--text) 30%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
+}
+.apple-title-2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.apple-subtitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  margin-top: 4px;
+}
+
+/* ─────────────────────────────────────────
+   PDF Preview - Canvas MUST stay white for printing
+   ───────────────────────────────────────── */
+.quotation-page {
+  background: white !important;
+  color: black !important;
+  width: 210mm;
+  height: 297mm;
+  max-height: 297mm;
+  overflow: hidden;
+  padding: 15mm 20mm;
+  margin: 0 auto;
+  box-shadow: 0 6px 32px rgba(0,0,0,.2);
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-variant-ligatures: none;
+  letter-spacing: normal;
+  word-spacing: normal;
+  display: flex;
+  flex-direction: column;
+}
+.quotation-page * {
+  background-color: transparent !important;
+  color: black !important;
+}
+
+/* ─────────────────────────────────────────
+   Toggle Switch
+   ───────────────────────────────────────── */
+.apple-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: var(--border2);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  border: none;
+  outline: none;
+  padding: 0;
+}
+.apple-toggle.on { background: var(--accent); }
+.apple-toggle::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: left 0.2s;
+  box-shadow: none;
+}
+.apple-toggle.on::after { left: 20px; }
+
+/* ─────────────────────────────────────────
+   Badge
+   ───────────────────────────────────────── */
+.badge-emerald {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--warnBg);
+  color: var(--warn);
+}
+
+.badge-gray {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--bg3);
+  color: var(--text2);
+}
+
+/* ─────────────────────────────────────────
+   Top Nav Links
+   ───────────────────────────────────────── */
+.apple-nav-link {
+  font-size: 13px;
+  color: var(--text2);
+  text-decoration: none;
+  padding: 9px 16px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 600;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.apple-nav-link:hover {
+  color: var(--text);
+  background: rgba(79, 70, 229, 0.05);
+  border-color: rgba(79, 70, 229, 0.1);
+  transform: translateY(-0.5px);
+}
+.apple-nav-link.active {
+  background: var(--surface) !important;
+  backdrop-filter: blur(12px);
+  color: var(--primary) !important;
+  border-color: rgba(79, 70, 229, 0.25) !important;
+  box-shadow: 0 4px 15px rgba(79, 70, 229, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  transform: translateY(-0.5px);
+}
+
+@keyframes progress-sweep {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-progress-sweep {
+  animation: progress-sweep 2s ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────
+   Glassmorphism Overrides for legacy hardcoded colors
+   ───────────────────────────────────────── */
+.bg-white:not(.quotation-page):not(.quotation-page *):not(iframe *):not(img):not(svg):not(.toast):not(.sweet-alert) {
+  background-color: var(--surface) !important;
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  color: var(--text) !important;
+}
+
+.bg-white\/90:not(.quotation-page):not(.quotation-page *) {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+}
+
+.bg-white\/80:not(.quotation-page):not(.quotation-page *) {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+}
+
+.bg-gray-50:not(.quotation-page):not(.quotation-page *) {
+  background-color: var(--bg2) !important;
+}
+
+.bg-emerald-50:not(.quotation-page):not(.quotation-page *) {
+  background-color: var(--successBg) !important;
+  color: var(--success) !important;
+}
+
+.bg-amber-50:not(.quotation-page):not(.quotation-page *) {
+  background-color: var(--warnBg) !important;
+  color: var(--warn) !important;
+}
+
+.bg-red-50:not(.quotation-page):not(.quotation-page *) {
+  background-color: var(--dangerBg) !important;
+  color: var(--danger) !important;
+}
+
+.text-black:not(.quotation-page):not(.quotation-page *) {
+  color: var(--text) !important;
+}
+
+.text-slate-800:not(.quotation-page):not(.quotation-page *),
+.text-slate-900:not(.quotation-page):not(.quotation-page *),
+.text-gray-900:not(.quotation-page):not(.quotation-page *) {
+  color: var(--text) !important;
+}
+
+.text-slate-500:not(.quotation-page):not(.quotation-page *),
+.text-slate-600:not(.quotation-page):not(.quotation-page *),
+.text-gray-500:not(.quotation-page):not(.quotation-page *) {
+  color: var(--text2) !important;
+}
+
+.border-gray-200:not(.quotation-page):not(.quotation-page *),
+.border-slate-200:not(.quotation-page):not(.quotation-page *),
+.border-gray-100:not(.quotation-page):not(.quotation-page *),
+.border-slate-100:not(.quotation-page):not(.quotation-page *) {
+  border-color: var(--border) !important;
+}
