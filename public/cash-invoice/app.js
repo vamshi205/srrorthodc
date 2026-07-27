@@ -1887,13 +1887,17 @@ function showRecommendations(query, container, index, inputEl) {
         });
         container.style.display = "block";
         const row = inputEl ? inputEl.closest("tr") : null;
+        const tableWrapper = inputEl ? inputEl.closest(".table-wrapper") : null;
         if (row) row.classList.add("has-open-dropdown");
         if (container.parentElement) container.parentElement.classList.add("has-open-dropdown");
+        if (tableWrapper) tableWrapper.classList.add("has-open-dropdown");
     } else {
         container.style.display = "none";
         const row = inputEl ? inputEl.closest("tr") : null;
+        const tableWrapper = inputEl ? inputEl.closest(".table-wrapper") : null;
         if (row) row.classList.remove("has-open-dropdown");
         if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
+        if (tableWrapper) tableWrapper.classList.remove("has-open-dropdown");
     }
 }
 
@@ -2200,19 +2204,25 @@ function showSizeRecommendations(query, container, idx, inputEl, rateInput, rowE
                 saveItemsToDraft();
                 
                 container.style.display = "none";
+                const tableWrapper = inputEl ? inputEl.closest(".table-wrapper") : null;
                 if (rowEl) rowEl.classList.remove("has-open-dropdown");
                 if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
+                if (tableWrapper) tableWrapper.classList.remove("has-open-dropdown");
                 showStatus(`Selected size: ${match.size} ${itemPrice > 0 ? '(Rate: ₹' + itemPrice + ')' : ''}`);
             });
             container.appendChild(div);
         });
         container.style.display = "block";
+        const tableWrapper = inputEl ? inputEl.closest(".table-wrapper") : null;
         if (rowEl) rowEl.classList.add("has-open-dropdown");
         if (container.parentElement) container.parentElement.classList.add("has-open-dropdown");
+        if (tableWrapper) tableWrapper.classList.add("has-open-dropdown");
     } else {
         container.style.display = "none";
+        const tableWrapper = inputEl ? inputEl.closest(".table-wrapper") : null;
         if (rowEl) rowEl.classList.remove("has-open-dropdown");
         if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
+        if (tableWrapper) tableWrapper.classList.remove("has-open-dropdown");
     }
 }
 

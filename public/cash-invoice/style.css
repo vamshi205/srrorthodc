@@ -2479,6 +2479,30 @@ select.table-input {
         -webkit-overflow-scrolling: touch;
         touch-action: pan-x pan-y;
         padding-bottom: 6px;
+        position: relative;
+        z-index: 10;
+    }
+
+    .table-wrapper:has(.recommendation-list[style*="block"]),
+    .table-wrapper:has(.size-recommendation-list[style*="block"]),
+    .table-wrapper.has-open-dropdown {
+        overflow: visible !important;
+        overflow-x: visible !important;
+        overflow-y: visible !important;
+        z-index: 10000000 !important;
+    }
+
+    .add-row-container {
+        position: relative;
+        z-index: 1 !important;
+    }
+
+    .recommendation-list,
+    .size-recommendation-list {
+        z-index: 10000000 !important;
+        position: absolute !important;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25), 0 4px 10px rgba(0, 0, 0, 0.15) !important;
+        max-height: 180px;
     }
 
     .invoice-table {
