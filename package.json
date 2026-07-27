@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
-    "build:quotation": "cd quotation-app && npm install && npm run build && cp -r dist/* ../public/quotation/",
+    "build:quotation": "npm --prefix quotation-app install && npm --prefix quotation-app run build && mkdir -p public/quotation && cp -r quotation-app/dist/. public/quotation/",
     "build:all": "npm run build:quotation && npm run build",
     "lint": "eslint .",
     "preview": "vite preview"
