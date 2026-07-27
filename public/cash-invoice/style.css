@@ -1513,14 +1513,27 @@ select.table-input {
    PRINT MEDIA QUERY STYLES
    ========================================== */
 @media print {
-    /* Hide ALL non-printable UI elements */
+    @page {
+        size: A4 portrait;
+        margin: 6mm 8mm 6mm 8mm;
+    }
+
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        box-sizing: border-box !important;
+    }
+
     html, body {
         background: #ffffff !important;
-        color: #000000 !important;
+        color: #0f172a !important;
         margin: 0 !important;
         padding: 0 !important;
         height: auto !important;
         overflow: visible !important;
+        font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        font-size: 11px !important;
+        line-height: 1.4 !important;
     }
 
     .sidebar,
@@ -1540,7 +1553,9 @@ select.table-input {
     .btn,
     .btn-delete-row,
     .btn-add-row,
-    .close-modal-btn {
+    .close-modal-btn,
+    .recommendation-list,
+    .size-recommendation-list {
         display: none !important;
         visibility: hidden !important;
         height: 0 !important;
@@ -1558,25 +1573,161 @@ select.table-input {
     }
 
     .invoice-paper {
-        border: none !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 8px !important;
         box-shadow: none !important;
-        padding: 4mm 8mm !important;
+        padding: 6mm 8mm !important;
         margin: 0 auto !important;
         width: 100% !important;
         max-width: 100% !important;
         min-height: 0 !important;
         background: #ffffff !important;
-        color: #000000 !important;
+        color: #0f172a !important;
         zoom: 1 !important;
         transform: none !important;
     }
 
-    /* Keep Midnight Theme readable on print by converting it to high contrast black on white */
     .invoice-paper[data-theme="midnight"] {
         --paper-bg: #ffffff !important;
-        --paper-text: #000000 !important;
-        --paper-border: #d1d5db !important;
-        --paper-accent: #000000 !important;
+        --paper-text: #0f172a !important;
+        --paper-border: #cbd5e1 !important;
+        --paper-accent: #0f766e !important;
+    }
+
+    /* 1. DOCUMENT HEADING: CASH MEMO */
+    .doc-heading {
+        text-align: center !important;
+        margin-bottom: 8px !important;
+        border-bottom: 1.5px solid #cbd5e1 !important;
+        padding-bottom: 4px !important;
+    }
+
+    .doc-heading h1 {
+        font-size: 15px !important;
+        font-weight: 800 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 2px !important;
+        color: #0f766e !important;
+        margin: 0 !important;
+    }
+
+    /* 2. HEADER LAYOUT: COMPANY INFO LEFT, BILL META RIGHT */
+    .inv-header {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: flex-start !important;
+        width: 100% !important;
+        margin-bottom: 8px !important;
+    }
+
+    .company-info {
+        width: 58% !important;
+        text-align: left !important;
+    }
+
+    .company-info h2 {
+        font-size: 18px !important;
+        font-weight: 800 !important;
+        color: #0f766e !important;
+        letter-spacing: -0.3px !important;
+        margin-bottom: 3px !important;
+        margin-top: 0 !important;
+    }
+
+    .company-info p {
+        font-size: 11px !important;
+        color: #475569 !important;
+        line-height: 1.4 !important;
+        margin: 1px 0 !important;
+        font-weight: 500 !important;
+    }
+
+    .invoice-meta {
+        width: 40% !important;
+        text-align: right !important;
+        margin-left: auto !important;
+    }
+
+    .meta-table {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        padding: 4px 8px !important;
+        width: 100% !important;
+        max-width: 230px !important;
+        margin-left: auto !important;
+        border-collapse: collapse !important;
+    }
+
+    .meta-table tr, .meta-table td {
+        font-size: 11px !important;
+        padding: 2px 4px !important;
+        line-height: 1.4 !important;
+    }
+
+    .meta-table td:first-child {
+        font-weight: 600 !important;
+        color: #475569 !important;
+        text-align: right !important;
+        width: 45% !important;
+    }
+
+    .meta-table td:last-child,
+    .meta-table td:last-child *,
+    .meta-table .editable-text {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+        text-align: left !important;
+    }
+
+    .divider {
+        height: 2px !important;
+        background: linear-gradient(90deg, #0f766e 0%, #059669 100%) !important;
+        margin: 8px 0 !important;
+        border: none !important;
+    }
+
+    /* 3. BILL TO SECTION - UNIFORM 11PX */
+    .inv-bill-details {
+        margin-bottom: 8px !important;
+    }
+
+    .bill-to h3 {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        color: #0f766e !important;
+        letter-spacing: 0.5px !important;
+        margin-bottom: 4px !important;
+    }
+
+    .bill-to p, .bill-to p * {
+        font-size: 11px !important;
+        color: #475569 !important;
+        line-height: 1.4 !important;
+        margin: 2px 0 !important;
+    }
+
+    .bill-to p .editable-text {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+    }
+
+    .bill-to .client-name {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        padding: 3px 8px !important;
+        color: #0f172a !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        display: inline-block !important;
     }
 
     /* Hide interactive table inputs & discount input in print */
@@ -1584,19 +1735,81 @@ select.table-input {
         display: none !important;
     }
 
-    /* Display crisp static print text spans with exact typography */
+    /* 4. INVOICE TABLE - UNIFORM 11PX THROUGHOUT */
+    .table-wrapper {
+        overflow: visible !important;
+        margin-top: 6px !important;
+    }
+
+    .invoice-table {
+        width: 100% !important;
+        min-width: 100% !important;
+        border-collapse: collapse !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+    }
+
+    .invoice-table th {
+        background: #f1f5f9 !important;
+        color: #334155 !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+        padding: 5px 8px !important;
+        border-bottom: 2px solid #cbd5e1 !important;
+    }
+
+    .invoice-table td {
+        padding: 5px 8px !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        height: auto !important;
+        overflow: visible !important;
+        vertical-align: middle !important;
+        font-size: 11px !important;
+        color: #0f172a !important;
+        line-height: 1.4 !important;
+    }
+
     .print-text {
         display: inline-block !important;
         font-family: 'Outfit', sans-serif !important;
-        font-size: 10.5px !important;
-        color: #000000 !important;
+        font-size: 11px !important;
+        color: #0f172a !important;
         white-space: pre-wrap !important;
         word-wrap: break-word !important;
-        line-height: 1.25 !important;
+        line-height: 1.4 !important;
     }
 
     .print-desc {
         display: block !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+    }
+
+    .print-size {
+        font-size: 11px !important;
+        color: #475569 !important;
+        font-weight: 500 !important;
+    }
+
+    .print-qty {
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        color: #0f172a !important;
+    }
+
+    .print-rate {
+        font-size: 11px !important;
+        color: #334155 !important;
+        font-weight: 500 !important;
+    }
+
+    .print-amount {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
     }
 
     .editable-text {
@@ -1604,44 +1817,164 @@ select.table-input {
         outline: none !important;
         background: transparent !important;
         box-shadow: none !important;
+        color: #0f172a !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
     }
 
-    .table-wrapper {
-        overflow: visible !important;
-        margin-top: 4px !important;
+    /* 5. SUMMARY & TOTALS - UNIFORM 11PX */
+    .inv-summary {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: flex-start !important;
+        margin-top: 10px !important;
+        gap: 16px !important;
     }
 
-    .invoice-table {
-        width: 100% !important;
-        min-width: 100% !important;
-        border-collapse: collapse !important;
+    .bank-details-block {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        padding: 6px 10px !important;
     }
 
-    .invoice-table th, .invoice-table td {
-        padding: 3px 5px !important;
-        border-bottom: 1px solid #e5e7eb !important;
-        height: auto !important;
-        overflow: visible !important;
-        vertical-align: middle !important;
+    .bank-details-block h4 {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f766e !important;
+        margin-bottom: 2px !important;
+        text-transform: uppercase !important;
     }
 
-    .invoice-table th {
-        background: #f3f4f6 !important;
-        color: black !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
+    .bank-details-block p {
+        font-size: 11px !important;
+        color: #334155 !important;
+        line-height: 1.4 !important;
+    }
+
+    .upi-payment-block {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 8px !important;
+        padding: 6px 10px !important;
+        margin-top: 6px !important;
+    }
+
+    .upi-payment-block h4 {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f766e !important;
+    }
+
+    .upi-id-text {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+    }
+
+    .totals-table td {
+        font-size: 11px !important;
+        padding: 3px 6px !important;
+        line-height: 1.4 !important;
+    }
+
+    .totals-table td:first-child {
+        font-weight: 600 !important;
+        color: #475569 !important;
+    }
+
+    .totals-table td:last-child {
+        font-weight: 700 !important;
+        color: #0f172a !important;
+    }
+
+    .grand-total-row td {
+        font-size: 12px !important;
+        font-weight: 800 !important;
+        color: #0f766e !important;
+        background: rgba(15, 118, 110, 0.06) !important;
+        padding: 5px 8px !important;
+        border-radius: 4px !important;
+    }
+
+    /* 6. AMOUNT IN WORDS - UNIFORM 11PX */
+    .amount-words-block {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        border-left: 4px solid #0f766e !important;
+        border-radius: 6px !important;
+        padding: 6px 10px !important;
+        margin-top: 10px !important;
+        font-size: 11px !important;
+        line-height: 1.4 !important;
+    }
+
+    .amount-words-block span {
+        color: #475569 !important;
+        font-weight: 600 !important;
+        font-size: 11px !important;
+    }
+
+    .amount-words-block strong {
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        font-size: 11px !important;
+    }
+
+    /* 7. FOOTER & TERMS - UNIFORM 11PX */
+    .inv-footer {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: flex-end !important;
+        margin-top: 12px !important;
+    }
+
+    .terms h4 {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f766e !important;
+        margin-bottom: 2px !important;
+        text-transform: uppercase !important;
+    }
+
+    .terms ol {
+        font-size: 11px !important;
+        color: #475569 !important;
+        padding-left: 14px !important;
+        line-height: 1.4 !important;
+        margin: 0 !important;
+    }
+
+    .terms li {
+        font-size: 11px !important;
+    }
+
+    .signature-section p {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+        margin: 0 !important;
     }
 
     .sig-space {
         font-family: 'Caveat', cursive !important;
+        font-size: 20px !important;
         color: #1d4ed8 !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
+        font-weight: 700 !important;
+        margin: 4px 0 !important;
     }
 
-    /* Ensure page breaks don't chop elements */
-    .inv-header, .inv-bill-details, .table-wrapper, .inv-summary, .inv-footer {
+    .sig-title {
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        color: #64748b !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+    }
+
+    .inv-header, .inv-bill-details, .table-wrapper, .inv-summary, .amount-words-block, .inv-footer {
         page-break-inside: avoid;
+        break-inside: avoid;
     }
 }
 
@@ -1664,6 +1997,14 @@ select.table-input {
 
 .modal-backdrop.active {
     display: flex;
+}
+
+#ledger-modal {
+    z-index: 10000000 !important;
+}
+
+#ledger-modal.active {
+    display: flex !important;
 }
 
 .modal-card {

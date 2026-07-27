@@ -947,14 +947,14 @@ function setupEventListeners() {
             invoiceItems: JSON.parse(JSON.stringify(state.invoiceItems.filter(item => (item.description || "").trim() !== ""))),
             discount: flatDiscount,
             grandTotal: grandTotal,
-            paymentReceived: 0,
+            paymentReceived: grandTotal,
             savedAt: new Date().getTime()
         };
 
         const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === invoiceToSave.invNumber);
         if (existingIdx !== -1) {
             if (confirm(`Invoice ${invoiceToSave.invNumber} already exists. Do you want to update it?`)) {
-                invoiceToSave.paymentReceived = state.savedInvoices[existingIdx].paymentReceived || 0;
+                invoiceToSave.paymentReceived = grandTotal;
                 state.savedInvoices[existingIdx] = invoiceToSave;
                 showStatus(`Updated saved invoice: ${invoiceToSave.invNumber}`);
             } else {
@@ -1013,13 +1013,13 @@ function setupEventListeners() {
             invoiceItems: JSON.parse(JSON.stringify(state.invoiceItems.filter(item => (item.description || "").trim() !== ""))),
             discount: flatDiscount,
             grandTotal: grandTotal,
-            paymentReceived: 0,
+            paymentReceived: grandTotal,
             savedAt: new Date().getTime()
         };
         
         const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === invoiceToSave.invNumber);
         if (existingIdx !== -1) {
-            invoiceToSave.paymentReceived = state.savedInvoices[existingIdx].paymentReceived || 0;
+            invoiceToSave.paymentReceived = grandTotal;
             state.savedInvoices[existingIdx] = invoiceToSave;
             showStatus(`Updated saved invoice: ${invoiceToSave.invNumber}`);
         } else {
@@ -1046,13 +1046,27 @@ function setupEventListeners() {
     const savePrintBtn = document.getElementById("save-print-btn");
     if (savePrintBtn) {
         savePrintBtn.addEventListener("click", () => {
+            if (!validateInvoice()) return;
+            const invNum = state.clientInfo.invNumber || getNextInvoiceNumber();
             const saved = saveActiveInvoiceSilent();
             if (saved) {
+                // Find saved invoice object
+                const savedInv = state.savedInvoices.find(inv => inv.invNumber === invNum) || state.savedInvoices[state.savedInvoices.length - 1];
+
+                // Clear active draft form
+                clearActiveInvoiceData();
+
+                // Switch to Saved Invoices tab and render list
                 activeDashboardTab = "invoices";
                 openInvoicesDashboard();
-                showStatus("Opening Print Dialog...");
-                window.print();
-                clearActiveInvoiceData();
+                renderSavedInvoicesList();
+
+                // Open preview modal for the saved invoice and trigger print dialog
+                if (savedInv) {
+                    setTimeout(() => {
+                        openViewInvoiceModal(savedInv, true);
+                    }, 100);
+                }
             }
         });
     }
@@ -1196,10 +1210,12 @@ function setupEventListeners() {
     if (printInvoiceBtn) {
         printInvoiceBtn.addEventListener("click", () => {
             if (!validateInvoice()) return;
-            showStatus("Opening Print Dialog...");
-            window.print();
+            const activeObj = getActiveInvoiceObj();
+            openViewInvoiceModal(activeObj, true);
         });
     }
+
+    window.addEventListener("beforeprint", syncAllPrintSpans);
 
     // Customer search on Client Name input in sidebar
     const clientNameInput = document.getElementById("client-name");
@@ -1762,9 +1778,57 @@ function autoResizeTextarea(el) {
 
 // Recalculate single row total display
 function recalculateRowAmount(rowEl, qty, rate) {
+    const amt = (qty * rate).toFixed(2);
     const amtEl = rowEl.querySelector(".amount-input");
     if (amtEl) {
-        amtEl.value = (qty * rate).toFixed(2);
+        amtEl.value = amt;
+    }
+    const printQty = rowEl.querySelector(".print-qty");
+    const printRate = rowEl.querySelector(".print-rate");
+    const printAmt = rowEl.querySelector(".print-amount");
+    if (printQty) printQty.innerText = qty;
+    if (printRate) printRate.innerText = `₹${parseFloat(rate).toFixed(2)}`;
+    if (printAmt) printAmt.innerText = `₹${amt}`;
+}
+
+// Synchronize all table inputs into print spans before printing
+function syncAllPrintSpans() {
+    const tbody = document.getElementById("invoice-tbody");
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll("tr");
+    rows.forEach((tr, index) => {
+        const item = state.invoiceItems[index];
+        const descInput = tr.querySelector(".desc-input");
+        const sizeInput = tr.querySelector(".size-input");
+        const qtyInput = tr.querySelector(".qty-input");
+        const rateInput = tr.querySelector(".rate-input");
+        const amtInput = tr.querySelector(".amount-input");
+        
+        const descSpan = tr.querySelector(".print-desc");
+        const sizeSpan = tr.querySelector(".print-size");
+        const qtySpan = tr.querySelector(".print-qty");
+        const rateSpan = tr.querySelector(".print-rate");
+        const amtSpan = tr.querySelector(".print-amount");
+        
+        const descVal = descInput ? descInput.value : (item ? item.description : '');
+        const sizeVal = sizeInput ? sizeInput.value : (item ? item.size : '-');
+        const qtyVal = qtyInput ? qtyInput.value : (item ? item.qty : 1);
+        const rateVal = rateInput ? parseFloat(rateInput.value || 0).toFixed(2) : (item ? parseFloat(item.rate || 0).toFixed(2) : '0.00');
+        const amtVal = amtInput ? parseFloat(amtInput.value || 0).toFixed(2) : (item ? ((item.qty || 0) * (item.rate || 0)).toFixed(2) : '0.00');
+        
+        if (descSpan) descSpan.innerText = descVal;
+        if (sizeSpan) sizeSpan.innerText = sizeVal || '-';
+        if (qtySpan) qtySpan.innerText = qtyVal;
+        if (rateSpan) rateSpan.innerText = `₹${rateVal}`;
+        if (amtSpan) amtSpan.innerText = `₹${amtVal}`;
+    });
+    
+    // Also sync discount span
+    const flatDiscountInput = document.getElementById("discount-flat-input");
+    const printDiscountEl = document.getElementById("print-discount-val");
+    if (flatDiscountInput && printDiscountEl) {
+        const flat = parseFloat(flatDiscountInput.value) || 0;
+        printDiscountEl.innerText = flat > 0 ? `-₹${flat.toFixed(2)}` : `₹0.00`;
     }
 }
 
@@ -2714,8 +2778,51 @@ function renderDashboardReportsList(filterText = "") {
 }
 
 
-// Open a read-only print view modal for a saved invoice
-function openViewInvoiceModal(inv) {
+// Helper to construct invoice object from active invoice form
+function getActiveInvoiceObj() {
+    const invNum = (document.getElementById("preview-inv-number")?.innerText || document.getElementById("inv-number")?.value || getNextInvoiceNumber()).trim();
+    const dcNum = (document.getElementById("preview-dc-number")?.innerText || document.getElementById("dc-number")?.value || "-").trim();
+    const invDate = state.clientInfo.invDate || new Date().toISOString().split('T')[0];
+    const clientName = (document.getElementById("preview-client-name")?.innerText || state.clientInfo.name || "Walk-in Customer").replace(/\u00a0/g, ' ').trim();
+    const clientAddr = (document.getElementById("preview-client-address")?.innerText || state.clientInfo.address || "").replace(/\u00a0/g, ' ').trim();
+    const clientMob = (document.getElementById("preview-client-mobile")?.innerText || state.clientInfo.mobile || "").replace(/\u00a0/g, ' ').trim();
+    const clientEmail = (document.getElementById("preview-client-email")?.innerText || state.clientInfo.email || "").replace(/\u00a0/g, ' ').trim();
+    
+    let subtotal = 0;
+    const items = state.invoiceItems.map(item => {
+        const qty = parseInt(item.qty) || 0;
+        const rate = parseFloat(item.rate) || 0;
+        subtotal += qty * rate;
+        return {
+            description: item.description || "",
+            sku: item.sku || "",
+            size: item.size || "",
+            qty: qty,
+            rate: rate
+        };
+    });
+    
+    const flatDiscountInput = document.getElementById("discount-flat-input");
+    const discount = flatDiscountInput ? parseFloat(flatDiscountInput.value) || 0 : 0;
+    const grandTotal = Math.round(subtotal - discount);
+    
+    return {
+        invNumber: invNum,
+        dcNumber: dcNum,
+        invDate: invDate,
+        clientName: clientName,
+        clientAddress: clientAddr,
+        clientMobile: clientMob,
+        clientEmail: clientEmail,
+        invoiceItems: items,
+        discount: discount,
+        grandTotal: grandTotal,
+        paymentReceived: grandTotal
+    };
+}
+
+// Open a read-only print view modal for a saved or active invoice
+function openViewInvoiceModal(inv, autoPrint = false) {
     const modal = document.getElementById('view-invoice-modal');
     const content = document.getElementById('view-invoice-content');
     const printBtn = document.getElementById('view-modal-print-btn');
@@ -2725,13 +2832,13 @@ function openViewInvoiceModal(inv) {
     const items = (inv.invoiceItems || []).filter(i => (i.description||'').trim());
     const itemRows = items.map((item, idx) => {
         const amt = (parseFloat(item.qty)||0) * (parseFloat(item.rate)||0);
-        return `<tr style="border-bottom:1px solid #e5e7eb;">
-            <td style="padding:6px 8px;text-align:center;color:#6b7280;">${idx+1}</td>
-            <td style="padding:6px 8px;font-weight:600;color:#111827;">${item.description||''}${item.sku ? ' <span style="color:#9ca3af;font-size:10px;">['+item.sku+']</span>' : ''}</td>
-            <td style="padding:6px 8px;text-align:center;color:#4b5563;">${item.size||'-'}</td>
-            <td style="padding:6px 8px;text-align:center;font-weight:600;">${item.qty||0}</td>
-            <td style="padding:6px 8px;text-align:right;">₹${parseFloat(item.rate||0).toFixed(2)}</td>
-            <td style="padding:6px 8px;text-align:right;font-weight:700;color:#111827;">₹${amt.toFixed(2)}</td>
+        return `<tr style="border-bottom:1px solid #e2e8f0;">
+            <td style="padding:6px 8px;text-align:center;color:#64748b;font-size:11px;">${idx+1}</td>
+            <td style="padding:6px 8px;font-weight:700;color:#0f172a;font-size:11px;">${item.description||''}${item.sku ? ' <span style="color:#64748b;font-size:10px;font-weight:400;">['+item.sku+']</span>' : ''}</td>
+            <td style="padding:6px 8px;text-align:center;color:#475569;font-size:11px;">${item.size||'-'}</td>
+            <td style="padding:6px 8px;text-align:center;font-weight:600;color:#0f172a;font-size:11px;">${item.qty||0}</td>
+            <td style="padding:6px 8px;text-align:right;color:#334155;font-size:11px;">₹${parseFloat(item.rate||0).toFixed(2)}</td>
+            <td style="padding:6px 8px;text-align:right;font-weight:700;color:#0f172a;font-size:11px;">₹${amt.toFixed(2)}</td>
         </tr>`;
     }).join('');
 
@@ -2746,48 +2853,47 @@ function openViewInvoiceModal(inv) {
     };
 
     const words = numberToWords(grandTotal);
-    const amountInWordsHtml = words ? `<div style="margin-top:6px;font-size:10.5px;color:#374151;background:#f0fdf4;padding:4px 8px;border-radius:4px;border-left:3px solid #2a9d8f;">Amount in Words: <strong>${words}</strong></div>` : '';
+    const amountInWordsHtml = words ? `<div style="margin-top:8px;font-size:11px;color:#334155;background:#f8fafc;padding:6px 10px;border-radius:6px;border-left:4px solid #0f766e;">Amount in Words: <strong style="color:#0f172a;">${words}</strong></div>` : '';
 
     content.innerHTML = `
-    <div id="printable-inv-area" style="background:#fff;padding:24px 30px;border-radius:8px;font-family:'Outfit',sans-serif;max-width:800px;margin:0 auto;box-shadow:0 4px 20px rgba(0,0,0,0.08);color:#111827;">
+    <div id="printable-inv-area" style="background:#fff;padding:24px 30px;border-radius:8px;font-family:'Outfit',sans-serif;max-width:800px;margin:0 auto;box-shadow:0 4px 20px rgba(0,0,0,0.08);color:#0f172a;">
         <!-- Header -->
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #e5e7eb;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:2px solid #0f766e;margin-bottom:12px;">
             <div>
-                <div style="background:linear-gradient(135deg, #2a9d8f, #0ea5e9);color:#fff;display:inline-block;padding:4px 10px;font-weight:900;font-size:16px;border-radius:4px;margin-bottom:6px;">SRR ORTHO PLUS</div>
-                <h2 style="font-size:18px;font-weight:800;color:#2a9d8f;margin:0 0 2px 0;">SRR ORTHO PLUS</h2>
-                <p style="font-size:10.5px;color:#4b5563;margin:1px 0;">217, SIDDARTH NAGAR, HYDERABAD - 500038</p>
-                <p style="font-size:10.5px;color:#4b5563;margin:1px 0;">Phone: 9396857455 | Email: srrorthoplus999@gmail.com</p>
-                <p style="font-size:10.5px;color:#4b5563;margin:1px 0;">Website: srrorthoplus.com</p>
+                <h2 style="font-size:20px;font-weight:800;color:#0f766e;margin:0 0 2px 0;">SRR ORTHO PLUS</h2>
+                <p style="font-size:11px;color:#475569;margin:1px 0;">217, SIDDARTH NAGAR, HYDERABAD - 500038</p>
+                <p style="font-size:11px;color:#475569;margin:1px 0;">Phone: 9396857455 | Email: srrorthoplus999@gmail.com</p>
+                <p style="font-size:11px;color:#475569;margin:1px 0;">Website: srrorthoplus.com</p>
             </div>
             <div style="text-align:right;">
-                <p style="font-size:22px;font-weight:900;color:#2a9d8f;margin:0 0 4px 0;letter-spacing:-0.5px;">CASH INVOICE</p>
-                <table style="border-collapse:collapse;font-size:11px;margin-left:auto;">
-                    <tr><td style="font-weight:600;color:#6b7280;padding:2px 4px;text-align:right;">Bill No:</td><td style="font-weight:800;color:#111827;padding:2px 4px;text-align:left;">${inv.invNumber || '-'}</td></tr>
-                    <tr><td style="font-weight:600;color:#6b7280;padding:2px 4px;text-align:right;">DC No:</td><td style="font-weight:600;color:#111827;padding:2px 4px;text-align:left;">${inv.dcNumber || '-'}</td></tr>
-                    <tr><td style="font-weight:600;color:#6b7280;padding:2px 4px;text-align:right;">Date:</td><td style="font-weight:600;color:#111827;padding:2px 4px;text-align:left;">${formatDateString(inv.invDate) || '-'}</td></tr>
+                <p style="font-size:20px;font-weight:900;color:#0f766e;margin:0 0 4px 0;letter-spacing:1px;text-transform:uppercase;">CASH MEMO</p>
+                <table style="border-collapse:collapse;font-size:11px;margin-left:auto;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;">
+                    <tr><td style="font-weight:600;color:#475569;padding:2px 6px;text-align:right;">Bill No:</td><td style="font-weight:700;color:#0f172a;padding:2px 6px;text-align:left;">${inv.invNumber || '-'}</td></tr>
+                    <tr><td style="font-weight:600;color:#475569;padding:2px 6px;text-align:right;">DC No:</td><td style="font-weight:700;color:#0f172a;padding:2px 6px;text-align:left;">${inv.dcNumber || '-'}</td></tr>
+                    <tr><td style="font-weight:600;color:#475569;padding:2px 6px;text-align:right;">Date:</td><td style="font-weight:700;color:#0f172a;padding:2px 6px;text-align:left;">${formatDateString(inv.invDate) || '-'}</td></tr>
                 </table>
             </div>
         </div>
 
         <!-- Bill To Section -->
         <div style="margin-bottom:12px;">
-            <p style="font-size:10px;text-transform:uppercase;color:#9ca3af;font-weight:700;margin:0 0 3px 0;letter-spacing:0.5px;">BILL TO:</p>
-            <p style="font-size:14px;font-weight:700;color:#111827;margin:0 0 2px 0;">${inv.clientName || 'Walk-in Customer'}</p>
-            ${inv.clientAddress ? `<p style="font-size:11px;color:#4b5563;margin:1px 0;">Address: ${inv.clientAddress}</p>` : ''}
-            ${inv.clientMobile ? `<p style="font-size:11px;color:#4b5563;margin:1px 0;">Mobile: ${inv.clientMobile}</p>` : ''}
-            ${inv.clientEmail ? `<p style="font-size:11px;color:#4b5563;margin:1px 0;">Email: ${inv.clientEmail}</p>` : ''}
+            <p style="font-size:11px;text-transform:uppercase;color:#0f766e;font-weight:700;margin:0 0 4px 0;letter-spacing:0.5px;">BILL TO:</p>
+            <p style="font-size:13px;font-weight:700;color:#0f172a;background:#f8fafc;border:1px solid #cbd5e1;padding:3px 8px;border-radius:6px;display:inline-block;margin:0 0 4px 0;">${inv.clientName || 'Walk-in Customer'}</p>
+            ${inv.clientAddress ? `<p style="font-size:11px;color:#475569;margin:2px 0;">Address: <strong style="color:#0f172a;">${inv.clientAddress}</strong></p>` : ''}
+            ${inv.clientMobile ? `<p style="font-size:11px;color:#475569;margin:2px 0;">Mobile: <strong style="color:#0f172a;">${inv.clientMobile}</strong></p>` : ''}
+            ${inv.clientEmail ? `<p style="font-size:11px;color:#475569;margin:2px 0;">Email: <strong style="color:#0f172a;">${inv.clientEmail}</strong></p>` : ''}
         </div>
 
         <!-- Items Table -->
-        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px;border:1px solid #cbd5e1;">
             <thead>
-                <tr style="background:#f3f4f6;border-bottom:2px solid #d1d5db;">
-                    <th style="padding:6px 8px;text-align:center;color:#4b5563;font-weight:700;width:5%;">#</th>
-                    <th style="padding:6px 8px;text-align:left;color:#4b5563;font-weight:700;width:42%;">ITEM DESCRIPTION</th>
-                    <th style="padding:6px 8px;text-align:center;color:#4b5563;font-weight:700;width:15%;">SIZE</th>
-                    <th style="padding:6px 8px;text-align:center;color:#4b5563;font-weight:700;width:10%;">QTY</th>
-                    <th style="padding:6px 8px;text-align:right;color:#4b5563;font-weight:700;width:14%;">RATE (₹)</th>
-                    <th style="padding:6px 8px;text-align:right;color:#4b5563;font-weight:700;width:14%;">AMOUNT (₹)</th>
+                <tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;">
+                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:5%;">#</th>
+                    <th style="padding:6px 8px;text-align:left;color:#334155;font-weight:700;width:40%;">ITEM DESCRIPTION</th>
+                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:15%;">SIZE</th>
+                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:10%;">QTY</th>
+                    <th style="padding:6px 8px;text-align:right;color:#334155;font-weight:700;width:15%;">RATE (₹)</th>
+                    <th style="padding:6px 8px;text-align:right;color:#334155;font-weight:700;width:15%;">AMOUNT (₹)</th>
                 </tr>
             </thead>
             <tbody>${itemRows}</tbody>
@@ -2797,22 +2903,22 @@ function openViewInvoiceModal(inv) {
         <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:10px;">
             <!-- Left Side: Bank Details & UPI QR -->
             <div style="width:55%;">
-                <div style="margin-bottom:6px;">
-                    <p style="font-size:9.5px;font-weight:700;color:#6b7280;margin:0 0 2px 0;text-transform:uppercase;">BANK ACCOUNT DETAILS:</p>
-                    <p style="font-size:10px;color:#4b5563;margin:0;line-height:1.3;">HDFC BANK, A/C: 5010023456789, IFSC: HDFC0001234, Hyderabad Branch</p>
+                <div style="background:#f8fafc;border:1px solid #cbd5e1;padding:6px 10px;border-radius:6px;margin-bottom:6px;">
+                    <p style="font-size:11px;font-weight:700;color:#0f766e;margin:0 0 2px 0;text-transform:uppercase;">BANK ACCOUNT DETAILS:</p>
+                    <p style="font-size:11px;color:#334155;margin:0;line-height:1.4;">HDFC BANK, A/C: 5010023456789, IFSC: HDFC0001234, Hyderabad Branch</p>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;background:#f9fafb;padding:6px 10px;border-radius:6px;border:1px solid #e5e7eb;">
+                <div style="display:flex;align-items:center;gap:10px;background:#f8fafc;padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;">
                     <div style="flex-grow:1;">
-                        <p style="font-size:9.5px;font-weight:700;color:#6b7280;margin:0 0 2px 0;text-transform:uppercase;">SCAN TO PAY (UPI):</p>
-                        <p style="font-size:10.5px;font-weight:700;color:#111827;margin:0 0 4px 0;">9396857455@ybl</p>
+                        <p style="font-size:11px;font-weight:700;color:#0f766e;margin:0 0 2px 0;text-transform:uppercase;">SCAN TO PAY (UPI):</p>
+                        <p style="font-size:11px;font-weight:700;color:#0f172a;margin:0 0 4px 0;">9396857455@ybl</p>
                         <div style="display:flex;gap:4px;align-items:center;">
-                            <span style="background:#fff;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;font-size:9px;font-weight:700;color:#5f259f;">PhonePe</span>
-                            <span style="background:#fff;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;font-size:9px;font-weight:700;color:#ea4335;">GPay</span>
-                            <span style="background:#fff;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;font-size:9px;font-weight:700;color:#00baf2;">Paytm</span>
-                            <span style="background:#fff;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;font-size:9px;font-weight:700;color:#000;">UPI</span>
+                            <span style="background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0;font-size:9.5px;font-weight:700;color:#5f259f;">PhonePe</span>
+                            <span style="background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0;font-size:9.5px;font-weight:700;color:#ea4335;">GPay</span>
+                            <span style="background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0;font-size:9.5px;font-weight:700;color:#00baf2;">Paytm</span>
+                            <span style="background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0;font-size:9.5px;font-weight:700;color:#000;">UPI</span>
                         </div>
                     </div>
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=85x85&data=upi%3A%2F%2Fpay%3Fpa%3D9396857455%40ybl%26pn%3DSRR%2520ORTHO%2520PLUS" style="width:75px;height:75px;border-radius:4px;border:1px solid #d1d5db;flex-shrink:0;" alt="UPI QR Code" />
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=85x85&data=upi%3A%2F%2Fpay%3Fpa%3D9396857455%40ybl%26pn%3DSRR%2520ORTHO%2520PLUS" style="width:75px;height:75px;border-radius:4px;border:1px solid #cbd5e1;flex-shrink:0;" alt="UPI QR Code" />
                 </div>
                 ${amountInWordsHtml}
             </div>
@@ -2820,35 +2926,29 @@ function openViewInvoiceModal(inv) {
             <!-- Right Side: Totals -->
             <div style="width:40%;">
                 <table style="width:100%;font-size:11px;border-collapse:collapse;">
-                    ${discount > 0 ? `
-                        <tr><td style="padding:3px 4px;color:#6b7280;text-align:right;">Subtotal:</td><td style="padding:3px 4px;text-align:right;font-weight:600;">₹${subtotal.toFixed(2)}</td></tr>
-                        <tr><td style="padding:3px 4px;color:#6b7280;text-align:right;">Discount:</td><td style="padding:3px 4px;text-align:right;color:#ef4444;font-weight:600;">-₹${discount.toFixed(2)}</td></tr>
-                    ` : ''}
-                    <tr style="border-top:2px solid #d1d5db;">
-                        <td style="padding:6px 4px;font-weight:800;font-size:13px;text-align:right;color:#111827;">Grand Total:</td>
-                        <td style="padding:6px 4px;text-align:right;font-weight:800;font-size:15px;color:#2a9d8f;">₹${grandTotal.toFixed(2)}</td>
+                    <tr><td style="padding:3px 4px;color:#475569;font-weight:600;text-align:right;">Subtotal:</td><td style="padding:3px 4px;text-align:right;font-weight:700;color:#0f172a;">₹${subtotal.toFixed(2)}</td></tr>
+                    ${discount > 0 ? `<tr><td style="padding:3px 4px;color:#475569;font-weight:600;text-align:right;">Discount:</td><td style="padding:3px 4px;text-align:right;color:#ef4444;font-weight:700;">-₹${discount.toFixed(2)}</td></tr>` : ''}
+                    <tr style="background:rgba(15, 118, 110, 0.06);">
+                        <td style="padding:6px 6px;font-weight:800;font-size:12px;text-align:right;color:#0f766e;">Grand Total:</td>
+                        <td style="padding:6px 6px;text-align:right;font-weight:800;font-size:12px;color:#0f766e;">₹${grandTotal.toFixed(2)}</td>
                     </tr>
-                    ${paid > 0 ? `
-                        <tr><td style="padding:3px 4px;color:#10b981;text-align:right;">Paid:</td><td style="padding:3px 4px;text-align:right;color:#10b981;font-weight:600;">₹${paid.toFixed(2)}</td></tr>
-                        <tr><td style="padding:3px 4px;color:#ef4444;text-align:right;font-weight:700;">Balance:</td><td style="padding:3px 4px;text-align:right;color:#ef4444;font-weight:700;">₹${balance.toFixed(2)}</td></tr>
-                    ` : ''}
                 </table>
             </div>
         </div>
 
         <!-- Footer: Terms & Signature -->
-        <div style="border-top:1px solid #e5e7eb;padding-top:8px;display:flex;justify-content:space-between;align-items:flex-end;">
-            <div style="font-size:9px;color:#6b7280;width:55%;">
-                <p style="font-weight:700;margin:0 0 2px 0;text-transform:uppercase;color:#4b5563;">TERMS & CONDITIONS:</p>
-                <ol style="margin:0;padding-left:12px;line-height:1.3;">
+        <div style="border-top:1px solid #cbd5e1;padding-top:10px;display:flex;justify-content:space-between;align-items:flex-end;">
+            <div style="font-size:11px;color:#475569;width:55%;">
+                <p style="font-weight:700;margin:0 0 2px 0;text-transform:uppercase;color:#0f766e;">TERMS & CONDITIONS:</p>
+                <ol style="margin:0;padding-left:14px;line-height:1.4;">
                     <li>Goods once sold will not be taken back or exchanged.</li>
                     <li>All disputes subject to local jurisdiction only.</li>
                 </ol>
             </div>
-            <div style="text-align:right;width:35%;">
-                <p style="font-size:10px;color:#4b5563;margin:0 0 2px 0;">For <strong>SRR ORTHO PLUS</strong></p>
-                <div style="font-family:'Caveat',cursive;font-size:18px;font-weight:700;color:#1d4ed8;height:24px;display:flex;align-items:center;justify-content:flex-end;">A.SATYANARAYANA</div>
-                <p style="font-size:10px;font-weight:700;color:#374151;border-top:1px solid #d1d5db;padding-top:2px;margin:2px 0 0 0;">Authorized Signatory</p>
+            <div style="text-align:right;width:38%;">
+                <p style="font-size:11px;font-weight:700;color:#0f172a;margin:0 0 2px 0;">For <strong>SRR ORTHO PLUS</strong></p>
+                <div style="font-family:'Caveat',cursive;font-size:20px;font-weight:700;color:#1d4ed8;height:24px;display:flex;align-items:center;justify-content:flex-end;">A.SATYANARAYANA</div>
+                <p style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin:2px 0 0 0;">Authorized Signatory</p>
             </div>
         </div>
     </div>`;
@@ -2860,21 +2960,23 @@ function openViewInvoiceModal(inv) {
         closeBtn.onclick = () => { modal.style.display = 'none'; document.body.style.overflow = ''; };
     }
     modal.onclick = (e) => { if (e.target === modal) { modal.style.display = 'none'; document.body.style.overflow = ''; } };
+    
     if (printBtn) {
         printBtn.onclick = () => {
             const printArea = document.getElementById("printable-inv-area");
             if (!printArea) return;
             const printWin = window.open('', '_blank');
+            if (!printWin) return;
             printWin.document.write(`
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <title>Invoice Preview - ${inv.invNumber || 'SRR'}</title>
+                    <title>CASH MEMO - ${inv.invNumber || 'SRR'}</title>
                     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
                     <style>
-                        body { margin: 0; padding: 10mm; font-family: 'Outfit', sans-serif; background: #fff; color: #111827; }
-                        @page { size: A4 portrait; margin: 4mm; }
-                        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                        body { margin: 0; padding: 6mm 10mm; font-family: 'Outfit', sans-serif; background: #fff; color: #0f172a; font-size: 11px; }
+                        @page { size: A4 portrait; margin: 6mm; }
+                        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box !important; }
                     </style>
                 </head>
                 <body>
@@ -2887,8 +2989,14 @@ function openViewInvoiceModal(inv) {
             setTimeout(() => {
                 printWin.print();
                 printWin.close();
-            }, 300);
+            }, 350);
         };
+    }
+
+    if (autoPrint && printBtn) {
+        setTimeout(() => {
+            printBtn.click();
+        }, 150);
     }
 }
 
@@ -2934,12 +3042,14 @@ function renderDashboardCustomersList(filterText = "") {
             <td style="padding:12px 16px; text-align:center;">
                 <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
                     <button type="button" class="load-cust-btn" style="padding:5px 10px; border-radius:6px; border:1px solid #2a9d8f; background:#2a9d8f; color:#fff; font-size:11px; cursor:pointer; font-weight:600;">⚡ Load to Invoice</button>
-                    <button type="button" class="delete-cust-btn" style="padding:5px 8px; border-radius:6px; border:1px solid #fca5a5; background:#fff; color:#ef4444; font-size:13px; cursor:pointer;">✕</button>
+                    <button type="button" class="ledger-cust-btn" style="padding:5px 10px; border-radius:6px; border:1px solid #3b82f6; background:#eff6ff; color:#2563eb; font-size:11px; cursor:pointer; font-weight:600;" title="View Customer Transaction Ledger">📊 Ledger</button>
+                    <button type="button" class="delete-cust-btn" style="padding:5px 8px; border-radius:6px; border:1px solid #fca5a5; background:#fff; color:#ef4444; font-size:13px; cursor:pointer;" title="Delete Customer">✕</button>
                 </div>
             </td>
         `;
 
         const loadBtn = tr.querySelector(".load-cust-btn");
+        const ledgerBtn = tr.querySelector(".ledger-cust-btn");
         const deleteBtn = tr.querySelector(".delete-cust-btn");
 
         if (loadBtn) {
@@ -2947,6 +3057,12 @@ function renderDashboardCustomersList(filterText = "") {
                 preloadCustomer(cust);
                 closeInvoicesDashboard();
                 showStatus(`Loaded customer: ${cust.name}`);
+            });
+        }
+
+        if (ledgerBtn) {
+            ledgerBtn.addEventListener("click", () => {
+                openLedgerModal(cust.name);
             });
         }
 
@@ -3035,6 +3151,8 @@ function getCustomerOutstanding(customerName) {
 
 // Open Ledger Modal for a selected customer
 function openLedgerModal(customerName) {
+    const cleanName = (customerName || '').replace(/\u00a0/g, ' ').trim();
+
     // Hide the Customer Directory modal first
     const viewCustomersModal = document.getElementById("view-customers-modal");
     if (viewCustomersModal) viewCustomersModal.classList.remove("active");
@@ -3043,19 +3161,24 @@ function openLedgerModal(customerName) {
     if (!ledgerModal) return;
     
     // Set customer name
-    document.getElementById("ledger-customer-name").innerText = customerName;
+    const titleEl = document.getElementById("ledger-customer-name");
+    if (titleEl) titleEl.innerText = cleanName;
     
-    // Set default dates: start of current year to today
+    // Set default dates: 2020-01-01 to today so all historical transactions show up
     const today = new Date();
-    const startOfYear = new Date(today.getFullYear(), 0, 1);
+    const startDateStr = "2020-01-01";
+    const endDateStr = today.toISOString().split('T')[0];
     
-    document.getElementById("ledger-start-date").value = startOfYear.toISOString().split('T')[0];
-    document.getElementById("ledger-end-date").value = today.toISOString().split('T')[0];
+    const startDateEl = document.getElementById("ledger-start-date");
+    const endDateEl = document.getElementById("ledger-end-date");
+    if (startDateEl) startDateEl.value = startDateStr;
+    if (endDateEl) endDateEl.value = endDateStr;
     
     // Render ledger
-    renderLedger(customerName, startOfYear.toISOString().split('T')[0], today.toISOString().split('T')[0]);
+    renderLedger(cleanName, startDateStr, endDateStr);
     
-    // Open Ledger modal
+    // Open Ledger modal on top of all layers
+    ledgerModal.style.zIndex = "10000000";
     ledgerModal.classList.add("active");
 }
 
@@ -3107,8 +3230,11 @@ function renderLedger(customerName, startDate, endDate) {
 
 // Generate Ledger accounting calculations
 function getLedgerData(customerName, startDateStr, endDateStr) {
+    const norm = str => (str || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').toLowerCase().trim();
+    const targetNorm = norm(customerName);
+
     const invoices = state.savedInvoices.filter(inv => 
-        inv.clientName && inv.clientName.toLowerCase().trim() === customerName.toLowerCase().trim()
+        inv.clientName && norm(inv.clientName) === targetNorm
     );
 
     const startDate = new Date(startDateStr);
