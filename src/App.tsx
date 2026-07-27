@@ -10,6 +10,7 @@ import Admin from "./pages/Admin";
 import SavedDcs from "./pages/SavedDcs";
 import ImageDatabase from "./pages/ImageDatabase";
 import CashInvoice from "./pages/CashInvoice";
+import Quotation from "./pages/Quotation";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -51,6 +52,7 @@ const App = () => {
               <Route path="/saved" element={<ProtectedRoute><SavedDcs /></ProtectedRoute>} />
               <Route path="/images" element={<ProtectedRoute><ImageDatabase /></ProtectedRoute>} />
               <Route path="/cash-invoice" element={<ProtectedRoute><CashInvoice /></ProtectedRoute>} />
+              <Route path="/quotation" element={<ProtectedRoute><Quotation /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

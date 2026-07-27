@@ -64,6 +64,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   const isLandingScreen = pathname === '/' && !currentMode;
   const isImageDb = pathname === '/images';
   const isCashInvoice = pathname === '/cash-invoice';
+  const isQuotation = pathname === '/quotation';
   const isDcTracker = pathname === '/saved';
   const isAdmin = pathname === '/admin';
 
@@ -154,10 +155,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             <Button
               variant="ghost"
               size="sm"
-              className="gap-2 text-xs font-bold h-8 rounded-lg text-white/80 hover:bg-white/15 hover:text-white transition-all"
-              onClick={() => window.open('https://docs.srrorthoplus.com', '_blank')}
+              className={getNavBtnClass(isQuotation)}
+              onClick={() => navigate('/quotation')}
             >
-              <FileText className="w-3.5 h-3.5 text-teal-200" /> Quotation
+              <FileText className={`w-3.5 h-3.5 ${isQuotation ? 'text-sky-700' : 'text-teal-200'}`} /> Quotation
             </Button>
 
             {/* DC Tracker - Unique Amber Glow Badge */}
@@ -279,8 +280,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                     <SheetClose asChild>
                       <Button
                         variant="ghost"
-                        className="w-full justify-start gap-3 h-10 text-sm font-bold text-slate-200 hover:text-white hover:bg-white/10 rounded-lg"
-                        onClick={() => window.open('https://docs.srrorthoplus.com', '_blank')}
+                        className={getMobileNavClass(isQuotation)}
+                        onClick={() => navigate('/quotation')}
                       >
                         <FileText className="w-4 h-4 text-teal-400" /> Create Quotation
                       </Button>

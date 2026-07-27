@@ -925,10 +925,8 @@ export default function OrthoApp() {
                     </button>
 
                     {/* Card 3: Create Quotation */}
-                    <a
-                      href="https://docs.srrorthoplus.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => navigate('/quotation')}
                       className="group flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 hover:border-blue-500 transition-all duration-200 shadow-sm text-center text-slate-900"
                     >
                       <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow group-hover:scale-110 transition-transform flex-shrink-0">
@@ -942,7 +940,7 @@ export default function OrthoApp() {
                           Generate official price quotes &amp; docs.
                         </p>
                       </div>
-                    </a>
+                    </button>
 
                     {/* Card 4: DC Tracker */}
                     <button

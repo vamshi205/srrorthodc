@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build:all",
   "outputDirectory": "dist",
   "framework": "vite",
   "headers": [
