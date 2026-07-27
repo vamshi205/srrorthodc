@@ -320,6 +320,8 @@ function setupEventListeners() {
             const newCustomer = { name, mobile, email, address };
             state.customers.push(newCustomer);
             localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
+            localStorage.setItem("im_customers", JSON.stringify(state.customers));
+            syncCustomerToFirestore(newCustomer);
             
             // Re-render UI list & dropdown
             renderCustomerList();
@@ -498,6 +500,8 @@ function setupEventListeners() {
             const newCust = { name, mobile, email, address };
             state.customers.push(newCust);
             localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
+            localStorage.setItem("im_customers", JSON.stringify(state.customers));
+            syncCustomerToFirestore(newCust);
 
             renderDashboardCustomersList();
             renderCustomerList();
@@ -880,26 +884,48 @@ function setupEventListeners() {
         return true;
     };
 
-    // Auto-save customer details into state & local storage
+    const syncCustomerToFirestore = (cust) => {
+        if (!cust || !cust.name) return;
+        const targetWin = (window.parent && window.parent !== window) ? window.parent : window;
+        targetWin.postMessage({
+            action: "SAVE_CASH_CUSTOMER",
+            payload: {
+                id: cust.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'),
+                name: cust.name.trim(),
+                mobile: cust.mobile || "",
+                email: cust.email || "",
+                address: cust.address || ""
+            }
+        }, "*");
+    };
+
+    // Auto-save customer details into state, local storage & Firestore DB
     const autoSaveCustomer = (custData) => {
         if (!custData || !custData.name || !custData.name.trim()) return;
         const nameTrim = custData.name.trim();
         if (nameTrim.toLowerCase() === "walk-in customer") return;
+
+        let custObj = {
+            name: nameTrim,
+            address: custData.address || "",
+            mobile: custData.mobile || "",
+            email: custData.email || ""
+        };
 
         const existingIdx = state.customers.findIndex(c => (c.name || "").toLowerCase().trim() === nameTrim.toLowerCase());
         if (existingIdx !== -1) {
             if (custData.address) state.customers[existingIdx].address = custData.address;
             if (custData.mobile) state.customers[existingIdx].mobile = custData.mobile;
             if (custData.email) state.customers[existingIdx].email = custData.email;
+            custObj = state.customers[existingIdx];
         } else {
-            state.customers.push({
-                name: nameTrim,
-                address: custData.address || "",
-                mobile: custData.mobile || "",
-                email: custData.email || ""
-            });
+            state.customers.push(custObj);
         }
         localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
+        localStorage.setItem("im_customers", JSON.stringify(state.customers));
+
+        // Sync to Firestore DB
+        syncCustomerToFirestore(custObj);
     };
 
     // Reusable function to save the current invoice in the workspace
