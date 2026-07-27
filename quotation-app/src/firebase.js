@@ -3,22 +3,27 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-// Firebase config - uses srrorthodc-antigravity project (shared with main app)
 const firebaseConfig = {
-  apiKey: "AIzaSyDuK5kOP_WsiFTgMQE7B2qyYaAPDwdi_hY",
-  authDomain: "srrorthodc-antigravity.firebaseapp.com",
-  projectId: "srrorthodc-antigravity",
-  storageBucket: "srrorthodc-antigravity.firebasestorage.app",
-  messagingSenderId: "851487467736",
-  appId: "1:851487467736:web:1065fa1ffbfdd194530fad",
-  measurementId: "G-RPSEV8795H"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-const hasFirebaseConfig = true;
+const hasFirebaseConfig = !!firebaseConfig.apiKey;
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
+let app;
+let auth;
+let db;
+let storage;
+
+if (hasFirebaseConfig) {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  storage = getStorage(app);
+}
 
 export { auth, db, storage, hasFirebaseConfig };

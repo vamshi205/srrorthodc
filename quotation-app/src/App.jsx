@@ -57,10 +57,8 @@ import {
 
 function App() {
   const [view, setView] = useState('library');
-  // Auto-authenticated: no login needed as app is embedded within main authenticated app
-  const DEFAULT_USER = { uid: 'srr-ortho-user', email: 'srrorthoplus999@gmail.com' };
-  const [user, setUser] = useState(DEFAULT_USER);
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [user, setUser] = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
   const [syncStatus, setSyncStatus] = useState('saved');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -72,7 +70,7 @@ function App() {
   const [previewScale, setPreviewScale] = useState(1);
   const [previewPriceListUrl, setPreviewPriceListUrl] = useState(null);
   const [regeneratingItem, setRegeneratingItem] = useState(null);
-  const [alertModal, setAlertModal] = useState(null);
+  const [alertModal, setAlertModal] = useState(null); // { type, title, message, onConfirm, onCancel, confirmText, cancelText, showInput, onInput }
   const [isDataLoading, setIsDataLoading] = useState(false);
 
   const showAlert = (title, message, type = 'success') => {
@@ -269,8 +267,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Load Firestore data immediately on mount (no auth needed since app is embedded)
-    refreshData();
+    if (!hasFirebaseConfig) {
+      setIsAuthLoading(false);
+      return;
+    }
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        await refreshData(currentUser);
+      } else {
+        setUser(currentUser);
+      }
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -296,7 +306,8 @@ function App() {
     }
   }, [previewingItem, priceLists]);
 
-  const refreshData = async () => {
+  const refreshData = async (currentUser = user) => {
+    if (!currentUser) return;
     setSyncStatus('syncing');
     setIsDataLoading(true);
     try {
@@ -307,7 +318,7 @@ function App() {
         // 1. Templates: Always trust the backend.
         if (data.templates && data.templates.length > 0) {
           setTemplates(data.templates);
-        } else {
+        } else if (currentUser) {
           // If Firestore is empty, seed it with a professional default template
           const defaultTemplate = {
             id: 'default-' + Date.now(),
@@ -1216,8 +1227,22 @@ function App() {
     );
   }
 
-
-
+  // If Firebase is configured but no user is logged in, OR if Firebase is completely missing its config (in which case Login shows the setup guide)
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[var(--apple-bg)] relative flex items-center justify-center overflow-hidden w-full">
+        {/* Ambient background blobs matching whatsappconnect */}
+        <div className="blob blob-1"></div>
+        <div className="blob blob-2"></div>
+        {authError && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-100 border border-red-200 text-red-700 px-6 py-3 rounded-2xl shadow-lg font-medium text-[14px]">
+            {authError}
+          </div>
+        )}
+        <Login />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen text-[var(--apple-black)] font-sans overflow-hidden bg-[var(--apple-bg)] relative">
