@@ -615,6 +615,7 @@ body {
 }
 
 /* A4 Paper Dimensions: ~210mm x 297mm */
+/* A4 Paper Dimensions: ~210mm x 297mm */
 .invoice-paper {
     background: var(--paper-bg);
     color: var(--paper-text);
@@ -734,6 +735,13 @@ body {
     display: flex;
     justify-content: space-between;
     margin-top: 10px;
+    position: relative;
+    z-index: 100;
+}
+
+.inv-bill-details:has(#paper-cust-rec-list[style*="block"]),
+.inv-bill-details.has-open-dropdown {
+    z-index: 10000000 !important;
 }
 
 .bill-to {
@@ -787,7 +795,7 @@ body {
 
 /* Interactive Table Styles */
 .table-wrapper {
-    margin-top: 20px;
+    margin-top: 6px;
     width: 100%;
     overflow: visible;
 }
@@ -795,7 +803,7 @@ body {
 .invoice-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: 10.5px;
 }
 
 .invoice-table tbody tr {
@@ -803,10 +811,21 @@ body {
     z-index: 1;
 }
 
+.invoice-table tbody tr:focus-within,
+.invoice-table tbody tr:hover {
+    z-index: 99999 !important;
+}
+
+.invoice-table tbody tr:has(.recommendation-list[style*="block"]),
+.invoice-table tbody tr:has(.size-recommendation-list[style*="block"]),
+.invoice-table tbody tr.has-open-dropdown {
+    z-index: 10000000 !important;
+}
+
 .invoice-table th {
     background: #f3f4f6;
     border-bottom: 2px solid var(--paper-border);
-    padding: 8px 10px;
+    padding: 4px 6px;
     font-weight: 700;
     color: #4b5563;
     text-transform: uppercase;
@@ -815,7 +834,7 @@ body {
 }
 
 .invoice-table td {
-    padding: 6px 10px;
+    padding: 3px 6px;
     border-bottom: 1px solid var(--paper-border);
     vertical-align: middle;
 }
@@ -904,9 +923,14 @@ select.table-input {
     width: 100%;
 }
 
+.autocomplete-container:has(.recommendation-list[style*="block"]),
+.autocomplete-container.has-open-dropdown {
+    z-index: 10000000 !important;
+}
+
 .recommendation-list {
     position: absolute;
-    top: 100%;
+    top: calc(100% + 3px);
     left: 0;
     width: 100%;
     min-width: 250px;
@@ -914,7 +938,7 @@ select.table-input {
     border: 1px solid #d1d5db;
     border-radius: 6px;
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-    z-index: 999;
+    z-index: 999999 !important;
     max-height: 200px;
     overflow-y: auto;
     display: none;
@@ -1008,36 +1032,37 @@ select.table-input {
 .inv-summary {
     display: flex;
     justify-content: space-between;
-    margin-top: 20px;
+    margin-top: 8px;
 }
 
 .summary-left {
-    width: 48%;
+    width: 52%;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 6px;
 }
 
 .bank-details-block h4, .upi-payment-block h4 {
-    font-size: 10.5px;
+    font-size: 9.5px;
     color: #6b7280;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     text-transform: uppercase;
     font-weight: 700;
 }
 
 .bank-details-block p {
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: 10px;
+    line-height: 1.3;
     color: #4b5563;
+    margin: 0;
 }
 
 .upi-payment-block {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     background: #f9fafb;
-    padding: 10px;
+    padding: 6px;
     border-radius: 6px;
     border: 1px solid var(--paper-border);
 }
@@ -1047,14 +1072,14 @@ select.table-input {
 }
 
 .upi-id-text {
-    font-size: 11.5px;
+    font-size: 10.5px;
     font-weight: 600;
     color: var(--paper-text);
 }
 
 .qr-code-placeholder {
-    width: 120px;
-    height: 120px;
+    width: 75px;
+    height: 75px;
     background: white;
     border: 1px solid #d1d5db;
     display: flex;
@@ -1112,6 +1137,11 @@ select.table-input {
     padding: 6px 10px;
 }
 
+.totals-table td {
+    padding: 3px 6px;
+    font-size: 10.5px;
+}
+
 .totals-table td:first-child {
     text-align: right;
     color: #6b7280;
@@ -1125,12 +1155,12 @@ select.table-input {
 }
 
 .discount-input {
-    width: 80px;
+    width: 70px;
     background: #f9fafb;
     border: 1px solid var(--paper-border);
-    padding: 4px;
+    padding: 2px 4px;
     font-family: inherit;
-    font-size: inherit;
+    font-size: 10.5px;
     text-align: right;
     color: inherit;
     border-radius: 4px;
@@ -1142,23 +1172,23 @@ select.table-input {
 
 .grand-total-row td {
     border-top: 2px solid var(--paper-border);
-    font-size: 14px;
-    padding-top: 10px;
+    font-size: 13px;
+    padding-top: 6px;
 }
 
 .grand-total-row td:last-child {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 800;
     color: var(--paper-accent, #4f46e5);
 }
 
 /* Amount In Words Block */
 .amount-words-block {
-    margin-top: 15px;
-    font-size: 11px;
+    margin-top: 6px;
+    font-size: 10px;
     color: #4b5563;
     background: #f9fafb;
-    padding: 8px 12px;
+    padding: 4px 8px;
     border-radius: 4px;
     border-left: 3px solid var(--paper-accent, #4f46e5);
 }
@@ -1171,8 +1201,8 @@ select.table-input {
 .inv-footer {
     display: flex;
     justify-content: space-between;
-    margin-top: auto;
-    padding-top: 20px;
+    margin-top: 8px;
+    padding-top: 6px;
 }
 
 .terms {
@@ -1180,18 +1210,19 @@ select.table-input {
 }
 
 .terms h4 {
-    font-size: 10.5px;
+    font-size: 9.5px;
     color: #6b7280;
-    margin-bottom: 6px;
+    margin-bottom: 2px;
     text-transform: uppercase;
     font-weight: 700;
 }
 
 .terms ol {
-    font-size: 10px;
-    padding-left: 14px;
-    line-height: 1.5;
+    font-size: 9px;
+    padding-left: 12px;
+    line-height: 1.3;
     color: #6b7280;
+    margin: 0;
 }
 
 .signature-section {
@@ -1200,19 +1231,20 @@ select.table-input {
 }
 
 .signature-section p {
-    font-size: 11px;
+    font-size: 10px;
     color: #4b5563;
+    margin: 1px 0;
 }
 
 .sig-space {
-    height: 50px;
+    height: 24px;
     font-family: 'Caveat', cursive;
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 700;
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    padding-right: 15px;
+    padding-right: 10px;
     user-select: none;
     transform: rotate(-1deg);
     margin-bottom: 4px;
@@ -1408,17 +1440,22 @@ select.table-input {
     width: 100%;
 }
 
+.size-autocomplete:has(.size-recommendation-list[style*="block"]),
+.size-autocomplete.has-open-dropdown {
+    z-index: 10000000 !important;
+}
+
 .size-recommendation-list {
     position: absolute;
-    top: 100%;
+    top: calc(100% + 3px);
     left: 0;
     width: max-content;
     min-width: 100%;
     background: white;
     border: 1px solid #d1d5db;
     border-radius: 6px;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
-    z-index: 999;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    z-index: 999999 !important;
     max-height: 180px;
     overflow-y: auto;
     display: none;
@@ -1467,56 +1504,71 @@ select.table-input {
     content: attr(data-placeholder);
 }
 
+/* Print-only static text spans (hidden on screen) */
+.print-text {
+    display: none;
+}
+
 /* ==========================================
    PRINT MEDIA QUERY STYLES
    ========================================== */
 @media print {
-    /* Hide dashboard settings completely */
-    body {
-        background: white !important;
-        color: black !important;
+    /* Hide ALL non-printable UI elements */
+    html, body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: auto !important;
+        overflow: visible !important;
     }
-    
+
     .sidebar,
     .workspace-header,
+    .header-left,
+    .header-right,
     .actions-col,
     .add-row-container,
     .theme-toggle-btn,
     .dashboard-container,
-    .floating-bottom-bar {
+    #invoices-dashboard-container,
+    .floating-bottom-bar,
+    .modal-backdrop,
+    #view-invoice-modal,
+    #auth-gate-overlay,
+    .no-print,
+    .btn,
+    .btn-delete-row,
+    .btn-add-row,
+    .close-modal-btn {
         display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        opacity: 0 !important;
     }
-    
-    .app-container {
+
+    .app-container, .main-content, .invoice-container {
         display: block !important;
-    }
-    
-    .main-content {
-        height: auto !important;
-        overflow: visible !important;
-        background: transparent !important;
-        display: block !important;
-    }
-    
-    .invoice-container {
         padding: 0 !important;
         margin: 0 !important;
         width: 100% !important;
         height: auto !important;
         overflow: visible !important;
-        display: block !important;
+        background: #ffffff !important;
     }
-    
+
     .invoice-paper {
         border: none !important;
         box-shadow: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
+        padding: 4mm 8mm !important;
+        margin: 0 auto !important;
         width: 100% !important;
+        max-width: 100% !important;
         min-height: 0 !important;
-        background: white !important;
-        color: black !important;
+        background: #ffffff !important;
+        color: #000000 !important;
         zoom: 1 !important;
+        transform: none !important;
     }
 
     /* Keep Midnight Theme readable on print by converting it to high contrast black on white */
@@ -1526,72 +1578,67 @@ select.table-input {
         --paper-border: #d1d5db !important;
         --paper-accent: #000000 !important;
     }
-    .invoice-paper[data-theme="midnight"] .company-info p,
-    .invoice-paper[data-theme="midnight"] .meta-table td,
-    .invoice-paper[data-theme="midnight"] .bill-to p,
-    .invoice-paper[data-theme="midnight"] .payment-method p,
-    .invoice-paper[data-theme="midnight"] .bank-details-block p,
-    .invoice-paper[data-theme="midnight"] .totals-table td,
-    .invoice-paper[data-theme="midnight"] .terms ol,
-    .invoice-paper[data-theme="midnight"] .signature-section p,
-    .invoice-paper[data-theme="midnight"] .amount-words-block {
-        color: #374151 !important;
-    }
-    .invoice-paper[data-theme="midnight"] .invoice-table th {
-        background: #f3f4f6 !important;
-        color: #374151 !important;
-        border-bottom-color: #d1d5db !important;
+
+    /* Hide interactive table inputs & discount input in print */
+    .table-input, .discount-input {
+        display: none !important;
     }
 
-    /* Print tables adjustments */
+    /* Display crisp static print text spans with exact typography */
+    .print-text {
+        display: inline-block !important;
+        font-family: 'Outfit', sans-serif !important;
+        font-size: 10.5px !important;
+        color: #000000 !important;
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+        line-height: 1.25 !important;
+    }
+
+    .print-desc {
+        display: block !important;
+    }
+
+    .editable-text {
+        border: none !important;
+        outline: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
+    .table-wrapper {
+        overflow: visible !important;
+        margin-top: 4px !important;
+    }
+
+    .invoice-table {
+        width: 100% !important;
+        min-width: 100% !important;
+        border-collapse: collapse !important;
+    }
+
+    .invoice-table th, .invoice-table td {
+        padding: 3px 5px !important;
+        border-bottom: 1px solid #e5e7eb !important;
+        height: auto !important;
+        overflow: visible !important;
+        vertical-align: middle !important;
+    }
+
     .invoice-table th {
         background: #f3f4f6 !important;
         color: black !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    
-    .table-input {
-        border: none !important;
-        background: transparent !important;
-        padding: 2px 0 !important;
-        appearance: none !important;
-        -webkit-appearance: none !important;
-        -moz-appearance: none !important;
-    }
-    
-    .editable-text,
-    .editable-text:hover {
-        border-bottom: none !important;
-        padding-bottom: 0 !important;
-        background: transparent !important;
-        outline: none !important;
-    }
-    
-    
-    .bill-to .client-name {
-        border: none !important;
-        background: transparent !important;
-        padding: 0 !important;
-        margin-bottom: 4px !important;
-        box-shadow: none !important;
-    }
-    
-    .meta-table .editable-text {
-        border: none !important;
-        background: transparent !important;
-        padding: 0 !important;
-        box-shadow: none !important;
-        display: inline !important;
-    }
-    
+
     .sig-space {
         font-family: 'Caveat', cursive !important;
         color: #1d4ed8 !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    
+
     /* Ensure page breaks don't chop elements */
     .inv-header, .inv-bill-details, .table-wrapper, .inv-summary, .inv-footer {
         page-break-inside: avoid;
@@ -1968,29 +2015,49 @@ select.table-input {
 }
 
 @media (max-width: 768px) {
+    /* CRITICAL FIX: Prevent mobile browser auto-zooming when tapping on inputs */
+    input, textarea, select, .table-input, [contenteditable="true"] {
+        font-size: 16px !important;
+    }
+
     /* Main Layout */
     .app-container {
         flex-direction: column;
     }
 
     .workspace-header {
-        padding: 10px 12px;
-        flex-wrap: wrap;
-        gap: 10px;
+        height: auto !important;
+        padding: 8px 10px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
     }
 
-    .header-left, .header-right {
-        width: 100%;
-        justify-content: space-between;
+    .header-left {
+        width: auto !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        flex-shrink: 1 !important;
+        min-width: 0 !important;
     }
 
     .header-right {
-        gap: 6px;
+        width: auto !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        flex-shrink: 0 !important;
     }
 
     .header-right .btn {
-        padding: 6px 10px;
-        font-size: 11px;
+        padding: 6px 10px !important;
+        font-size: 11.5px !important;
+        height: 34px !important;
+        white-space: nowrap !important;
     }
 
     /* Sidebar Drawer */

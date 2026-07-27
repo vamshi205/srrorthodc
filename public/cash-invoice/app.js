@@ -121,7 +121,18 @@ document.addEventListener("DOMContentLoaded", () => {
             renderSavedInvoicesList();
             renderDashboardInvoicesList();
         } else if (action === "FETCH_CASH_CUSTOMERS_RESPONSE" && Array.isArray(payload)) {
-            state.customers = payload;
+            if (payload.length > 0) {
+                const existingMap = new Map();
+                (state.customers || []).forEach(c => {
+                    if (c && c.name) existingMap.set(c.name.toLowerCase().trim(), c);
+                });
+                payload.forEach(c => {
+                    if (c && c.name) existingMap.set(c.name.toLowerCase().trim(), c);
+                });
+                state.customers = Array.from(existingMap.values());
+                localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
+                localStorage.setItem("im_customers", JSON.stringify(state.customers));
+            }
             renderCustomerList();
             populateCustomerSelector();
         }
@@ -208,7 +219,16 @@ function loadPersistedData() {
     }
 
     // 6. Customer Directory
-    state.customers = []; // loaded from Firestore only
+    const savedCustomers = localStorage.getItem("im_saved_customers") || localStorage.getItem("im_customers");
+    if (savedCustomers) {
+        try {
+            state.customers = JSON.parse(savedCustomers);
+        } catch (e) {
+            state.customers = [];
+        }
+    } else {
+        state.customers = [];
+    }
     renderCustomerList();
     populateCustomerSelector();
 
@@ -299,6 +319,7 @@ function setupEventListeners() {
             
             const newCustomer = { name, mobile, email, address };
             state.customers.push(newCustomer);
+            localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
             
             // Re-render UI list & dropdown
             renderCustomerList();
@@ -322,7 +343,12 @@ function setupEventListeners() {
     if (addCustomerMenuOpt) {
         addCustomerMenuOpt.addEventListener("click", () => {
             if (addDropdownMenu) addDropdownMenu.classList.remove("show");
-            openCustModal();
+            switchDashboardTab("customers");
+            openInvoicesDashboard();
+            const formCard = document.getElementById("dashboard-cust-form-card");
+            if (formCard) formCard.style.display = "block";
+            const nameInput = document.getElementById("dash-cust-name");
+            if (nameInput) nameInput.focus();
         });
     }
 
@@ -379,12 +405,13 @@ function setupEventListeners() {
     if (viewCustomersOpt) {
         viewCustomersOpt.addEventListener("click", () => {
             if (viewDropdownMenu) viewDropdownMenu.classList.remove("show");
-            openViewCustModal();
+            switchDashboardTab("customers");
+            openInvoicesDashboard();
         });
     }
 
     if (closeViewCustModalBtn) closeViewCustModalBtn.addEventListener("click", closeViewCustModal);
-    if (closeViewCustModalBtn2) closeViewCustModalBtn.addEventListener("click", closeViewCustModal);
+    if (closeViewCustModalBtn2) closeViewCustModalBtn2.addEventListener("click", closeViewCustModal);
 
     if (modalCustSearch) {
         modalCustSearch.addEventListener("input", (e) => {
@@ -419,6 +446,79 @@ function setupEventListeners() {
 
 
 
+    const tabInvoicesBtn = document.getElementById("tab-invoices-btn");
+    if (tabInvoicesBtn) {
+        tabInvoicesBtn.addEventListener("click", () => switchDashboardTab("invoices"));
+    }
+
+    const tabCustomersBtn = document.getElementById("tab-customers-btn");
+    if (tabCustomersBtn) {
+        tabCustomersBtn.addEventListener("click", () => switchDashboardTab("customers"));
+    }
+
+    const tabReportsBtn = document.getElementById("tab-reports-btn");
+    if (tabReportsBtn) {
+        tabReportsBtn.addEventListener("click", () => switchDashboardTab("reports"));
+    }
+
+    // Dashboard Inline Customer Creation Handlers
+    const dashAddCustBtn = document.getElementById("dashboard-add-cust-btn");
+    const dashCustFormCard = document.getElementById("dashboard-cust-form-card");
+    const dashCancelCustBtn = document.getElementById("dash-cancel-cust-btn");
+    const dashSaveCustBtn = document.getElementById("dash-save-cust-btn");
+
+    if (dashAddCustBtn && dashCustFormCard) {
+        dashAddCustBtn.addEventListener("click", () => {
+            dashCustFormCard.style.display = dashCustFormCard.style.display === "none" ? "block" : "none";
+            if (dashCustFormCard.style.display === "block") {
+                const nameInput = document.getElementById("dash-cust-name");
+                if (nameInput) nameInput.focus();
+            }
+        });
+    }
+
+    if (dashCancelCustBtn && dashCustFormCard) {
+        dashCancelCustBtn.addEventListener("click", () => {
+            dashCustFormCard.style.display = "none";
+        });
+    }
+
+    if (dashSaveCustBtn) {
+        dashSaveCustBtn.addEventListener("click", () => {
+            const name = (document.getElementById("dash-cust-name")?.value || "").trim();
+            const mobile = (document.getElementById("dash-cust-mobile")?.value || "").trim();
+            const email = (document.getElementById("dash-cust-email")?.value || "").trim();
+            const address = (document.getElementById("dash-cust-address")?.value || "").trim();
+
+            if (!name) {
+                alert("Customer name is required!");
+                return;
+            }
+
+            const newCust = { name, mobile, email, address };
+            state.customers.push(newCust);
+            localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
+
+            renderDashboardCustomersList();
+            renderCustomerList();
+            populateCustomerSelector();
+
+            // Clear inputs & hide form card
+            document.getElementById("dash-cust-name").value = "";
+            document.getElementById("dash-cust-mobile").value = "";
+            document.getElementById("dash-cust-email").value = "";
+            document.getElementById("dash-cust-address").value = "";
+            if (dashCustFormCard) dashCustFormCard.style.display = "none";
+
+            showStatus(`Added customer: ${name}`);
+
+            // Background Google Drive sync
+            if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
+                syncCustomersWithGDrive(true);
+            }
+        });
+    }
+
     if (backToEditorBtn) {
         backToEditorBtn.addEventListener("click", closeInvoicesDashboard);
     }
@@ -427,6 +527,8 @@ function setupEventListeners() {
         dashboardInvSearch.addEventListener("input", (e) => {
             if (activeDashboardTab === "invoices") {
                 renderDashboardInvoicesList(e.target.value);
+            } else if (activeDashboardTab === "customers") {
+                renderDashboardCustomersList(e.target.value);
             } else {
                 renderDashboardReportsList(e.target.value);
             }
@@ -778,6 +880,28 @@ function setupEventListeners() {
         return true;
     };
 
+    // Auto-save customer details into state & local storage
+    const autoSaveCustomer = (custData) => {
+        if (!custData || !custData.name || !custData.name.trim()) return;
+        const nameTrim = custData.name.trim();
+        if (nameTrim.toLowerCase() === "walk-in customer") return;
+
+        const existingIdx = state.customers.findIndex(c => (c.name || "").toLowerCase().trim() === nameTrim.toLowerCase());
+        if (existingIdx !== -1) {
+            if (custData.address) state.customers[existingIdx].address = custData.address;
+            if (custData.mobile) state.customers[existingIdx].mobile = custData.mobile;
+            if (custData.email) state.customers[existingIdx].email = custData.email;
+        } else {
+            state.customers.push({
+                name: nameTrim,
+                address: custData.address || "",
+                mobile: custData.mobile || "",
+                email: custData.email || ""
+            });
+        }
+        localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
+    };
+
     // Reusable function to save the current invoice in the workspace
     const saveActiveInvoice = () => {
         // Sync DOM values into state before validation
@@ -793,6 +917,16 @@ function setupEventListeners() {
         if (domInvNum) state.clientInfo.invNumber = domInvNum;
 
         if (!validateInvoice()) return;
+
+        // Auto-save customer details
+        if (state.clientInfo.name) {
+            autoSaveCustomer({
+                name: state.clientInfo.name,
+                address: state.clientInfo.address,
+                mobile: state.clientInfo.mobile,
+                email: state.clientInfo.email
+            });
+        }
 
         let subtotal = 0;
         state.invoiceItems.forEach(item => {
@@ -834,9 +968,12 @@ function setupEventListeners() {
             window.parent.postMessage({ action: "SAVE_CASH_INVOICE", payload: invoiceToSave }, "*");
         }
 
-        // Open dashboard first, then render inside it
+        // Open dashboard first
         activeDashboardTab = "invoices";
         openInvoicesDashboard();
+
+        // Clear active sheet so editor is refreshed for the next bill
+        clearActiveInvoiceData();
 
         // Background Google Drive sync
         if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
@@ -846,6 +983,16 @@ function setupEventListeners() {
 
     const saveActiveInvoiceSilent = () => {
         if (!validateInvoice()) return false;
+
+        // Auto-save customer details
+        if (state.clientInfo.name) {
+            autoSaveCustomer({
+                name: state.clientInfo.name,
+                address: state.clientInfo.address,
+                mobile: state.clientInfo.mobile,
+                email: state.clientInfo.email
+            });
+        }
 
         let subtotal = 0;
         state.invoiceItems.forEach(item => {
@@ -901,8 +1048,11 @@ function setupEventListeners() {
         savePrintBtn.addEventListener("click", () => {
             const saved = saveActiveInvoiceSilent();
             if (saved) {
+                activeDashboardTab = "invoices";
+                openInvoicesDashboard();
                 showStatus("Opening Print Dialog...");
                 window.print();
+                clearActiveInvoiceData();
             }
         });
     }
@@ -1068,12 +1218,20 @@ function setupEventListeners() {
     const previewClientName = document.getElementById("preview-client-name");
     const paperCustList = document.getElementById("paper-cust-rec-list");
     if (previewClientName && paperCustList) {
-        previewClientName.addEventListener("input", () => {
-            showCustomerRecommendations(previewClientName.innerText, paperCustList);
-        });
+        const handleCustomerSearch = () => {
+            const rawText = previewClientName.textContent || previewClientName.innerText || "";
+            const cleanText = rawText.replace(/\u00a0/g, " ").trim();
+            showCustomerRecommendations(cleanText, paperCustList);
+        };
+
+        previewClientName.addEventListener("input", handleCustomerSearch);
         previewClientName.addEventListener("focus", () => {
             closeAllRecommendationDropdowns();
-            showCustomerRecommendations(previewClientName.innerText, paperCustList);
+            closeAllSizeDropdowns();
+            handleCustomerSearch();
+        });
+        previewClientName.addEventListener("click", () => {
+            handleCustomerSearch();
         });
     }
 
@@ -1090,8 +1248,10 @@ function setupEventListeners() {
         if (sidebarCustList && !e.target.closest("#sidebar-cust-rec-list") && e.target !== clientNameInput) {
             sidebarCustList.style.display = "none";
         }
-        if (paperCustList && !e.target.closest("#paper-cust-rec-list") && e.target !== previewClientName) {
+        if (paperCustList && !e.target.closest("#paper-cust-rec-list") && e.target !== previewClientName && !previewClientName?.contains(e.target)) {
             paperCustList.style.display = "none";
+            const billDetails = paperCustList.closest(".inv-bill-details");
+            if (billDetails) billDetails.classList.remove("has-open-dropdown");
         }
     });
 
@@ -1399,9 +1559,16 @@ function renderInvoiceRows() {
         ) : [];
         const hasCatalogSizes = matchedCatalogItems.some(p => p.size && p.size.trim() !== "");
 
+        const descVal = item.description || '';
+        const sizeVal = item.size || '-';
+        const qtyVal = item.qty || 1;
+        const rateVal = parseFloat(item.rate || 0).toFixed(2);
+        const amountVal = ((item.qty || 0) * (item.rate || 0)).toFixed(2);
+
         let sizeCellHtml = `
             <div class="size-autocomplete">
                 <input type="text" class="table-input size-input" value="${item.size || ''}" placeholder="${hasCatalogSizes ? 'Select Size' : 'Type/click for size...'}" autocomplete="off">
+                <span class="print-text print-size">${sizeVal}</span>
                 <div class="size-recommendation-list" id="size-rec-list-${index}"></div>
             </div>
         `;
@@ -1410,7 +1577,8 @@ function renderInvoiceRows() {
             <td style="text-align: center; color: #9ca3af; font-weight: 500;">${index + 1}</td>
             <td>
                 <div class="autocomplete-container">
-                    <textarea class="table-input desc-input" rows="1" placeholder="Type item name..." autocomplete="off">${item.description || ''}</textarea>
+                    <textarea class="table-input desc-input" rows="1" placeholder="Type item name..." autocomplete="off">${descVal}</textarea>
+                    <span class="print-text print-desc">${descVal}</span>
                     <div class="recommendation-list" id="rec-list-${index}"></div>
                 </div>
             </td>
@@ -1418,13 +1586,16 @@ function renderInvoiceRows() {
                 ${sizeCellHtml}
             </td>
             <td>
-                <input type="number" class="table-input num-input qty-input center-input" value="${item.qty || 1}" min="1" step="1" autocomplete="off">
+                <input type="number" class="table-input num-input qty-input center-input" value="${qtyVal}" min="1" step="1" autocomplete="off">
+                <span class="print-text print-qty" style="text-align:center;">${qtyVal}</span>
             </td>
             <td>
                 <input type="number" class="table-input num-input rate-input" value="${item.rate || 0}" min="0" step="any" autocomplete="off">
+                <span class="print-text print-rate" style="text-align:right;">₹${rateVal}</span>
             </td>
             <td>
-                <input type="number" class="table-input num-input amount-input" value="${( (item.qty || 0) * (item.rate || 0) ).toFixed(2)}" min="0" step="any" style="font-weight: 600;" autocomplete="off">
+                <input type="number" class="table-input num-input amount-input" value="${amountVal}" min="0" step="any" style="font-weight: 600;" autocomplete="off">
+                <span class="print-text print-amount" style="text-align:right; font-weight:600;">₹${amountVal}</span>
             </td>
             <td class="actions-col" style="text-align: center;">
                 <button type="button" class="btn-delete-row" title="Delete Row">×</button>
@@ -1634,7 +1805,7 @@ function showRecommendations(query, container, index, inputEl) {
             
             // Format layout
             div.innerHTML = `
-                <div class="rec-desc">${baseName}</div>
+                <div class="rec-desc" style="line-height: 1.4;">${baseName}</div>
             `;
 
             // Data attachment
@@ -1651,8 +1822,14 @@ function showRecommendations(query, container, index, inputEl) {
             container.appendChild(div);
         });
         container.style.display = "block";
+        const row = inputEl ? inputEl.closest("tr") : null;
+        if (row) row.classList.add("has-open-dropdown");
+        if (container.parentElement) container.parentElement.classList.add("has-open-dropdown");
     } else {
         container.style.display = "none";
+        const row = inputEl ? inputEl.closest("tr") : null;
+        if (row) row.classList.remove("has-open-dropdown");
+        if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
     }
 }
 
@@ -1730,6 +1907,9 @@ function closeAllRecommendationDropdowns() {
     document.querySelectorAll(".recommendation-list").forEach(list => {
         list.style.display = "none";
     });
+    document.querySelectorAll(".has-open-dropdown").forEach(el => {
+        el.classList.remove("has-open-dropdown");
+    });
     state.activeRecIndex = -1;
 }
 
@@ -1752,6 +1932,10 @@ function updateCalculations() {
     // Flat Discount
     const flatDiscountInput = document.getElementById("discount-flat-input");
     const flatDiscount = parseFloat(flatDiscountInput.value) || 0;
+    const printDiscountEl = document.getElementById("print-discount-val");
+    if (printDiscountEl) {
+        printDiscountEl.innerText = flatDiscount > 0 ? `-₹${flatDiscount.toFixed(2)}` : `₹0.00`;
+    }
 
     // Grand total before rounding
     const rawGrandTotal = subtotal - flatDiscount;
@@ -1901,13 +2085,22 @@ function showSizeRecommendations(query, container, idx, inputEl, rateInput, rowE
     const itemDesc = state.invoiceItems[idx].description || "";
     if (!itemDesc) {
         container.style.display = "none";
+        if (rowEl) rowEl.classList.remove("has-open-dropdown");
+        if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
         return;
     }
 
-    // Filter matching catalog size items for this exact base description name
-    const matchedCatalogItems = state.priceList.filter(p => 
+    // Filter matching catalog size items for this exact base description name (with fallback)
+    let matchedCatalogItems = state.priceList.filter(p => 
         String(p.description || p.base_description || "").toLowerCase().trim() === itemDesc.toLowerCase().trim()
     );
+    if (matchedCatalogItems.length === 0) {
+        matchedCatalogItems = state.priceList.filter(p => {
+            const desc = String(p.description || p.base_description || "").toLowerCase().trim();
+            const queryD = itemDesc.toLowerCase().trim();
+            return desc && queryD && (desc.includes(queryD) || queryD.includes(desc));
+        });
+    }
     
     const queryLower = query.toLowerCase().trim();
     const filtered = matchedCatalogItems.filter(m => 
@@ -1918,13 +2111,13 @@ function showSizeRecommendations(query, container, idx, inputEl, rateInput, rowE
         filtered.forEach(match => {
             const div = document.createElement("div");
             div.className = "recommendation-item";
-            div.style.padding = "6px 10px";
+            div.style.padding = "7px 10px";
             
             const itemPrice = (match.price !== undefined && match.price !== null && !isNaN(match.price)) ? parseFloat(match.price) : 0;
             const priceLabel = itemPrice > 0 ? ` <span style="color:#6b7280; font-weight:500;">(₹${itemPrice})</span>` : '';
             
             div.innerHTML = `
-                <div style="font-size:11px; font-weight:600; color:var(--paper-accent); display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-size:11px; font-weight:600; color:var(--paper-accent); display:flex; justify-content:space-between; align-items:center; line-height: 1.4;">
                     <span>${match.size}</span>
                     ${priceLabel}
                 </div>
@@ -1943,13 +2136,19 @@ function showSizeRecommendations(query, container, idx, inputEl, rateInput, rowE
                 saveItemsToDraft();
                 
                 container.style.display = "none";
+                if (rowEl) rowEl.classList.remove("has-open-dropdown");
+                if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
                 showStatus(`Selected size: ${match.size} ${itemPrice > 0 ? '(Rate: ₹' + itemPrice + ')' : ''}`);
             });
             container.appendChild(div);
         });
         container.style.display = "block";
+        if (rowEl) rowEl.classList.add("has-open-dropdown");
+        if (container.parentElement) container.parentElement.classList.add("has-open-dropdown");
     } else {
         container.style.display = "none";
+        if (rowEl) rowEl.classList.remove("has-open-dropdown");
+        if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
     }
 }
 
@@ -1980,6 +2179,9 @@ function highlightSizeRecommendation(items) {
 function closeAllSizeDropdowns() {
     document.querySelectorAll(".size-recommendation-list").forEach(list => {
         list.style.display = "none";
+    });
+    document.querySelectorAll(".has-open-dropdown").forEach(el => {
+        el.classList.remove("has-open-dropdown");
     });
     state.activeSizeIndex = -1;
 }
@@ -2081,25 +2283,40 @@ function preloadCustomer(cust) {
 
 // Helper to mark an invoice as fully paid quick-flow style
 function quickPayInvoice(inv, originalIdx) {
-    if (confirm("Payment received?")) {
-        if (confirm("Are you sure?")) {
-            const grandTotal = inv.grandTotal || 0;
+    const invNum = inv.invNumber || 'Draft';
+    if (confirm(`Mark invoice ${invNum} as fully paid?`)) {
+        const grandTotal = inv.grandTotal || 0;
+        if (originalIdx >= 0 && originalIdx < state.savedInvoices.length) {
             state.savedInvoices[originalIdx].paymentReceived = grandTotal;
-            
-            renderSavedInvoicesList();
-            
-            const dashboardContainer = document.getElementById("invoices-dashboard-container");
-            if (dashboardContainer && dashboardContainer.style.display !== "none") {
-                const searchInput = document.getElementById("dashboard-inv-search");
-                renderDashboardInvoicesList(searchInput ? searchInput.value : "");
+        } else {
+            const foundIdx = state.savedInvoices.findIndex(i => i.invNumber === inv.invNumber);
+            if (foundIdx !== -1) {
+                state.savedInvoices[foundIdx].paymentReceived = grandTotal;
             }
-            
-            showStatus(`Invoice ${inv.invNumber || 'Draft'} marked as fully paid.`);
+        }
+        
+        // Persist to local storage
+        localStorage.setItem("im_saved_invoices", JSON.stringify(state.savedInvoices));
 
-            // Background Google Drive sync
-            if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
-                syncInvoicesWithGDrive(true);
-            }
+        // Post to host application frame
+        if (window.parent && window.parent !== window) {
+            const updatedInv = state.savedInvoices[originalIdx] || inv;
+            window.parent.postMessage({ action: 'SAVE_CASH_INVOICE', payload: updatedInv }, '*');
+        }
+        
+        renderSavedInvoicesList();
+        
+        const dashboardContainer = document.getElementById("invoices-dashboard-container");
+        if (dashboardContainer && dashboardContainer.style.display !== "none") {
+            const searchInput = document.getElementById("dashboard-inv-search");
+            renderDashboardInvoicesList(searchInput ? searchInput.value : "");
+        }
+        
+        showStatus(`Invoice ${invNum} marked as fully paid.`);
+
+        // Background Google Drive sync
+        if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
+            syncInvoicesWithGDrive(true);
         }
     }
 }
@@ -2218,18 +2435,31 @@ function loadSavedInvoice(inv) {
 
 // Search and suggest saved customers based on query
 function showCustomerRecommendations(query, container) {
+    if (!container) return;
     container.innerHTML = "";
-    if (!query || query.trim().length === 0) {
-        container.style.display = "none";
-        return;
-    }
+    const queryLower = (query || "").replace(/\u00a0/g, ' ').toLowerCase().trim();
     
-    const queryLower = query.toLowerCase().trim();
-    const matched = state.customers.filter(cust => 
-        (cust.name && cust.name.toLowerCase().includes(queryLower)) ||
-        (cust.mobile && cust.mobile.includes(queryLower)) ||
-        (cust.address && cust.address.toLowerCase().includes(queryLower))
-    );
+    // Ensure state.customers has the latest data from localStorage if empty
+    if (!state.customers || state.customers.length === 0) {
+        try {
+            const saved = localStorage.getItem("im_saved_customers") || localStorage.getItem("im_customers");
+            if (saved) state.customers = JSON.parse(saved);
+        } catch (e) {
+            state.customers = [];
+        }
+    }
+
+    const billDetails = container.closest(".inv-bill-details");
+    
+    // When query is empty, show up to 10 saved customers; otherwise filter
+    const matched = queryLower === ""
+        ? state.customers.slice(0, 10)
+        : state.customers.filter(cust => 
+            (cust.name && cust.name.toLowerCase().includes(queryLower)) ||
+            (cust.mobile && String(cust.mobile).includes(queryLower)) ||
+            (cust.address && cust.address.toLowerCase().includes(queryLower)) ||
+            (cust.email && cust.email.toLowerCase().includes(queryLower))
+        );
     
     if (matched.length > 0) {
         matched.forEach(cust => {
@@ -2240,22 +2470,31 @@ function showCustomerRecommendations(query, container) {
             div.style.borderBottom = "1px solid var(--border-color, #f1f5f9)";
             div.style.background = "#ffffff";
             div.innerHTML = `
-                <div style="font-weight: 600; font-size: 12px; color: #0f172a;">${cust.name}</div>
+                <div style="font-weight: 600; font-size: 12px; color: #0f172a; display: flex; justify-content: space-between; align-items: center;">
+                    <span>${cust.name}</span>
+                    <span style="font-size: 9.5px; color: var(--paper-accent, #0f766e); font-weight: 600;">Select</span>
+                </div>
                 <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
                     ${cust.mobile ? `📞 ${cust.mobile}` : ''} ${cust.email ? ` | ✉️ ${cust.email}` : ''}
                 </div>
                 ${cust.address ? `<div style="font-size: 9.5px; color: #64748b; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">📍 ${cust.address}</div>` : ''}
             `;
-            div.addEventListener("click", (e) => {
+            const selectCust = (e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 preloadCustomer(cust);
                 container.style.display = "none";
-            });
+                if (billDetails) billDetails.classList.remove("has-open-dropdown");
+            };
+            div.addEventListener("mousedown", selectCust);
+            div.addEventListener("click", selectCust);
             container.appendChild(div);
         });
         container.style.display = "block";
+        if (billDetails) billDetails.classList.add("has-open-dropdown");
     } else {
         container.style.display = "none";
+        if (billDetails) billDetails.classList.remove("has-open-dropdown");
     }
 }
 
@@ -2486,13 +2725,13 @@ function openViewInvoiceModal(inv) {
     const items = (inv.invoiceItems || []).filter(i => (i.description||'').trim());
     const itemRows = items.map((item, idx) => {
         const amt = (parseFloat(item.qty)||0) * (parseFloat(item.rate)||0);
-        return `<tr style="border-bottom:1px solid #f3f4f6;">
-            <td style="padding:8px 10px;text-align:center;color:#6b7280;">${idx+1}</td>
-            <td style="padding:8px 10px;font-weight:500;">${item.description||''}${item.sku ? ' <span style=\"color:#9ca3af;font-size:11px;\">['+item.sku+']</span>' : ''}</td>
-            <td style="padding:8px 10px;text-align:center;">${item.size||'-'}</td>
-            <td style="padding:8px 10px;text-align:center;">${item.qty||0}</td>
-            <td style="padding:8px 10px;text-align:right;">₹${parseFloat(item.rate||0).toFixed(2)}</td>
-            <td style="padding:8px 10px;text-align:right;font-weight:600;">₹${amt.toFixed(2)}</td>
+        return `<tr style="border-bottom:1px solid #e5e7eb;">
+            <td style="padding:6px 8px;text-align:center;color:#6b7280;">${idx+1}</td>
+            <td style="padding:6px 8px;font-weight:600;color:#111827;">${item.description||''}${item.sku ? ' <span style="color:#9ca3af;font-size:10px;">['+item.sku+']</span>' : ''}</td>
+            <td style="padding:6px 8px;text-align:center;color:#4b5563;">${item.size||'-'}</td>
+            <td style="padding:6px 8px;text-align:center;font-weight:600;">${item.qty||0}</td>
+            <td style="padding:6px 8px;text-align:right;">₹${parseFloat(item.rate||0).toFixed(2)}</td>
+            <td style="padding:6px 8px;text-align:right;font-weight:700;color:#111827;">₹${amt.toFixed(2)}</td>
         </tr>`;
     }).join('');
 
@@ -2502,55 +2741,114 @@ function openViewInvoiceModal(inv) {
     const paid = parseFloat(inv.paymentReceived)||0;
     const balance = grandTotal - paid;
 
+    const numberToWords = (num) => {
+        return typeof numberToEnglishWords === 'function' ? numberToEnglishWords(num) : '';
+    };
+
+    const words = numberToWords(grandTotal);
+    const amountInWordsHtml = words ? `<div style="margin-top:6px;font-size:10.5px;color:#374151;background:#f0fdf4;padding:4px 8px;border-radius:4px;border-left:3px solid #2a9d8f;">Amount in Words: <strong>${words}</strong></div>` : '';
+
     content.innerHTML = `
-    <div id="printable-inv-area" style="background:#fff;padding:24px 28px;border-radius:8px;font-family:'Outfit',sans-serif;max-width:800px;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:2px solid #2a9d8f;margin-bottom:16px;">
+    <div id="printable-inv-area" style="background:#fff;padding:24px 30px;border-radius:8px;font-family:'Outfit',sans-serif;max-width:800px;margin:0 auto;box-shadow:0 4px 20px rgba(0,0,0,0.08);color:#111827;">
+        <!-- Header -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #e5e7eb;margin-bottom:12px;">
             <div>
-                <h2 style="font-size:20px;font-weight:900;color:#111827;margin:0;">SRR ORTHO PLUS</h2>
-                <p style="font-size:11px;color:#6b7280;margin:3px 0;">217, Siddarth Nagar, Hyderabad - 500038</p>
-                <p style="font-size:11px;color:#6b7280;margin:1px 0;">GSTIN: 36AAECS6078M1ZN</p>
+                <div style="background:linear-gradient(135deg, #2a9d8f, #0ea5e9);color:#fff;display:inline-block;padding:4px 10px;font-weight:900;font-size:16px;border-radius:4px;margin-bottom:6px;">SRR ORTHO PLUS</div>
+                <h2 style="font-size:18px;font-weight:800;color:#2a9d8f;margin:0 0 2px 0;">SRR ORTHO PLUS</h2>
+                <p style="font-size:10.5px;color:#4b5563;margin:1px 0;">217, SIDDARTH NAGAR, HYDERABAD - 500038</p>
+                <p style="font-size:10.5px;color:#4b5563;margin:1px 0;">Phone: 9396857455 | Email: srrorthoplus999@gmail.com</p>
+                <p style="font-size:10.5px;color:#4b5563;margin:1px 0;">Website: srrorthoplus.com</p>
             </div>
             <div style="text-align:right;">
-                <p style="font-size:20px;font-weight:800;color:#2a9d8f;margin:0;">CASH INVOICE</p>
-                <p style="font-size:13px;font-weight:600;color:#374151;margin:4px 0;"># ${inv.invNumber||''}</p>
-                ${inv.dcNumber ? `<p style="font-size:11px;color:#6b7280;margin:1px 0;">DC: ${inv.dcNumber}</p>` : ''}
-                <p style="font-size:11px;color:#6b7280;margin:1px 0;">Date: ${inv.invDate ? new Date(inv.invDate).toLocaleDateString('en-IN') : ''}</p>
+                <p style="font-size:22px;font-weight:900;color:#2a9d8f;margin:0 0 4px 0;letter-spacing:-0.5px;">CASH INVOICE</p>
+                <table style="border-collapse:collapse;font-size:11px;margin-left:auto;">
+                    <tr><td style="font-weight:600;color:#6b7280;padding:2px 4px;text-align:right;">Bill No:</td><td style="font-weight:800;color:#111827;padding:2px 4px;text-align:left;">${inv.invNumber || '-'}</td></tr>
+                    <tr><td style="font-weight:600;color:#6b7280;padding:2px 4px;text-align:right;">DC No:</td><td style="font-weight:600;color:#111827;padding:2px 4px;text-align:left;">${inv.dcNumber || '-'}</td></tr>
+                    <tr><td style="font-weight:600;color:#6b7280;padding:2px 4px;text-align:right;">Date:</td><td style="font-weight:600;color:#111827;padding:2px 4px;text-align:left;">${formatDateString(inv.invDate) || '-'}</td></tr>
+                </table>
             </div>
         </div>
-        <div style="margin-bottom:16px;padding:10px 14px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
-            <p style="margin:0;font-size:13px;font-weight:700;color:#111827;">${inv.clientName||'Walk-in Customer'}</p>
-            ${inv.clientAddress ? `<p style="margin:2px 0;font-size:11px;color:#6b7280;">${inv.clientAddress}</p>` : ''}
-            ${inv.clientMobile ? `<p style="margin:2px 0;font-size:11px;color:#6b7280;">📞 ${inv.clientMobile}</p>` : ''}
+
+        <!-- Bill To Section -->
+        <div style="margin-bottom:12px;">
+            <p style="font-size:10px;text-transform:uppercase;color:#9ca3af;font-weight:700;margin:0 0 3px 0;letter-spacing:0.5px;">BILL TO:</p>
+            <p style="font-size:14px;font-weight:700;color:#111827;margin:0 0 2px 0;">${inv.clientName || 'Walk-in Customer'}</p>
+            ${inv.clientAddress ? `<p style="font-size:11px;color:#4b5563;margin:1px 0;">Address: ${inv.clientAddress}</p>` : ''}
+            ${inv.clientMobile ? `<p style="font-size:11px;color:#4b5563;margin:1px 0;">Mobile: ${inv.clientMobile}</p>` : ''}
+            ${inv.clientEmail ? `<p style="font-size:11px;color:#4b5563;margin:1px 0;">Email: ${inv.clientEmail}</p>` : ''}
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+
+        <!-- Items Table -->
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px;">
             <thead>
-                <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
-                    <th style="padding:8px 10px;text-align:center;color:#6b7280;font-weight:700;width:5%;">#</th>
-                    <th style="padding:8px 10px;text-align:left;color:#6b7280;font-weight:700;width:40%;">Item Description</th>
-                    <th style="padding:8px 10px;text-align:center;color:#6b7280;font-weight:700;width:15%;">Size</th>
-                    <th style="padding:8px 10px;text-align:center;color:#6b7280;font-weight:700;width:10%;">Qty</th>
-                    <th style="padding:8px 10px;text-align:right;color:#6b7280;font-weight:700;width:15%;">Rate</th>
-                    <th style="padding:8px 10px;text-align:right;color:#6b7280;font-weight:700;width:15%;">Amount</th>
+                <tr style="background:#f3f4f6;border-bottom:2px solid #d1d5db;">
+                    <th style="padding:6px 8px;text-align:center;color:#4b5563;font-weight:700;width:5%;">#</th>
+                    <th style="padding:6px 8px;text-align:left;color:#4b5563;font-weight:700;width:42%;">ITEM DESCRIPTION</th>
+                    <th style="padding:6px 8px;text-align:center;color:#4b5563;font-weight:700;width:15%;">SIZE</th>
+                    <th style="padding:6px 8px;text-align:center;color:#4b5563;font-weight:700;width:10%;">QTY</th>
+                    <th style="padding:6px 8px;text-align:right;color:#4b5563;font-weight:700;width:14%;">RATE (₹)</th>
+                    <th style="padding:6px 8px;text-align:right;color:#4b5563;font-weight:700;width:14%;">AMOUNT (₹)</th>
                 </tr>
             </thead>
             <tbody>${itemRows}</tbody>
         </table>
-        <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
-            <table style="font-size:12px;width:220px;">
-                ${discount > 0 ? `<tr><td style="padding:4px 8px;color:#6b7280;">Subtotal:</td><td style="padding:4px 8px;text-align:right;">₹${subtotal.toFixed(2)}</td></tr><tr><td style="padding:4px 8px;color:#6b7280;">Discount:</td><td style="padding:4px 8px;text-align:right;color:#ef4444;">-₹${discount.toFixed(2)}</td></tr>` : ''}
-                <tr style="border-top:2px solid #111827;"><td style="padding:6px 8px;font-weight:800;font-size:14px;">Grand Total:</td><td style="padding:6px 8px;text-align:right;font-weight:800;font-size:14px;color:#2a9d8f;">₹${grandTotal.toFixed(2)}</td></tr>
-                ${paid > 0 ? `<tr><td style="padding:4px 8px;color:#10b981;">Paid:</td><td style="padding:4px 8px;text-align:right;color:#10b981;">₹${paid.toFixed(2)}</td></tr><tr><td style="padding:4px 8px;color:#ef4444;font-weight:700;">Balance Due:</td><td style="padding:4px 8px;text-align:right;color:#ef4444;font-weight:700;">₹${balance.toFixed(2)}</td></tr>` : ''}
-            </table>
-        </div>
-        <div style="border-top:1px solid #e5e7eb;padding-top:12px;display:flex;justify-content:space-between;align-items:flex-end;">
-            <div style="font-size:10px;color:#9ca3af;">
-                <p style="margin:0;">Goods once sold will not be taken back.</p>
-                <p style="margin:2px 0;">All disputes subject to local jurisdiction.</p>
+
+        <!-- Summary: Left Bank/UPI + Right Totals -->
+        <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:10px;">
+            <!-- Left Side: Bank Details & UPI QR -->
+            <div style="width:55%;">
+                <div style="margin-bottom:6px;">
+                    <p style="font-size:9.5px;font-weight:700;color:#6b7280;margin:0 0 2px 0;text-transform:uppercase;">BANK ACCOUNT DETAILS:</p>
+                    <p style="font-size:10px;color:#4b5563;margin:0;line-height:1.3;">HDFC BANK, A/C: 5010023456789, IFSC: HDFC0001234, Hyderabad Branch</p>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;background:#f9fafb;padding:6px 10px;border-radius:6px;border:1px solid #e5e7eb;">
+                    <div style="flex-grow:1;">
+                        <p style="font-size:9.5px;font-weight:700;color:#6b7280;margin:0 0 2px 0;text-transform:uppercase;">SCAN TO PAY (UPI):</p>
+                        <p style="font-size:10.5px;font-weight:700;color:#111827;margin:0 0 4px 0;">9396857455@ybl</p>
+                        <div style="display:flex;gap:4px;align-items:center;">
+                            <span style="background:#fff;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;font-size:9px;font-weight:700;color:#5f259f;">PhonePe</span>
+                            <span style="background:#fff;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;font-size:9px;font-weight:700;color:#ea4335;">GPay</span>
+                            <span style="background:#fff;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;font-size:9px;font-weight:700;color:#00baf2;">Paytm</span>
+                            <span style="background:#fff;padding:2px 5px;border-radius:4px;border:1px solid #e2e8f0;font-size:9px;font-weight:700;color:#000;">UPI</span>
+                        </div>
+                    </div>
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=85x85&data=upi%3A%2F%2Fpay%3Fpa%3D9396857455%40ybl%26pn%3DSRR%2520ORTHO%2520PLUS" style="width:75px;height:75px;border-radius:4px;border:1px solid #d1d5db;flex-shrink:0;" alt="UPI QR Code" />
+                </div>
+                ${amountInWordsHtml}
             </div>
-            <div style="text-align:center;">
-                <div style="height:40px;"></div>
-                <p style="font-size:11px;font-weight:700;color:#374151;border-top:1px solid #d1d5db;padding-top:4px;margin:0;">Authorized Signatory</p>
-                <p style="font-size:10px;color:#9ca3af;margin:2px 0;">SRR ORTHO PLUS</p>
+
+            <!-- Right Side: Totals -->
+            <div style="width:40%;">
+                <table style="width:100%;font-size:11px;border-collapse:collapse;">
+                    ${discount > 0 ? `
+                        <tr><td style="padding:3px 4px;color:#6b7280;text-align:right;">Subtotal:</td><td style="padding:3px 4px;text-align:right;font-weight:600;">₹${subtotal.toFixed(2)}</td></tr>
+                        <tr><td style="padding:3px 4px;color:#6b7280;text-align:right;">Discount:</td><td style="padding:3px 4px;text-align:right;color:#ef4444;font-weight:600;">-₹${discount.toFixed(2)}</td></tr>
+                    ` : ''}
+                    <tr style="border-top:2px solid #d1d5db;">
+                        <td style="padding:6px 4px;font-weight:800;font-size:13px;text-align:right;color:#111827;">Grand Total:</td>
+                        <td style="padding:6px 4px;text-align:right;font-weight:800;font-size:15px;color:#2a9d8f;">₹${grandTotal.toFixed(2)}</td>
+                    </tr>
+                    ${paid > 0 ? `
+                        <tr><td style="padding:3px 4px;color:#10b981;text-align:right;">Paid:</td><td style="padding:3px 4px;text-align:right;color:#10b981;font-weight:600;">₹${paid.toFixed(2)}</td></tr>
+                        <tr><td style="padding:3px 4px;color:#ef4444;text-align:right;font-weight:700;">Balance:</td><td style="padding:3px 4px;text-align:right;color:#ef4444;font-weight:700;">₹${balance.toFixed(2)}</td></tr>
+                    ` : ''}
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer: Terms & Signature -->
+        <div style="border-top:1px solid #e5e7eb;padding-top:8px;display:flex;justify-content:space-between;align-items:flex-end;">
+            <div style="font-size:9px;color:#6b7280;width:55%;">
+                <p style="font-weight:700;margin:0 0 2px 0;text-transform:uppercase;color:#4b5563;">TERMS & CONDITIONS:</p>
+                <ol style="margin:0;padding-left:12px;line-height:1.3;">
+                    <li>Goods once sold will not be taken back or exchanged.</li>
+                    <li>All disputes subject to local jurisdiction only.</li>
+                </ol>
+            </div>
+            <div style="text-align:right;width:35%;">
+                <p style="font-size:10px;color:#4b5563;margin:0 0 2px 0;">For <strong>SRR ORTHO PLUS</strong></p>
+                <div style="font-family:'Caveat',cursive;font-size:18px;font-weight:700;color:#1d4ed8;height:24px;display:flex;align-items:center;justify-content:flex-end;">A.SATYANARAYANA</div>
+                <p style="font-size:10px;font-weight:700;color:#374151;border-top:1px solid #d1d5db;padding-top:2px;margin:2px 0 0 0;">Authorized Signatory</p>
             </div>
         </div>
     </div>`;
@@ -2564,48 +2862,161 @@ function openViewInvoiceModal(inv) {
     modal.onclick = (e) => { if (e.target === modal) { modal.style.display = 'none'; document.body.style.overflow = ''; } };
     if (printBtn) {
         printBtn.onclick = () => {
-            const printArea = document.getElementById('printable-inv-area');
+            const printArea = document.getElementById("printable-inv-area");
             if (!printArea) return;
-            const w = window.open('', '_blank', 'width=900,height=700');
-            w.document.write(`<!DOCTYPE html><html><head><title>Invoice ${inv.invNumber}</title><style>body{font-family:'Segoe UI',sans-serif;margin:0;padding:20px;background:#fff;}table{border-collapse:collapse;}@media print{body{padding:0;}}</style></head><body>` + printArea.outerHTML + `<script>window.onload=function(){window.print();window.close();}<\/script></body></html>`);
-            w.document.close();
+            const printWin = window.open('', '_blank');
+            printWin.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Invoice Preview - ${inv.invNumber || 'SRR'}</title>
+                    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+                    <style>
+                        body { margin: 0; padding: 10mm; font-family: 'Outfit', sans-serif; background: #fff; color: #111827; }
+                        @page { size: A4 portrait; margin: 4mm; }
+                        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                    </style>
+                </head>
+                <body>
+                    ${printArea.outerHTML}
+                </body>
+                </html>
+            `);
+            printWin.document.close();
+            printWin.focus();
+            setTimeout(() => {
+                printWin.print();
+                printWin.close();
+            }, 300);
         };
     }
 }
 
-// Switch between dashboard views (Invoices & Payments vs Used Items Report)
+// Render Saved Customers List in Dashboard
+function renderDashboardCustomersList(filterText = "") {
+    const tbody = document.getElementById("dashboard-customers-tbody");
+    if (!tbody) return;
+
+    const filter = filterText.toLowerCase().trim();
+    const filtered = state.customers.filter(c => 
+        (c.name && c.name.toLowerCase().includes(filter)) ||
+        (c.mobile && c.mobile.includes(filter)) ||
+        (c.address && c.address.toLowerCase().includes(filter)) ||
+        (c.email && c.email.toLowerCase().includes(filter))
+    );
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-msg" style="text-align:center; padding: 25px 0; color:#6b7280;">${state.customers.length === 0 ? 'No saved customers found. Click "+ Add New Customer" to create one.' : 'No matching customers found.'}</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = "";
+    filtered.forEach(cust => {
+        const outstanding = getCustomerOutstanding(cust.name);
+        const outstandingHtml = outstanding > 0 
+            ? `<span style="color:#ef4444; font-weight:700;">₹${outstanding.toFixed(2)}</span>` 
+            : `<span style="color:#10b981; font-weight:600;">₹0.00</span>`;
+
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid #f3f4f6";
+        tr.onmouseenter = () => tr.style.background = "#f0fdf4";
+        tr.onmouseleave = () => tr.style.background = "";
+        
+        tr.innerHTML = `
+            <td style="padding:12px 16px; font-weight:700; color:#111827; font-size:13px;">${cust.name || 'Unnamed Customer'}</td>
+            <td style="padding:12px 16px; color:#6b7280; font-size:12px;">
+                ${cust.mobile ? `<div>📞 ${cust.mobile}</div>` : ''}
+                ${cust.email ? `<div>✉️ ${cust.email}</div>` : ''}
+                ${!cust.mobile && !cust.email ? '-' : ''}
+            </td>
+            <td style="padding:12px 16px; color:#6b7280; font-size:12px;">${cust.address || '-'}</td>
+            <td style="padding:12px 16px; text-align:right;">${outstandingHtml}</td>
+            <td style="padding:12px 16px; text-align:center;">
+                <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
+                    <button type="button" class="load-cust-btn" style="padding:5px 10px; border-radius:6px; border:1px solid #2a9d8f; background:#2a9d8f; color:#fff; font-size:11px; cursor:pointer; font-weight:600;">⚡ Load to Invoice</button>
+                    <button type="button" class="delete-cust-btn" style="padding:5px 8px; border-radius:6px; border:1px solid #fca5a5; background:#fff; color:#ef4444; font-size:13px; cursor:pointer;">✕</button>
+                </div>
+            </td>
+        `;
+
+        const loadBtn = tr.querySelector(".load-cust-btn");
+        const deleteBtn = tr.querySelector(".delete-cust-btn");
+
+        if (loadBtn) {
+            loadBtn.addEventListener("click", () => {
+                preloadCustomer(cust);
+                closeInvoicesDashboard();
+                showStatus(`Loaded customer: ${cust.name}`);
+            });
+        }
+
+        if (deleteBtn) {
+            deleteBtn.addEventListener("click", () => {
+                if (confirm(`Delete customer "${cust.name}"?`)) {
+                    const idx = state.customers.findIndex(c => c.name === cust.name && c.mobile === cust.mobile);
+                    if (idx !== -1) {
+                        state.customers.splice(idx, 1);
+                        localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
+                        renderDashboardCustomersList(filterText);
+                        renderCustomerList();
+                        populateCustomerSelector();
+                        showStatus(`Deleted customer ${cust.name}`);
+                    }
+                }
+            });
+        }
+
+        tbody.appendChild(tr);
+    });
+}
+
+// Switch between dashboard views (Invoices & Payments vs Customers Directory vs Used Items Report)
 function switchDashboardTab(tab) {
     activeDashboardTab = tab;
     const invoicesContainer = document.getElementById("dashboard-invoices-container");
+    const customersContainer = document.getElementById("dashboard-customers-container");
     const reportsContainer = document.getElementById("dashboard-reports-container");
     const searchInput = document.getElementById("dashboard-inv-search");
     const downloadReportBtn = document.getElementById("download-report-btn");
     const dashboardTitle = document.getElementById("dashboard-title");
     const tabInvBtn = document.getElementById("tab-invoices-btn");
+    const tabCustBtn = document.getElementById("tab-customers-btn");
     const tabRepBtn = document.getElementById("tab-reports-btn");
 
     if (dashboardTitle) {
-        dashboardTitle.innerText = tab === "invoices" ? "Saved Invoices & Payments" : "Used Items Report";
+        if (tab === "invoices") dashboardTitle.innerText = "Saved Invoices & Payments";
+        else if (tab === "customers") dashboardTitle.innerText = "Saved Customers Directory";
+        else dashboardTitle.innerText = "Used Items Report";
     }
 
-    if (tab === "invoices") {
-        if (invoicesContainer) invoicesContainer.style.display = "block";
-        if (reportsContainer) reportsContainer.style.display = "none";
-        if (downloadReportBtn) downloadReportBtn.style.display = "none";
-        if (tabInvBtn) { tabInvBtn.style.background = "#2a9d8f"; tabInvBtn.style.color = "#fff"; tabInvBtn.style.borderColor = "#2a9d8f"; }
-        if (tabRepBtn) { tabRepBtn.style.background = "#fff"; tabRepBtn.style.color = "#374151"; tabRepBtn.style.borderColor = "#d1d5db"; }
-        if (searchInput) { searchInput.placeholder = "Search invoice # or customer..."; searchInput.value = ""; }
-        renderDashboardInvoicesList();
-    } else {
-        if (invoicesContainer) invoicesContainer.style.display = "none";
-        if (reportsContainer) reportsContainer.style.display = "block";
-        if (downloadReportBtn) downloadReportBtn.style.display = "inline-block";
-        if (tabInvBtn) { tabInvBtn.style.background = "#fff"; tabInvBtn.style.color = "#374151"; tabInvBtn.style.borderColor = "#d1d5db"; }
-        if (tabRepBtn) { tabRepBtn.style.background = "#2a9d8f"; tabRepBtn.style.color = "#fff"; tabRepBtn.style.borderColor = "#2a9d8f"; }
-        if (searchInput) { searchInput.placeholder = "Search item name or size..."; searchInput.value = ""; }
-        renderDashboardReportsList();
+    const setBtnStyle = (btn, active) => {
+        if (!btn) return;
+        btn.style.background = active ? "#2a9d8f" : "#fff";
+        btn.style.color = active ? "#fff" : "#374151";
+        btn.style.borderColor = active ? "#2a9d8f" : "#d1d5db";
+    };
+
+    setBtnStyle(tabInvBtn, tab === "invoices");
+    setBtnStyle(tabCustBtn, tab === "customers");
+    setBtnStyle(tabRepBtn, tab === "reports");
+
+    if (invoicesContainer) invoicesContainer.style.display = tab === "invoices" ? "block" : "none";
+    if (customersContainer) customersContainer.style.display = tab === "customers" ? "block" : "none";
+    if (reportsContainer) reportsContainer.style.display = tab === "reports" ? "block" : "none";
+    if (downloadReportBtn) downloadReportBtn.style.display = tab === "reports" ? "inline-block" : "none";
+
+    if (searchInput) {
+        searchInput.value = "";
+        if (tab === "invoices") searchInput.placeholder = "Search invoice # or customer...";
+        else if (tab === "customers") searchInput.placeholder = "Search customer name, phone or address...";
+        else searchInput.placeholder = "Search item name or size...";
     }
+
+    if (tab === "invoices") renderDashboardInvoicesList();
+    else if (tab === "customers") renderDashboardCustomersList();
+    else renderDashboardReportsList();
 }
+window.switchDashboardTab = switchDashboardTab;
 
 // Calculate total outstanding balance for a customer
 function getCustomerOutstanding(customerName) {
