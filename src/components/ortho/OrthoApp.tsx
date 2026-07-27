@@ -882,8 +882,8 @@ export default function OrthoApp() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-                    {/* Choice 1: Add New Procedure */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 w-full">
+                    {/* Card 1: Create DC */}
                     <button
                       onClick={() => {
                         setDcMode('procedure');
@@ -891,73 +891,73 @@ export default function OrthoApp() {
                         setShowProcedureSelector(true);
                         navigate('/?mode=procedure');
                       }}
-                      className="group p-5 rounded-xl border-2 border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 hover:border-teal-500 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md"
+                      className="group flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 hover:border-teal-500 transition-all duration-200 shadow-sm text-center"
                     >
-                      <div className="w-11 h-11 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                      <div className="w-10 h-10 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow group-hover:scale-110 transition-transform flex-shrink-0">
                         <Plus className="w-5 h-5" />
                       </div>
                       <div>
-                        <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400">
-                          Add New Procedure
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 leading-tight">
+                          Create DC
                         </h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Browse procedures, select items & instruments for a new DC.
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug hidden sm:block">
+                          Browse procedures &amp; select items for a new DC.
                         </p>
                       </div>
                     </button>
 
-                    {/* Choice 2: Cash Invoice */}
+                    {/* Card 2: Cash Invoice */}
                     <button
                       onClick={() => navigate('/cash-invoice')}
-                      className="group p-5 rounded-xl border-2 border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 hover:border-purple-500 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md"
+                      className="group flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 hover:border-purple-500 transition-all duration-200 shadow-sm text-center"
                     >
-                      <div className="w-11 h-11 rounded-lg bg-purple-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                      <div className="w-10 h-10 rounded-lg bg-purple-600 text-white flex items-center justify-center shadow group-hover:scale-110 transition-transform flex-shrink-0">
                         <Receipt className="w-5 h-5" />
                       </div>
                       <div>
-                        <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 leading-tight">
                           Cash Invoice
                         </h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Create cash bills and price recommendations for walk-in sales.
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug hidden sm:block">
+                          Create cash bills for walk-in sales.
                         </p>
                       </div>
                     </button>
 
-                    {/* Choice 3: Create Quotations */}
+                    {/* Card 3: Create Quotation */}
                     <a
                       href="https://docs.srrorthoplus.com"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="group p-5 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 hover:border-blue-500 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md text-slate-900"
+                      className="group flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 hover:border-blue-500 transition-all duration-200 shadow-sm text-center text-slate-900"
                     >
-                      <div className="w-11 h-11 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                      <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow group-hover:scale-110 transition-transform flex-shrink-0">
                         <FileText className="w-5 h-5" />
                       </div>
                       <div>
-                        <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 leading-tight">
                           Create Quotation
                         </h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Generate official price quotes & docs at docs.srrorthoplus.com.
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug hidden sm:block">
+                          Generate official price quotes &amp; docs.
                         </p>
                       </div>
                     </a>
 
-                    {/* Choice 4: DC Tracker */}
+                    {/* Card 4: DC Tracker */}
                     <button
                       onClick={() => navigate('/saved')}
-                      className="group p-5 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/20 hover:border-amber-400 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-md"
+                      className="group flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/20 hover:border-amber-400 transition-all duration-200 shadow-sm text-center"
                     >
-                      <div className="w-11 h-11 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                      <div className="w-10 h-10 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center shadow group-hover:scale-110 transition-transform flex-shrink-0">
                         <List className="w-5 h-5" />
                       </div>
                       <div>
-                        <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-amber-500">
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-amber-500 leading-tight">
                           DC Tracker
                         </h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          View, track, print, and manage saved Delivery Challans.
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug hidden sm:block">
+                          View, track &amp; manage saved DCs.
                         </p>
                       </div>
                     </button>

@@ -37,6 +37,7 @@ export function AddProcedureForm() {
   const [selectedProcedureToEdit, setSelectedProcedureToEdit] = useState<string>('__NEW__');
   const [isEditMode, setIsEditMode] = useState(false);
   const [originalProcedureName, setOriginalProcedureName] = useState('');
+  const [originalDocId, setOriginalDocId] = useState(''); // True Firestore primary key
   const [procedureName, setProcedureName] = useState('');
   const [procedureType, setProcedureType] = useState('General');
   const [items, setItems] = useState<ItemWithSizes[]>([]);
@@ -175,6 +176,9 @@ export function AddProcedureForm() {
 
   const loadProcedureForEdit = (procedure: Procedure) => {
     setOriginalProcedureName(procedure.name);
+    // Use the stored Firestore docId as primary key; fall back to name-derived ID for legacy docs
+    const storedDocId = procedure.docId || procedure.name.replace(/[^a-zA-Z0-9]/g, '_');
+    setOriginalDocId(storedDocId);
     setProcedureName(procedure.name);
     setProcedureType(procedure.type || 'General');
 
@@ -219,7 +223,7 @@ export function AddProcedureForm() {
 
   useEffect(() => {
     if (selectedProcedureToEdit && selectedProcedureToEdit !== '__NEW__') {
-      const procedure = procedures.find(p => p.name === selectedProcedureToEdit);
+      const procedure = procedures.find(p => (p.docId || p.name) === selectedProcedureToEdit);
       if (procedure) {
         loadProcedureForEdit(procedure);
       }
@@ -235,6 +239,7 @@ export function AddProcedureForm() {
     setInstruments([]);
     setIsEditMode(false);
     setOriginalProcedureName('');
+    setOriginalDocId('');
   };
 
   const formatItemForFirestore = (item: ItemWithSizes): string => {
@@ -315,20 +320,31 @@ export function AddProcedureForm() {
         itemLocationMapping
       };
 
-      if (isEditMode && originalProcedureName !== procedureName.trim()) {
-        await procedureService.delete(originalProcedureName);
+      if (isEditMode) {
+        // UPDATE path: use originalDocId (the true primary key) to prevent duplicates
+        const docIdToUpdate = originalDocId || originalProcedureName.replace(/[^a-zA-Z0-9]/g, '_');
+        await procedureService.update(docIdToUpdate, procedureData);
+        toast({
+          title: 'Updated ✓',
+          description: `Procedure "${procedureName}" updated successfully`,
+        });
+        localStorage.removeItem('srrortho:procedures_cache');
+        // Stay on same procedure — refresh original name/docId in case name changed
+        setOriginalProcedureName(procedureData.name);
+        setOriginalDocId(docIdToUpdate);
+        fetchProcedures(true);
+      } else {
+        // CREATE path: save new procedure
+        await procedureService.save(procedureData);
+        toast({
+          title: 'Saved ✓',
+          description: `Procedure "${procedureName}" created successfully`,
+        });
+        localStorage.removeItem('srrortho:procedures_cache');
+        resetForm();
+        setSelectedProcedureToEdit('__NEW__');
+        fetchProcedures(true);
       }
-
-      await procedureService.save(procedureData);
-
-      toast({
-        title: 'Success',
-        description: `Procedure "${procedureName}" saved successfully`,
-      });
-
-      resetForm();
-      setSelectedProcedureToEdit('__NEW__');
-      fetchProcedures(true);
 
     } catch (error: any) {
       console.error("Save error:", error);
@@ -343,14 +359,15 @@ export function AddProcedureForm() {
   };
 
   const handleDelete = async () => {
-    if (!isEditMode || !originalProcedureName) return;
+    if (!isEditMode || (!originalDocId && !originalProcedureName)) return;
     await executeDelete();
   };
 
   const executeDelete = async () => {
     setIsDeleting(true);
     try {
-      await procedureService.delete(originalProcedureName);
+      const targetDocId = originalDocId || originalProcedureName.replace(/[^a-zA-Z0-9]/g, '_');
+      await procedureService.deleteByDocId(targetDocId);
       toast({ title: 'Deleted', description: `Procedure "${originalProcedureName}" deleted.` });
       resetForm();
       setSelectedProcedureToEdit('__NEW__');
@@ -406,11 +423,14 @@ export function AddProcedureForm() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__NEW__" className="font-medium text-blue-700">＋ Create New Procedure</SelectItem>
-                  {procedures.map((proc) => (
-                    <SelectItem key={proc.name} value={proc.name}>
-                      {proc.name} <span className="text-slate-400 ml-2">({proc.type})</span>
-                    </SelectItem>
-                  ))}
+                  {procedures.map((proc, index) => {
+                    const id = proc.docId || proc.name;
+                    return (
+                      <SelectItem key={`${id}-${index}`} value={id}>
+                        {proc.name} <span className="text-slate-400 ml-2">({proc.type})</span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>

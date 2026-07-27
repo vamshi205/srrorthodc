@@ -15,6 +15,7 @@ export interface Location {
 }
 
 export interface Procedure {
+  docId?: string;           // Actual Firestore document ID — the true primary key
   name: string;
   items: string[];
   fixedItems: FixedItem[];

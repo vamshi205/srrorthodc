@@ -100,6 +100,21 @@ document.addEventListener("DOMContentLoaded", () => {
         if (action === "FETCH_CASH_INVOICES_RESPONSE" && Array.isArray(payload)) {
             console.log("[CashInvoice Iframe] Setting savedInvoices from Firestore:", payload);
             state.savedInvoices = payload;
+            // Assign the correct next invoice number now that we have real data
+            const nextNum = getNextInvoiceNumber();
+            const currentNum = (document.getElementById("inv-number") || {}).value || "";
+            const currentPreview = (document.getElementById("preview-inv-number") || {}).innerText || "";
+            // Only update if the current invoice hasn't been modified (still blank or auto-assigned)
+            const isNewBlankInvoice = !state.clientInfo.clientSaved && !currentNum.trim();
+            const isDefaultOrEmpty = !currentNum.trim() || currentNum.startsWith("SRR-2026-0001") || currentNum === state._autoAssignedNum;
+            if (isDefaultOrEmpty) {
+                state.clientInfo.invNumber = nextNum;
+                state._autoAssignedNum = nextNum;
+                const invEl = document.getElementById("inv-number");
+                if (invEl) invEl.value = nextNum;
+                const prevEl = document.getElementById("preview-inv-number");
+                if (prevEl) prevEl.innerText = nextNum;
+            }
             renderSavedInvoicesList();
             renderDashboardInvoicesList();
         } else if (action === "SAVE_CASH_INVOICE_RESPONSE") {
@@ -143,18 +158,13 @@ function loadPersistedData() {
     }
     document.getElementById("preview-signature-comp").innerText = state.companyProfile.name || "";
 
-    // 3. Client & Invoice Info
-    const savedClient = localStorage.getItem("im_client_info");
-    if (savedClient) {
-        state.clientInfo = JSON.parse(savedClient);
-    } else {
-        state.clientInfo = { ...DEFAULT_CLIENT };
-    }
-    
-    // Auto-generate invoice number if empty
-    if (!state.clientInfo.invNumber) {
-        state.clientInfo.invNumber = getNextInvoiceNumber();
-    }
+    // 3. Client & Invoice Info — always start fresh (new invoice on each page open)
+    // Clear any previously saved client session so every open = new invoice
+    localStorage.removeItem("im_client_info");
+    state.clientInfo = { ...DEFAULT_CLIENT };
+    // Tentative invoice number (will be corrected after Firestore data arrives)
+    state.clientInfo.invNumber = "SRR-2026-0001";
+    state._autoAssignedNum = "SRR-2026-0001";
     if (state.clientInfo.dcNumber === undefined) {
         state.clientInfo.dcNumber = "";
     }

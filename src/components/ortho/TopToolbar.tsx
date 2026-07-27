@@ -177,18 +177,20 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
           {/* Right Side: Quick Actions & Utilities */}
           <div className="flex items-center gap-2">
-            {/* Refresh Data */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="hidden sm:flex text-white hover:bg-white/15 hover:text-white h-9 px-3 gap-1.5 text-xs font-medium border border-white/10"
-              onClick={() => fetchProcedures(true)}
-              disabled={loading}
-              title="Refresh Procedures"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-teal-200 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden md:inline">{loading ? 'Refreshing...' : 'Refresh'}</span>
-            </Button>
+            {/* Refresh Data - only on procedure list or manual DC */}
+            {(isProcedureList || isManualDc) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden sm:flex text-white hover:bg-white/15 hover:text-white h-9 px-3 gap-1.5 text-xs font-medium border border-white/10"
+                onClick={() => fetchProcedures(true)}
+                disabled={loading}
+                title="Refresh Procedures"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-teal-200 ${loading ? 'animate-spin' : ''}`} />
+                <span className="hidden md:inline">{loading ? 'Refreshing...' : 'Refresh'}</span>
+              </Button>
+            )}
 
             {/* Print Action */}
             {(isProcedureList || isManualDc) && (

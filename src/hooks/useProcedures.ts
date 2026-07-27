@@ -57,36 +57,15 @@ export function useProcedures() {
     setLoading(false);
   }, []);
 
-  const CACHE_KEY = 'srrortho:procedures_cache';
-  const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-
-  const fetchProcedures = useCallback(async (force = false) => {
+  const fetchProcedures = useCallback(async (_force?: boolean) => {
     setLoading(true);
     setError(null);
 
     try {
-      if (!force) {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) {
-          const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < CACHE_TTL) {
-            console.log('Using cached procedures');
-            processProcedures(data);
-            setLoading(false);
-            return;
-          }
-        }
-      }
-
-      console.log('Fetching fresh procedures from Firestore');
+      // Always fetch directly from Firestore DB — no local caching
+      localStorage.removeItem('srrortho:procedures_cache');
+      console.log('Fetching fresh procedures directly from Firestore');
       const data = await procedureService.getAll();
-
-      // Update cache
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
-        data,
-        timestamp: Date.now()
-      }));
-
       processProcedures(data);
     } catch (err) {
       console.error(err);
@@ -98,14 +77,8 @@ export function useProcedures() {
   const refetchSingleProcedure = useCallback(
     async (procedureName: string): Promise<Procedure | null> => {
       try {
-        // Fetch fresh data when explicitly refreshing a single procedure
+        localStorage.removeItem('srrortho:procedures_cache');
         const data = await procedureService.getAll();
-        
-        localStorage.setItem(CACHE_KEY, JSON.stringify({
-          data,
-          timestamp: Date.now()
-        }));
-
         processProcedures(data);
         return data.find(p => p.name === procedureName) || null;
       } catch {
