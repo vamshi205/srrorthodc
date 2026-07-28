@@ -57,6 +57,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { useProcedures } from "@/hooks/useProcedures";
 import { deleteSavedDc, loadSavedDcs, SavedDc, SavedDcHistoryEvent, SavedDcStatus, transitionSavedDc, updateSavedDc } from "@/lib/savedDcStorage";
+import { AppLoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { auth } from "@/firebase";
 import html2pdf from "html2pdf.js";
 
@@ -920,12 +921,7 @@ const SavedDcs = () => {
             )}
 
             {isLoading ? (
-              <Card className="glass-card border-2 border-border/60">
-                <CardHeader>
-                  <CardTitle>Loading DCs...</CardTitle>
-                  <CardDescription>Fetching DCs from Google Sheets</CardDescription>
-                </CardHeader>
-              </Card>
+              <AppLoadingSpinner message="Loading DCs..." subtext="Fetching Delivery Challans from database" />
             ) : savedDcs.length === 0 ? (
               <Card className="glass-card border-2 border-border/60">
                 <CardHeader>

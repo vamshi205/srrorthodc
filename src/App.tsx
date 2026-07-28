@@ -21,8 +21,16 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-hero">
+        <div className="relative flex items-center justify-center mb-6">
+          <div className="absolute w-20 h-20 rounded-full bg-gradient-to-tr from-teal-500 via-emerald-400 to-cyan-500 blur-md opacity-45 animate-pulse"></div>
+          <div className="w-16 h-16 rounded-full border-3 border-transparent border-t-teal-600 border-r-emerald-500 animate-spin"></div>
+          <div className="absolute w-10 h-10 rounded-full border-3 border-transparent border-b-cyan-500 border-l-teal-400 animate-[spin_1.2s_linear_infinite_reverse]"></div>
+          <div className="absolute w-3 h-3 bg-teal-600 rounded-full shadow-xs animate-ping"></div>
+        </div>
+        <h3 className="text-base font-bold text-slate-800 tracking-tight flex items-center gap-1.5">
+          <span>Loading SRR Ortho Plus...</span>
+        </h3>
       </div>
     );
   }

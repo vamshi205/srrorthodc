@@ -47,28 +47,22 @@ export default function CashInvoice() {
       const { action, payload, requestId } = event.data || {};
       if (!action) return;
 
-      console.log('[CashInvoice Host] Received postMessage action:', action, payload);
       const targetWindow = (event.source as Window) || (document.querySelector('iframe') as HTMLIFrameElement | null)?.contentWindow;
 
       if (action === 'FETCH_CASH_INVOICES') {
         const invoices = await fetchCashInvoicesFromFirestore();
-        console.log('[CashInvoice Host] Fetched invoices from Firestore:', invoices);
         targetWindow?.postMessage({ action: 'FETCH_CASH_INVOICES_RESPONSE', payload: invoices, requestId }, '*');
       } else if (action === 'SAVE_CASH_INVOICE') {
         const success = await saveCashInvoiceToFirestore(payload);
-        console.log('[CashInvoice Host] Save invoice result:', success);
         targetWindow?.postMessage({ action: 'SAVE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
       } else if (action === 'DELETE_CASH_INVOICE') {
         const success = await deleteCashInvoiceFromFirestore(payload);
-        console.log('[CashInvoice Host] Delete invoice result:', success);
         targetWindow?.postMessage({ action: 'DELETE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
       } else if (action === 'FETCH_CASH_CUSTOMERS') {
         const customers = await fetchCashCustomersFromFirestore();
-        console.log('[CashInvoice Host] Fetched customers from Firestore:', customers);
         targetWindow?.postMessage({ action: 'FETCH_CASH_CUSTOMERS_RESPONSE', payload: customers, requestId }, '*');
       } else if (action === 'SAVE_CASH_CUSTOMER') {
         const success = await saveCashCustomerToFirestore(payload);
-        console.log('[CashInvoice Host] Save customer result:', success);
         targetWindow?.postMessage({ action: 'SAVE_CASH_CUSTOMER_RESPONSE', success, requestId }, '*');
       }
     };

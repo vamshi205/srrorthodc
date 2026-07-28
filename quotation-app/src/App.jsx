@@ -8,6 +8,7 @@ import JSZip from 'jszip';
 import Login from './components/Login';
 import EmailerView from './components/EmailerView';
 import EmailHistoryView from './components/EmailHistoryView';
+import LoadingSpinner from './components/LoadingSpinner';
 import { sendEmailWithResend } from './utils/emailService';
 import { saveDatabase, loadDatabase, saveTemplate, deleteTemplate, saveHistoryItem, saveCompanyData, saveEmailHistoryItem, syncItem } from './utils/databaseService';
 import { auth, db, storage, hasFirebaseConfig } from './firebase';
@@ -1240,9 +1241,8 @@ function App() {
 
   if (isAuthLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3 w-full font-sans">
-        <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
-        <span className="text-xs font-semibold text-slate-500 tracking-wide">Loading Quotations...</span>
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center w-full font-sans">
+        <LoadingSpinner message="Loading Quotations Workspace..." subtext="Initializing Database & Auth" />
       </div>
     );
   }
@@ -1258,14 +1258,8 @@ function App() {
           ───────────────────────────────────────── */}
       {!isAdminOnlyMode && (
         <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 md:px-6 py-2 flex items-center justify-between gap-3 z-40 shrink-0 shadow-sm">
-          {/* Left: Ready Badge & Nav Tabs */}
+          {/* Left: Nav Tabs */}
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-            {/* Ready Status Badge */}
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-200 shadow-xs shrink-0 mr-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Ready</span>
-            </div>
-
             <NavItem id="library" label="Library" icon={<LayoutDashboard size={14} />} />
             <NavItem id="history" label="History" icon={<Database size={14} />} />
             <NavItem id="drive" label="Drive" icon={<HardDrive size={14} />} />
@@ -1433,13 +1427,9 @@ function App() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {isDataLoading ? (
-                  Array(6).fill(0).map((_, i) => (
-                    <div key={i} className="apple-card p-6 h-[200px] animate-pulse bg-[var(--apple-gray-1)] border-transparent">
-                      <div className="w-12 h-12 bg-[var(--apple-gray-2)] rounded-2xl mb-6"></div>
-                      <div className="h-6 bg-[var(--apple-gray-2)] rounded-lg w-3/4 mb-3"></div>
-                      <div className="h-4 bg-[var(--apple-gray-2)] rounded-lg w-1/2"></div>
-                    </div>
-                  ))
+                  <div className="col-span-full py-8">
+                    <LoadingSpinner message="Fetching Templates & Database..." subtext="Synchronizing from Cloud Firestore" />
+                  </div>
                 ) : (
                   <>
                     {templates
@@ -1951,88 +1941,96 @@ function App() {
                       <textarea name="subject" value={formData.subject} onChange={handleInputChange} rows="2" className="apple-input" />
                     </div>
 
-                    {templates.find(t => t.id === formData.selectedTemplateId)?.requiresPriceList && (
-                      <div>
-                        <span className="text-[11px] font-semibold text-[var(--apple-gray-5)] uppercase block mb-1">Attached Price List</span>
-                        <div className="flex gap-2">
-                          <select 
-                            name="priceListId" 
-                            value={formData.priceListId || ''} 
-                            onChange={handleInputChange}
-                            className="apple-input cursor-pointer bg-[var(--apple-gray-1)] flex-grow"
+                    <div>
+                      <span className="text-[11px] font-semibold text-[var(--apple-gray-5)] uppercase block mb-1">Attached Price List / Attachment</span>
+                      <div className="flex gap-2">
+                        <select 
+                          name="priceListId" 
+                          value={formData.priceListId || ''} 
+                          onChange={handleInputChange}
+                          className="apple-input cursor-pointer bg-[var(--apple-gray-1)] flex-grow"
+                        >
+                          <option value="">-- No Attachment --</option>
+                          {priceLists
+                            .filter(pl => !pl.hidden || pl.id === formData.priceListId)
+                            .map(pl => (
+                              <option key={pl.id} value={pl.id}>
+                                {pl.label} {pl.hidden ? '(Hidden)' : ''}
+                              </option>
+                            ))}
+                        </select>
+                        {formData.priceListId && (
+                          <button 
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, priceListId: '' }))}
+                            className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-all font-bold text-xs flex items-center gap-1.5 shrink-0"
+                            title="Remove attachment from this document"
                           >
-                            <option value="">-- Select Price List --</option>
-                            {priceLists
-                              .filter(pl => !pl.hidden || pl.id === formData.priceListId)
-                              .map(pl => (
-                                <option key={pl.id} value={pl.id}>
-                                  {pl.label} {pl.hidden ? '(Hidden)' : ''}
-                                </option>
-                              ))}
-                          </select>
-                          <input 
-                            type="file" 
-                            accept="application/pdf"
-                            onChange={async (e) => {
-                              const file = e.target.files[0];
-                              if (!file) return;
-                              showConfirm(
-                                'Save to Database?', 
-                                'Do you want to save this document to the Price List database for future use?',
-                                () => {
-                                  showPrompt(
-                                    'New Price List', 
-                                    'Enter a name for this Price List (e.g. Stryker 2024):', 
-                                    async (label) => {
-                                      if (!label) return;
-                                      const newItem = { 
-                                        id: Date.now().toString(), 
-                                        label: label, 
-                                        fileName: file.name, 
-                                        uploadedAt: new Date().toLocaleDateString('en-GB'),
-                                        hidden: false
-                                      };
-                                      const success = await syncItem('price_lists', newItem, false, file);
-                                      if (success) {
-                                        setPriceLists(prev => [...prev, newItem]);
-                                        setFormData(prev => ({ ...prev, priceListId: newItem.id }));
-                                      }
+                            <Trash2 size={14} /> Remove
+                          </button>
+                        )}
+                        <input 
+                          type="file" 
+                          accept="application/pdf"
+                          onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (!file) return;
+                            showConfirm(
+                              'Save to Database?', 
+                              'Do you want to save this document to the Price List database for future use?',
+                              () => {
+                                showPrompt(
+                                  'New Price List', 
+                                  'Enter a name for this Price List (e.g. Stryker 2024):', 
+                                  async (label) => {
+                                    if (!label) return;
+                                    const newItem = { 
+                                      id: Date.now().toString(), 
+                                      label: label, 
+                                      fileName: file.name, 
+                                      uploadedAt: new Date().toLocaleDateString('en-GB'),
+                                      hidden: false
+                                    };
+                                    const success = await syncItem('price_lists', newItem, false, file);
+                                    if (success) {
+                                      setPriceLists(prev => [...prev, newItem]);
+                                      setFormData(prev => ({ ...prev, priceListId: newItem.id }));
                                     }
-                                  );
-                                },
-                                async () => {
-                                  const newItem = { 
-                                    id: Date.now().toString(), 
-                                    label: file.name || 'Temporary Attachment', 
-                                    fileName: file.name, 
-                                    uploadedAt: new Date().toLocaleDateString('en-GB'),
-                                    hidden: true
-                                  };
-                                  const success = await syncItem('price_lists', newItem, false, file);
-                                  if (success) {
-                                    setPriceLists(prev => [...prev, newItem]);
-                                    setFormData(prev => ({ ...prev, priceListId: newItem.id }));
                                   }
-                                },
-                                'confirm',
-                                'Yes, Save permanently',
-                                'No, just attach to this doc'
-                              );
-                              e.target.value = '';
-                            }} 
-                            className="hidden" 
-                            id="quick-price-list-upload" 
-                          />
-                          <label 
-                            htmlFor="quick-price-list-upload" 
-                            className="btn-outline cursor-pointer flex items-center gap-1.5 shrink-0 hover:border-[var(--emerald)] hover:bg-[var(--emerald-light)] hover:text-[var(--emerald)] active:scale-95 transition-all select-none"
-                            title="Attach a new price list"
-                          >
-                            <Plus size={15} /> Attach
-                          </label>
-                        </div>
+                                );
+                              },
+                              async () => {
+                                const newItem = { 
+                                  id: Date.now().toString(), 
+                                  label: file.name || 'Temporary Attachment', 
+                                  fileName: file.name, 
+                                  uploadedAt: new Date().toLocaleDateString('en-GB'),
+                                  hidden: true
+                                };
+                                const success = await syncItem('price_lists', newItem, false, file);
+                                if (success) {
+                                  setPriceLists(prev => [...prev, newItem]);
+                                  setFormData(prev => ({ ...prev, priceListId: newItem.id }));
+                                }
+                              },
+                              'confirm',
+                              'Yes, Save permanently',
+                              'No, just attach to this doc'
+                            );
+                            e.target.value = '';
+                          }} 
+                          className="hidden" 
+                          id="quick-price-list-upload" 
+                        />
+                        <label 
+                          htmlFor="quick-price-list-upload" 
+                          className="btn-outline cursor-pointer flex items-center gap-1.5 shrink-0 hover:border-[var(--emerald)] hover:bg-[var(--emerald-light)] hover:text-[var(--emerald)] active:scale-95 transition-all select-none"
+                          title="Attach a new PDF"
+                        >
+                          <Plus size={15} /> Attach
+                        </label>
                       </div>
-                    )}
+                    </div>
                   </div>
 
                   {/* Layout Controls */}

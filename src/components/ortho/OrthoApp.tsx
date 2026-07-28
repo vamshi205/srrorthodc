@@ -12,6 +12,7 @@ import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger 
 // import { LoginScreen } from '@/components/ortho/LoginScreen'; // Removed
 import { ProcedureSelector } from '@/components/ortho/ProcedureSelector';
 import { TopToolbar } from '@/components/ortho/TopToolbar';
+import { AppLoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 import { ProcedureCard } from '@/components/ortho/ProcedureCard';
 import { SummaryPanel } from '@/components/ortho/SummaryPanel';
@@ -968,7 +969,7 @@ export default function OrthoApp() {
                     <div className="glass-card rounded-xl p-2.5 sm:p-4 min-w-0">
                       <h2 className="font-display font-semibold text-base sm:text-lg mb-2 sm:mb-4">Select Procedures</h2>
                       {loading ? (
-                        <div className="py-12 text-center text-muted-foreground">Loading procedures...</div>
+                        <AppLoadingSpinner message="Loading Procedures..." subtext="Fetching procedure catalogs from Firestore database" />
                       ) : (
                         <ProcedureSelector
                           procedures={procedures}
@@ -1020,7 +1021,7 @@ export default function OrthoApp() {
                           setShowProcedureSelector(true);
                         }}
                       >
-                        <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Procedure List</span><span className="sm:hidden">Proc</span>
+                        <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Auto DC</span><span className="sm:hidden">Auto DC</span>
                       </Button>
                     </div>
                   </div>

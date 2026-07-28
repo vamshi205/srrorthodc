@@ -60,13 +60,10 @@ function parseSizeQtyFromItem(item: string): { name: string; sizeQty: SizeQty[] 
 }
 
 function splitItemNameByComma(itemName: string): { parts: string[]; hasCommas: boolean } {
-  console.log('splitItemNameByComma called with:', itemName);
   if (!itemName || !itemName.includes(',')) {
-    console.log('No commas found in:', itemName);
     return { parts: [itemName], hasCommas: false };
   }
   const parts = itemName.split(',').map(part => part.trim()).filter(Boolean);
-  console.log('Commas found! Parts:', parts);
   return { parts, hasCommas: parts.length > 1 };
 }
 

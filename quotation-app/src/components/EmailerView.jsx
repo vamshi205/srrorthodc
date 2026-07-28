@@ -95,10 +95,19 @@ const EmailerView = ({ driveFiles, priceLists, onEmailSent, showAlert, initialFo
 
   const [isSending, setIsSending] = useState(false);
   const handleSendEmail = async () => {
-    if (!emailForm.to) {
-      showAlert('Recipient Missing', 'Please enter a valid recipient email address.', 'error');
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const recipient = (emailForm.to || '').trim();
+
+    if (!recipient) {
+      showAlert('Email ID Required', 'Please enter Email ID before sending.', 'error');
       return;
     }
+
+    if (!emailRegex.test(recipient)) {
+      showAlert('Invalid Email ID', 'Please enter a valid Email ID (e.g. representative@hospital.com).', 'error');
+      return;
+    }
+
     setIsSending(true);
     
     const filesToAttach = (emailForm.selectedDriveFiles || []).map(f => ({
@@ -108,20 +117,20 @@ const EmailerView = ({ driveFiles, priceLists, onEmailSent, showAlert, initialFo
 
     try {
       const result = await sendEmailWithResend({
-        to: emailForm.to,
+        to: recipient,
         subject: emailForm.subject,
         body: emailForm.body,
         files: filesToAttach
       });
 
       if (result.success) {
-        showAlert('Email Dispatched', `Successfully sent to ${emailForm.to} via Resend.`, 'success');
+        showAlert('Email Dispatched', `Successfully sent to ${recipient} via Resend.`, 'success');
         
         // Save to History via callback
         if (onEmailSent) {
           onEmailSent({
             id: Date.now().toString(),
-            to: emailForm.to,
+            to: recipient,
             subject: emailForm.subject,
             body: emailForm.body,
             sentAt: new Date().toISOString(),
@@ -168,14 +177,14 @@ const EmailerView = ({ driveFiles, priceLists, onEmailSent, showAlert, initialFo
 
             <div className="p-8 space-y-6">
               {/* Recipient */}
-              <div className="flex items-center gap-4 border border-[var(--apple-gray-3)] px-4 py-3 bg-white focus-within:border-[var(--accent)] focus-within:ring-1 focus-within:ring-[var(--accent)] transition-all">
-                <span className="text-[13px] font-bold text-[var(--apple-gray-5)] w-10 uppercase tracking-wider">To</span>
+              <div className="flex items-center gap-4 border-2 border-red-500 bg-red-50/20 px-4 py-3 rounded-lg focus-within:border-red-600 focus-within:ring-2 focus-within:ring-red-200 transition-all shadow-xs">
+                <span className="text-[13px] font-bold text-red-600 w-10 uppercase tracking-wider">To</span>
                 <input 
                   type="email" 
                   value={emailForm.to} 
                   onChange={(e) => setEmailForm({...emailForm, to: e.target.value})}
-                  placeholder="hospital-representative@email.com" 
-                  className="flex-1 bg-transparent no-internal-border text-[15px] placeholder:text-[var(--apple-gray-4)]" 
+                  placeholder="Enter Email ID" 
+                  className="flex-1 bg-transparent no-internal-border text-[15px] font-semibold text-slate-900 placeholder:text-red-400 focus:outline-none" 
                 />
               </div>
 

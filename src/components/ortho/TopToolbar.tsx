@@ -97,9 +97,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           </div>
           <div className="min-w-0">
             <div className="font-display font-bold text-lg tracking-tight text-white leading-tight truncate">
-              SRR Ortho Plus
+              SRR Ortho Plus Portal
             </div>
-            <div className="text-xs text-teal-100/70 truncate hidden sm:block">Delivery Challan & Inventory System</div>
+            <div className="text-xs text-teal-100/70 truncate hidden sm:block">Operations & Inventory Portal</div>
           </div>
         </div>
 
@@ -116,7 +116,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                 navigate('/?mode=procedure');
               }}
             >
-              <Plus className={`w-3.5 h-3.5 ${isProcedureList ? 'text-teal-800' : 'text-teal-200'}`} /> Procedure List
+              <Plus className={`w-3.5 h-3.5 ${isProcedureList ? 'text-teal-800' : 'text-teal-200'}`} /> Auto DC
             </Button>
             
             <Button
@@ -241,7 +241,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                 <SheetHeader className="text-left border-b border-white/10 pb-4">
                   <SheetTitle className="text-white font-display text-lg flex items-center gap-2.5">
                     <img src="/srr-favicon.png" alt="SRR Ortho Logo" className="w-6 h-6 object-contain rounded-full bg-white p-0.5" />
-                    <span>SRR Ortho Plus Menu</span>
+                    <span>SRR Ortho Plus Portal Menu</span>
                   </SheetTitle>
                 </SheetHeader>
                 <div className="mt-6 space-y-6">
@@ -259,7 +259,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                           navigate('/?mode=procedure');
                         }}
                       >
-                        <Plus className="w-4 h-4 text-teal-400" /> Procedure List
+                        <Plus className="w-4 h-4 text-teal-400" /> Auto DC
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>

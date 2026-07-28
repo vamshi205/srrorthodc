@@ -42,16 +42,16 @@ const EmailHistoryView = ({ history = [], onDelete }) => {
                 <div className="flex flex-col md:flex-row gap-6">
                   {/* Left: Info */}
                   <div className="flex-1 space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-start justify-between gap-3 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className="w-10 h-10 bg-[var(--apple-gray-1)] rounded-full flex items-center justify-center shrink-0">
                           <User size={18} className="text-[var(--apple-gray-6)]" />
                         </div>
-                        <div>
-                          <p className="text-[15px] font-bold text-[var(--apple-black)] leading-tight">{item.to}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-bold text-[var(--apple-black)] leading-tight truncate" title={item.to}>{item.to}</p>
                           <div className="flex items-center gap-2 mt-1">
-                            <Clock size={12} className="text-[var(--apple-gray-4)]" />
-                            <span className="text-[12px] text-[var(--apple-gray-5)] font-medium">
+                            <Clock size={12} className="text-[var(--apple-gray-4)] shrink-0" />
+                            <span className="text-[12px] text-[var(--apple-gray-5)] font-medium truncate">
                               {new Date(item.sentAt).toLocaleString('en-GB', { 
                                 day: '2-digit', 
                                 month: 'short', 
@@ -63,7 +63,7 @@ const EmailHistoryView = ({ history = [], onDelete }) => {
                           </div>
                         </div>
                       </div>
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${item.status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                      <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${item.status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                         {item.status || 'success'}
                       </span>
                     </div>
