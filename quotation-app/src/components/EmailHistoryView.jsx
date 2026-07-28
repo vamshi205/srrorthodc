@@ -1,7 +1,7 @@
 import React from 'react';
-import { Mail, Clock, User, FileText, ChevronRight, Search, Trash2 } from 'lucide-react';
+import { Mail, Clock, User, FileText, ChevronRight, Search, Trash2, RotateCcw } from 'lucide-react';
 
-const EmailHistoryView = ({ history = [], onDelete }) => {
+const EmailHistoryView = ({ history = [], onDelete, onResend }) => {
   const [searchQuery, setSearchQuery] = React.useState('');
 
   const filteredHistory = history.filter(item => 
@@ -89,17 +89,23 @@ const EmailHistoryView = ({ history = [], onDelete }) => {
                   </div>
 
                   {/* Right: Actions */}
-                  <div className="flex md:flex-col items-center justify-end gap-2 md:border-l md:border-[var(--apple-gray-2)] md:pl-6">
+                  <div className="flex md:flex-col items-center justify-end gap-2 md:border-l md:border-[var(--apple-gray-2)] md:pl-6 shrink-0">
+                    <button 
+                      type="button"
+                      onClick={() => onResend && onResend(item)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[12px] font-bold shadow-2xs transition-all cursor-pointer"
+                      title="Resend email with pre-filled details"
+                    >
+                      <RotateCcw size={14} />
+                      <span>Resend</span>
+                    </button>
                     <button 
                       onClick={() => onDelete && onDelete(item.id)}
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-[var(--apple-gray-4)] hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                      className="w-9 h-9 rounded-full flex items-center justify-center text-[var(--apple-gray-4)] hover:text-red-500 hover:bg-red-50 transition-all opacity-80 hover:opacity-100"
                       title="Delete log"
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={16} />
                     </button>
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-[var(--apple-gray-4)]">
-                      <ChevronRight size={20} />
-                    </div>
                   </div>
                 </div>
               </div>

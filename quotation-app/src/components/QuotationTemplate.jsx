@@ -1,7 +1,94 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
+import { Pencil, Plus, Trash2, Check } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
-const QuotationTemplate = memo(({ id = "quotation-template", data, company, content, forceScale }) => {
+const QuotationTemplate = memo(({ id = "quotation-template", data, company, content, forceScale, onContentChange, isPdfPrinting = false }) => {
+  const [editingBlockIdx, setEditingBlockIdx] = useState(null);
+
+  const handleHeaderChange = (blockIdx, colIdx, newValue) => {
+    if (!onContentChange || !content) return;
+    const newContent = content.map((block, bIdx) => {
+      if (bIdx !== blockIdx) return block;
+      const newHeaders = [...block.headers];
+      newHeaders[colIdx] = newValue;
+      return { ...block, headers: newHeaders };
+    });
+    onContentChange(newContent);
+  };
+
+  const handleDeleteColumn = (blockIdx, colIdx) => {
+    if (!onContentChange || !content) return;
+    const newContent = content.map((block, bIdx) => {
+      if (bIdx !== blockIdx) return block;
+      if (block.headers.length <= 1) return block;
+      const newHeaders = block.headers.filter((_, ci) => ci !== colIdx);
+      const newRows = block.rows.map(r => r.filter((_, ci) => ci !== colIdx));
+      return { ...block, headers: newHeaders, rows: newRows };
+    });
+    onContentChange(newContent);
+  };
+
+  const handleColWidthChange = (blockIdx, colIdx, deltaPercent) => {
+    if (!onContentChange || !content) return;
+    const newContent = content.map((block, bIdx) => {
+      if (bIdx !== blockIdx) return block;
+      const colCount = block.headers.length;
+      let colWidths = block.colWidths ? [...block.colWidths] : Array(colCount).fill(Math.floor(100 / colCount));
+      const currentWidth = parseInt(colWidths[colIdx]) || Math.floor(100 / colCount);
+      const newWidth = Math.max(4, Math.min(85, currentWidth + deltaPercent));
+      colWidths[colIdx] = newWidth;
+      return { ...block, colWidths };
+    });
+    onContentChange(newContent);
+  };
+
+  const handleCellChange = (blockIdx, rowIdx, colIdx, newValue) => {
+    if (!onContentChange || !content) return;
+    const newContent = content.map((block, bIdx) => {
+      if (bIdx !== blockIdx) return block;
+      const newRows = block.rows.map((r, rIdx) => {
+        if (rIdx !== rowIdx) return [...r];
+        const newRow = [...r];
+        newRow[colIdx] = newValue;
+
+        const headers = block.headers.map(h => h.toLowerCase());
+        const qtyIdx = headers.findIndex(h => h === 'qty' || h === 'quantity');
+        const rateIdx = headers.findIndex(h => h === 'rate' || h === 'mrp' || h === 'price');
+        const amountIdx = headers.findIndex(h => h === 'amount' || h === 'total');
+        if (qtyIdx !== -1 && rateIdx !== -1 && amountIdx !== -1 && (colIdx === qtyIdx || colIdx === rateIdx)) {
+          const qty = parseFloat(newRow[qtyIdx]) || 0;
+          const rate = parseFloat(newRow[rateIdx]) || 0;
+          newRow[amountIdx] = (qty * rate).toFixed(2);
+        }
+        return newRow;
+      });
+      return { ...block, rows: newRows };
+    });
+    onContentChange(newContent);
+  };
+
+  const handleAddRow = (blockIdx) => {
+    if (!onContentChange || !content) return;
+    const newContent = content.map((block, bIdx) => {
+      if (bIdx !== blockIdx) return block;
+      const newRow = Array(block.headers.length).fill('');
+      if (block.headers[0]?.toLowerCase().includes('s') || block.headers[0]?.toLowerCase().includes('sl')) {
+        newRow[0] = (block.rows.length + 1).toString();
+      }
+      return { ...block, rows: [...block.rows, newRow] };
+    });
+    onContentChange(newContent);
+  };
+
+  const handleDeleteRow = (blockIdx, rowIdx) => {
+    if (!onContentChange || !content) return;
+    const newContent = content.map((block, bIdx) => {
+      if (bIdx !== blockIdx) return block;
+      return { ...block, rows: block.rows.filter((_, rIdx) => rIdx !== rowIdx) };
+    });
+    onContentChange(newContent);
+  };
+
   const { hospitalName, doctorName, address, date, referenceNumber, discount, payment, gst, validity, warranty, make, delivery, subject, lineSpacing = 'standard' } = data;
   const { 
     name: companyName, 
@@ -210,95 +297,262 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
                       ))}
                     </div>
                   ) : (
-                    <table className="w-full border-collapse mt-2" style={{ border: '1px solid #111' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#f4f4f6' }}>
-                          {block.headers.map((h, hi) => (
-                            <th key={hi} className="py-1 px-2 text-center font-bold text-[10pt] uppercase" style={{ border: '1px solid #111' }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {block.rows.map((row, ri) => (
-                          <tr key={ri}>
-                            {row.map((cell, ci) => {
-                              const headerName = (block.headers[ci] || '').toLowerCase();
-                              const isItemCol = headerName.includes('item') || headerName.includes('desc') || headerName.includes('description');
-                              const isHSNCol = headerName.includes('hsn');
-                              const isAmountCol = headerName.includes('amount') || headerName.includes('rate') || headerName.includes('price') || headerName.includes('qty') || headerName.includes('quantity');
-                              const isLong = (cell || '').toString().length > 30 || (cell || '').toString().includes('\n');
-                              const lines = (cell || '').toString().split('\n');
-                              const hasBullets = lines.some(line => line.trim().startsWith('-') || line.trim().startsWith('*'));
-                              
-                              let alignClass = 'text-center';
-                              if (isItemCol || isLong || hasBullets) alignClass = 'text-left';
-                              else if (isAmountCol) alignClass = 'text-right';
-                              else if (isHSNCol) alignClass = 'text-center';
-
-                              // Auto-format number cells if they look like numbers
-                              let displayValue = cell;
-                              if (isAmountCol && !isNaN(parseFloat(cell)) && isFinite(cell)) {
-                                displayValue = parseFloat(cell).toFixed(2);
-                              }
-
-                              return (
-                                <td 
-                                  key={ci} 
-                                  className={`${spacing.tablePy} ${spacing.tablePx} ${spacing.fontSize} ${spacing.leading} ${alignClass}`} 
-                                  style={{ border: '1px solid #111', verticalAlign: 'top' }}
-                                >
-                                  {isAmountCol ? displayValue : lines.map((line, li) => {
-                                    const isBullet = line.trim().startsWith('-') || line.trim().startsWith('*');
-                                    // For HSN, we want to keep lines centered but allow multi-line matching
-                                    return (
-                                      <div key={li} className={`${isBullet ? 'pl-3 relative' : ''} ${isHSNCol ? 'text-center' : ''}`}>
-                                        {isBullet && <span className="absolute left-0">•</span>}
-                                        {isBullet ? line.trim().substring(1).trim() : line}
-                                      </div>
-                                    );
-                                  })}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                        {(() => {
-                          const headers = block.headers.map(h => h.toLowerCase());
-                          const amountIdx = headers.findIndex(h => h === 'amount' || h === 'total');
-                          if (amountIdx === -1) return null;
-                          const subtotal = block.rows.reduce((sum, row) => sum + (parseFloat(row[amountIdx]) || 0), 0);
-                          if (subtotal === 0) return null;
-                          const gstStr = data.gst ? data.gst.toString() : '0';
-                          const gstMatch = gstStr.match(/\d+(\.\d+)?/);
-                          const gstPercent = gstMatch ? parseFloat(gstMatch[0]) : 0;
-                          const gstAmount = subtotal * (gstPercent / 100);
-                          const roundedTotal = Math.round(subtotal + gstAmount);
-                          return (
+                    <div className="relative group/tbl my-2">
+                      {/* Pencil Edit Icon Badge - Filtered from PDF */}
+                      {(!isPdfPrinting && onContentChange) && (
+                        <div className="no-pdf absolute -top-4 right-0 z-30 flex items-center gap-1.5 bg-slate-900/95 text-white backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold shadow-lg transition-all border border-slate-700 select-none">
+                          <Pencil size={11} className={editingBlockIdx === idx ? "text-teal-400 animate-pulse" : "text-amber-400"} />
+                          
+                          {editingBlockIdx === idx ? (
                             <>
-                              <tr>
-                                <td colSpan={block.headers.length - 1} className="py-1 px-2 text-right font-bold text-[10pt]" style={{ border: '1px solid #111' }}>Subtotal</td>
-                                <td className="py-1 px-2 text-right font-bold text-[10pt]" style={{ border: '1px solid #111' }}>{subtotal.toFixed(2)}</td>
-                              </tr>
-                              {gstPercent > 0 && (
-                                <tr>
-                                  <td colSpan={block.headers.length - 1} className="py-1 px-2 text-right font-bold text-[10pt]" style={{ border: '1px solid #111' }}>GST ({gstStr})</td>
-                                  <td className="py-1 px-2 text-right font-bold text-[10pt]" style={{ border: '1px solid #111' }}>{gstAmount.toFixed(2)}</td>
-                                </tr>
-                              )}
-                              <tr>
-                                <td colSpan={block.headers.length - 1} className="py-1 px-2 text-right font-bold text-[10pt]" style={{ border: '1px solid #111', backgroundColor: '#f4f4f6' }}>Grand Total</td>
-                                <td className="py-1 px-2 text-right font-bold text-[10pt]" style={{ border: '1px solid #111', backgroundColor: '#f4f4f6' }}>{roundedTotal.toFixed(2)}</td>
-                              </tr>
-                              <tr>
-                                <td colSpan={block.headers.length} className="py-1 px-2 text-left font-bold text-[10pt] italic" style={{ border: '1px solid #111' }}>
-                                  Amount in Words: Rupees {numberToWords(roundedTotal)}
-                                </td>
-                              </tr>
+                              <span className="text-teal-300 font-extrabold mr-1">Editing Table</span>
+                              
+                              {/* Add Row Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleAddRow(idx)}
+                                className="flex items-center gap-1 px-2 py-0.5 bg-teal-600 hover:bg-teal-700 text-white rounded-full text-[9.5px] font-bold transition-all cursor-pointer shadow-2xs"
+                                title="Add Row"
+                              >
+                                <Plus size={11} /> Add Row
+                              </button>
+
+                              {/* Add Column Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const colName = prompt('Enter header name for the new column (e.g. HSN, Unit, Rate):');
+                                  if (colName) {
+                                    const newContent = content.map((b, bIdx) => {
+                                      if (bIdx !== idx) return b;
+                                      const newHeaders = [...b.headers, colName];
+                                      const newRows = b.rows.map(r => [...r, '']);
+                                      return { ...b, headers: newHeaders, rows: newRows };
+                                    });
+                                    onContentChange(newContent);
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-700 rounded-full text-[9.5px] font-bold transition-all cursor-pointer shadow-2xs"
+                                title="Add Column"
+                              >
+                                <Plus size={11} /> Add Column
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setEditingBlockIdx(null)}
+                                className="ml-1.5 px-2.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-[9.5px] font-extrabold uppercase transition-all cursor-pointer shadow-2xs"
+                              >
+                                Done
+                              </button>
                             </>
-                          );
-                        })()}
-                      </tbody>
-                    </table>
+                          ) : (
+                            <>
+                              <span className="text-slate-200">Edit Table</span>
+                              <button
+                                type="button"
+                                onClick={() => setEditingBlockIdx(idx)}
+                                className="ml-1 px-2.5 py-0.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-full text-[9.5px] font-extrabold uppercase transition-all cursor-pointer shadow-2xs"
+                              >
+                                Edit
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      <table className="w-full border-collapse text-[10pt]" style={{ border: '1.5px solid #0f172a' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: '#f1f5f9' }}>
+                            {block.headers.map((h, hi) => (
+                              <th 
+                                key={hi} 
+                                className="py-1.5 px-2 text-center font-extrabold text-[9.5pt] uppercase tracking-wider text-slate-900 relative group/col" 
+                                style={{ 
+                                  border: '1.5px solid #0f172a',
+                                  width: block.colWidths?.[hi] ? `${block.colWidths[hi]}%` : undefined
+                                }}
+                              >
+                                {(!isPdfPrinting && editingBlockIdx === idx) ? (
+                                  <div className="flex flex-col gap-1 w-full">
+                                    <div className="flex items-center justify-between gap-1 w-full">
+                                      <input
+                                        type="text"
+                                        value={h}
+                                        onChange={(e) => handleHeaderChange(idx, hi, e.target.value)}
+                                        className="w-full bg-transparent text-center font-extrabold text-[9.5pt] uppercase outline-none focus:bg-teal-50/60 rounded px-0.5 text-slate-900"
+                                        placeholder="COL..."
+                                      />
+                                      {block.headers.length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteColumn(idx, hi)}
+                                          className="no-pdf w-4 h-4 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center shrink-0 shadow-2xs cursor-pointer transition-all"
+                                          title="Delete Column"
+                                        >
+                                          <Trash2 size={9} />
+                                        </button>
+                                      )}
+                                    </div>
+                                    {/* Column Width Adjuster Controls */}
+                                    <div className="no-pdf flex items-center justify-center gap-1 text-[8.5pt] bg-slate-200/80 rounded py-0.5 px-1 select-none">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleColWidthChange(idx, hi, -3);
+                                        }}
+                                        className="w-4 h-4 bg-white hover:bg-slate-300 text-slate-900 font-extrabold rounded flex items-center justify-center cursor-pointer shadow-2xs text-[10px]"
+                                        title="Narrower Column Width"
+                                      >
+                                        ‹
+                                      </button>
+                                      <span className="text-[8pt] font-bold font-mono text-slate-700 min-w-[28px] text-center">
+                                        {block.colWidths?.[hi] ? `${block.colWidths[hi]}%` : 'Auto'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleColWidthChange(idx, hi, 3);
+                                        }}
+                                        className="w-4 h-4 bg-white hover:bg-slate-300 text-slate-900 font-extrabold rounded flex items-center justify-center cursor-pointer shadow-2xs text-[10px]"
+                                        title="Wider Column Width"
+                                      >
+                                        ›
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  h
+                                )}
+                              </th>
+                            ))}
+                            {(!isPdfPrinting && editingBlockIdx === idx) && <th className="no-pdf w-7 bg-slate-200 border border-slate-900" />}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {block.rows.map((row, ri) => (
+                            <tr key={ri} className="hover:bg-slate-50/50">
+                              {row.map((cell, ci) => {
+                                const headerName = (block.headers[ci] || '').toLowerCase();
+                                const isItemCol = headerName.includes('item') || headerName.includes('desc') || headerName.includes('description') || headerName.includes('particular');
+                                const isHSNCol = headerName.includes('hsn');
+                                const isAmountCol = headerName.includes('amount') || headerName.includes('rate') || headerName.includes('price') || headerName.includes('qty') || headerName.includes('quantity');
+                                const isLong = (cell || '').toString().length > 30 || (cell || '').toString().includes('\n');
+                                const lines = (cell || '').toString().split('\n');
+                                const hasBullets = lines.some(line => line.trim().startsWith('-') || line.trim().startsWith('*'));
+                                
+                                let alignClass = 'text-center';
+                                if (isItemCol || isLong || hasBullets) alignClass = 'text-left';
+                                else if (isAmountCol) alignClass = 'text-right';
+                                else if (isHSNCol) alignClass = 'text-center';
+
+                                // Auto-format number cells if they look like numbers
+                                let displayValue = cell;
+                                if (isAmountCol && !isNaN(parseFloat(cell)) && isFinite(cell)) {
+                                  displayValue = parseFloat(cell).toFixed(2);
+                                }
+
+                                return (
+                                  <td 
+                                    key={ci} 
+                                    className={`${spacing.tablePy} ${spacing.tablePx} ${spacing.fontSize} ${spacing.leading} ${alignClass}`} 
+                                    style={{ 
+                                      border: '1px solid #0f172a', 
+                                      verticalAlign: 'top',
+                                      width: block.colWidths?.[ci] ? `${block.colWidths[ci]}%` : undefined
+                                    }}
+                                  >
+                                    {(!isPdfPrinting && editingBlockIdx === idx) ? (
+                                      <textarea
+                                        value={cell}
+                                        onChange={(e) => handleCellChange(idx, ri, ci, e.target.value)}
+                                        rows={cell.toString().split('\n').length || 1}
+                                        className={`w-full bg-transparent border-none outline-none p-0 text-slate-900 font-inherit text-inherit ${alignClass} resize-none overflow-hidden focus:bg-teal-50/40 rounded transition-all`}
+                                        style={{ minHeight: '1.3em' }}
+                                      />
+                                    ) : (
+                                      isAmountCol ? displayValue : lines.map((line, li) => {
+                                        const isBullet = line.trim().startsWith('-') || line.trim().startsWith('*');
+                                        return (
+                                          <div key={li} className={`${isBullet ? 'pl-3 relative' : ''} ${isHSNCol ? 'text-center' : ''}`}>
+                                            {isBullet && <span className="absolute left-0">•</span>}
+                                            {isBullet ? line.trim().substring(1).trim() : line}
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </td>
+                                );
+                              })}
+                              {(!isPdfPrinting && editingBlockIdx === idx) && (
+                                <td className="no-pdf p-1 text-center align-middle border border-slate-900 bg-red-50">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRow(idx, ri)}
+                                    className="w-5 h-5 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center mx-auto shadow-2xs transition-all cursor-pointer"
+                                    title="Delete Row"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                          {/* Quick Add Row Button in Editing Mode */}
+                          {(!isPdfPrinting && editingBlockIdx === idx) && (
+                            <tr className="no-pdf bg-teal-50/50">
+                              <td colSpan={block.headers.length + 1} className="p-1.5 text-center border border-slate-900">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddRow(idx)}
+                                  className="flex items-center gap-1.5 mx-auto px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-full text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
+                                >
+                                  <Plus size={12} /> Add Row to Table
+                                </button>
+                              </td>
+                            </tr>
+                          )}
+                          {(() => {
+                            const headers = block.headers.map(h => h.toLowerCase());
+                            const amountIdx = headers.findIndex(h => h === 'amount' || h === 'total');
+                            if (amountIdx === -1) return null;
+                            const subtotal = block.rows.reduce((sum, row) => sum + (parseFloat(row[amountIdx]) || 0), 0);
+                            if (subtotal === 0) return null;
+                            const gstStr = data.gst ? data.gst.toString() : '0';
+                            const gstMatch = gstStr.match(/\d+(\.\d+)?/);
+                            const gstPercent = gstMatch ? parseFloat(gstMatch[0]) : 0;
+                            const gstAmount = subtotal * (gstPercent / 100);
+                            const roundedTotal = Math.round(subtotal + gstAmount);
+                            const extraColCount = (!isPdfPrinting && editingBlockIdx === idx) ? 1 : 0;
+                            return (
+                              <>
+                                <tr>
+                                  <td colSpan={block.headers.length - 1 + extraColCount} className="py-1.5 px-2 text-right font-extrabold text-[10pt]" style={{ border: '1px solid #0f172a' }}>Subtotal</td>
+                                  <td className="py-1.5 px-2 text-right font-extrabold text-[10pt]" style={{ border: '1px solid #0f172a' }}>{subtotal.toFixed(2)}</td>
+                                </tr>
+                                {gstPercent > 0 && (
+                                  <tr>
+                                    <td colSpan={block.headers.length - 1 + extraColCount} className="py-1.5 px-2 text-right font-bold text-[10pt]" style={{ border: '1px solid #0f172a' }}>GST ({gstStr})</td>
+                                    <td className="py-1.5 px-2 text-right font-bold text-[10pt]" style={{ border: '1px solid #0f172a' }}>{gstAmount.toFixed(2)}</td>
+                                  </tr>
+                                )}
+                                <tr>
+                                  <td colSpan={block.headers.length - 1 + extraColCount} className="py-1.5 px-2 text-right font-extrabold text-[10pt] uppercase tracking-wider" style={{ border: '1.5px solid #0f172a', backgroundColor: '#f1f5f9' }}>Grand Total</td>
+                                  <td className="py-1.5 px-2 text-right font-extrabold text-[10pt]" style={{ border: '1.5px solid #0f172a', backgroundColor: '#f1f5f9' }}>{roundedTotal.toFixed(2)}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={block.headers.length + extraColCount} className="py-1.5 px-2 text-left font-bold text-[10pt] italic" style={{ border: '1.5px solid #0f172a' }}>
+                                    Amount in Words: Rupees {numberToWords(roundedTotal)}
+                                  </td>
+                                </tr>
+                              </>
+                            );
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               ))

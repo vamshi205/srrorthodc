@@ -54,7 +54,8 @@ import {
   CheckSquare,
   Menu,
   RefreshCw,
-  ChevronRight
+  ChevronRight,
+  RotateCcw
 } from 'lucide-react';
 
 function App() {
@@ -456,6 +457,18 @@ function App() {
 
 
   const [emailHistory, setEmailHistory] = useState([]);
+  const [resendEmailForm, setResendEmailForm] = useState(null);
+
+  const handleResendEmail = (item) => {
+    setResendEmailForm({
+      to: item.to || '',
+      subject: item.subject || 'Documents from Sri Raja Rajeshwari Ortho Plus',
+      body: item.body || '',
+      selectedDriveFiles: item.selectedDriveFiles || []
+    });
+    setView('emailer');
+    if (showAlert) showAlert('Resend Email', `Pre-filled details for ${item.to}. Review and click Send Email.`, 'success');
+  };
   
   // Background Pre-fetching removed to save bandwidth (Egress costs)
 
@@ -724,7 +737,7 @@ function App() {
       setIsGenerating(true);
       try {
         const element = document.getElementById('history-quotation-template');
-        const dataUrl = await toJpeg(element, { quality: 0.95, backgroundColor: '#ffffff', pixelRatio: 1.5 });
+        const dataUrl = await toJpeg(element, { quality: 0.95, backgroundColor: '#ffffff', pixelRatio: 1.5, filter: (node) => !node.classList?.contains('no-pdf') });
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         pdf.addImage(dataUrl, 'JPEG', 0, 0, 210, 297);
         let finalPdfBytes = pdf.output('arraybuffer');
@@ -759,6 +772,7 @@ function App() {
           .replace(/[/\\?%*:|"<>]/g, '')
           .trim();
         const fileName = `${rawSubject || 'Quotation'}.pdf`;
+        const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
         const blobUrl = URL.createObjectURL(blob);
 
         if (regeneratingItem._viewMode) {
@@ -816,21 +830,31 @@ function App() {
           const dynSubject = (regeneratingItem.formData?.subject || 'Quotation for Orthopedic Implants & instruments').replace(/^Sub\s*:\s*/i, '').trim();
           const dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for your reference.\n\nQuotation Details:\n• Reference No: ${regeneratingItem.formData?.referenceNumber}\n• Subject: ${regeneratingItem.formData?.subject || 'Quotation for Orthopedic Implants & instruments'}\n• Date: ${regeneratingItem.formData?.date}\n• Recipient: ${itemRecipient}\n\nIf you have any questions or require further information, please feel free to reach out.\n\nBest regards,\nSri Raja Rajeshwari Ortho Plus\nPhone: +91 99897 44433`;
 
-          setEmailForm(prev => ({
-            ...prev,
+          const generatedFile = {
+            id: 'gen-' + Date.now(),
+            name: fileName,
+            fileName: fileName,
+            data: blobUrl,
+            isGenerated: true
+          };
+
+          const priceListObj = regeneratingItem.formData?.priceListId 
+            ? priceLists.find(pl => pl.id === regeneratingItem.formData.priceListId)
+            : null;
+
+          const initialSelectedFiles = [generatedFile];
+          if (priceListObj) {
+            initialSelectedFiles.push(priceListObj);
+          }
+
+          setResendEmailForm({
+            to: regeneratingItem.lastEmailedTo || regeneratingItem.formData?.email || '',
             subject: dynSubject,
             body: dynBody,
-            selectedDriveFiles: [
-              ...prev.selectedDriveFiles.filter(f => !f.isGenerated),
-              {
-                id: 'history-' + Date.now(),
-                fileName: fileName,
-                data: blobUrl,
-                isGenerated: true
-              }
-            ]
-          }));
-          setShowEmailComposer(true);
+            selectedDriveFiles: initialSelectedFiles
+          });
+          setView('emailer');
+          if (showAlert) showAlert('Resend Quotation', `Loaded quotation PDF for ${itemRecipient} into email composer.`, 'success');
         } else {
           const link = document.createElement('a');
           link.href = blobUrl;
@@ -1099,7 +1123,7 @@ function App() {
     setIsGenerating(true);
     try {
       const element = document.getElementById('quotation-template');
-      const dataUrl = await toJpeg(element, { quality: 0.95, backgroundColor: '#ffffff', pixelRatio: 1.5 });
+      const dataUrl = await toJpeg(element, { quality: 0.95, backgroundColor: '#ffffff', pixelRatio: 1.5, filter: (node) => !node.classList?.contains('no-pdf') });
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       pdf.addImage(dataUrl, 'JPEG', 0, 0, 210, 297);
       let finalPdfBytes = pdf.output('arraybuffer');
@@ -2344,10 +2368,10 @@ function App() {
             {/* Right Live Preview Area (Desktop Only, Hidden on Mobile) */}
             {(showPreview && !isDraftingMaximized) && (
               <div className="hidden lg:flex flex-1 bg-[var(--apple-bg)] overflow-y-auto p-2 sm:p-4 relative flex-col items-center">
-                
+
                 <div className="flex flex-col items-center gap-8 w-full flex-1 pb-16">
                   <div className="origin-top transition-transform duration-200">
-                    <QuotationTemplate id="quotation-template" data={formData} content={draftContent} company={companyData} forceScale={docZoom} />
+                    <QuotationTemplate id="quotation-template" data={formData} content={draftContent} company={companyData} forceScale={docZoom} onContentChange={setDraftContent} isPdfPrinting={isGenerating} />
                   </div>
 
                   {formData.priceListId && (
@@ -2520,7 +2544,7 @@ function App() {
                                         </button>
                                         <button
                                           onClick={() => setRegeneratingItem(item)}
-                                          disabled={isGenerating || regeneratingItem}
+                                          disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
                                           className="w-9 h-9 flex items-center justify-center bg-white border border-[var(--apple-gray-2)] rounded-full text-[var(--emerald)] hover:border-[var(--emerald)] hover:bg-[var(--emerald-light)] transition-all disabled:opacity-50 shadow-sm"
                                           title="Download PDF"
                                         >
@@ -2529,11 +2553,12 @@ function App() {
 
                                         <button 
                                           onClick={() => setRegeneratingItem({ ...item, _emailMode: true })}
-                                          disabled={isGenerating || regeneratingItem}
-                                          className="w-9 h-9 flex items-center justify-center bg-blue-50 border border-blue-100 rounded-full text-blue-600 hover:bg-blue-100 transition-all disabled:opacity-50 shadow-sm"
-                                          title="Email Quotation"
+                                          disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 font-bold text-[11.5px] transition-all disabled:opacity-50 shadow-2xs cursor-pointer"
+                                          title="Resend email for this quotation"
                                         >
-                                          <Mail size={16} />
+                                          <RotateCcw size={13} />
+                                          <span>Resend</span>
                                         </button>
                                         
                                         {isManagementActive && (
@@ -2602,17 +2627,19 @@ function App() {
                             </button>
                             <button 
                               onClick={() => setRegeneratingItem(item)}
-                              disabled={isGenerating || regeneratingItem}
+                              disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
                               className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--emerald)] active:scale-[0.95] transition-all disabled:opacity-50"
                             >
                               <Download size={18} />
                             </button>
                             <button 
                               onClick={() => setRegeneratingItem({ ...item, _emailMode: true })}
-                              disabled={isGenerating || regeneratingItem}
-                              className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-50 rounded-xl text-blue-600 active:scale-[0.95] transition-all disabled:opacity-50"
+                              disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-teal-50 border border-teal-200 rounded-xl text-teal-700 font-bold text-[12px] active:scale-[0.95] transition-all disabled:opacity-50 cursor-pointer"
+                              title="Resend Email"
                             >
-                              <Mail size={18} />
+                              <RotateCcw size={16} />
+                              <span>Resend</span>
                             </button>
                             {isManagementActive && (
                               <button 
@@ -2641,6 +2668,7 @@ function App() {
         {view === 'emailHistory' && (
           <EmailHistoryView 
             history={emailHistory} 
+            onResend={handleResendEmail}
             onDelete={async (id) => {
               confirmDelete(async () => {
                 setEmailHistory(prev => prev.filter(h => h.id !== id));
@@ -3492,9 +3520,11 @@ function App() {
               priceLists={priceLists} 
               emailHistory={emailHistory}
               quotationHistory={quotationHistory}
+              initialForm={resendEmailForm}
               onEmailSent={async (item) => {
                 setEmailHistory(prev => [item, ...prev]);
                 await saveEmailHistoryItem(item);
+                setResendEmailForm(null);
               }}
               showAlert={showAlert}
               showConfirm={showConfirm}
@@ -3539,7 +3569,7 @@ function App() {
 
       {/* HIDDEN REGENERATION TEMPLATE */}
       {regeneratingItem && (
-        <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+        <div style={{ position: 'fixed', left: '-9999px', top: 0, width: '210mm', backgroundColor: '#ffffff' }}>
           <QuotationTemplate id="history-quotation-template" data={regeneratingItem.formData} content={regeneratingItem.content || []} company={companyData} />
         </div>
       )}
@@ -3706,7 +3736,7 @@ function App() {
 
           {/* Main Mobile Preview Area with Pan & Scroll Support */}
           <main className="flex-1 overflow-auto p-3 sm:p-6 bg-slate-950 flex justify-center items-start w-full">
-            <QuotationTemplate id="mobile-quotation-template" data={formData} content={draftContent} company={companyData} forceScale={docZoom} />
+            <QuotationTemplate id="mobile-quotation-template" data={formData} content={draftContent} company={companyData} forceScale={docZoom} onContentChange={setDraftContent} isPdfPrinting={isGenerating} />
           </main>
 
           {/* Mobile Bottom Bar with Zoom Slider + Submit Button */}

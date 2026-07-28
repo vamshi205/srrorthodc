@@ -29,6 +29,17 @@ const EmailerView = ({
     };
   });
 
+  useEffect(() => {
+    if (initialForm) {
+      setEmailForm({
+        to: initialForm.to || '',
+        subject: initialForm.subject || 'Documents from Sri Raja Rajeshwari Ortho Plus',
+        body: initialForm.body || '',
+        selectedDriveFiles: initialForm.selectedDriveFiles || []
+      });
+    }
+  }, [initialForm]);
+
   const [activeTab, setActiveTab] = useState('srr');
   const [searchQuery, setSearchQuery] = useState('');
   const [showRecs, setShowRecs] = useState(false);
