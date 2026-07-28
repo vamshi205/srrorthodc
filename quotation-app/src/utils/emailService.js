@@ -68,12 +68,8 @@ export const fileToBase64 = async (url) => {
  * @returns {Promise<{success: boolean, message?: string}>}
  */
 export const sendEmailWithResend = async ({ to, subject, body, files = [] }) => {
-  const proxyUrl = import.meta.env.VITE_RESEND_PROXY_URL;
+  const proxyUrl = import.meta.env.VITE_RESEND_PROXY_URL || '/api/send-email';
   const fromEmail = import.meta.env.VITE_EMAIL_FROM || 'Sri Raja Rajeshwari Ortho Plus <onboarding@resend.dev>';
-
-  if (!proxyUrl) {
-    return { success: false, message: 'Resend Proxy URL is missing. Please add VITE_RESEND_PROXY_URL to .env.local' };
-  }
 
   try {
     // Convert all attachments to Base64
@@ -106,11 +102,14 @@ export const sendEmailWithResend = async ({ to, subject, body, files = [] }) => 
       attachments: validAttachments
     };
 
-    console.log('Dispatching to Resend Proxy with', validAttachments.length, 'attachments');
+    console.log('Dispatching to Resend endpoint with', validAttachments.length, 'attachments');
 
-    // We send the request to the PROXY instead of direct Resend to avoid CORS
+    // Send request to Vercel Serverless Function or custom Proxy
     const response = await fetch(proxyUrl, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify(payload)
     });
 

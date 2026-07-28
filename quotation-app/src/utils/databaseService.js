@@ -96,90 +96,130 @@ export const saveEmailHistoryItem = async (item) => {
  * Loads all data from Firestore collections.
  */
 export const loadDatabase = async () => {
+  let companyData = null;
+  let templates = [];
+  let history = [];
+  let emailHistory = [];
+  let priceLists = [];
+  let driveFilesData = [];
+  let allFolders = [];
+
+  // Load Company Data
   try {
-    // Load Company Data
     const companyRef = doc(db, 'settings', 'company');
     const companySnap = await getDoc(companyRef);
-    const companyData = companySnap.exists() ? companySnap.data() : null;
-
-    // Load Templates
-    const templatesSnap = await getDocs(collection(db, 'templates'));
-    const templates = templatesSnap.docs.map(doc => {
-      const data = doc.data();
-      try {
-        // Unpack sanitized content
-        return { ...data, content: typeof data.content === 'string' ? JSON.parse(data.content) : (data.content || []) };
-      } catch (e) {
-        return data;
-      }
-    });
-
-    // Load History (Limited to recent 100 for performance)
-    const historyQuery = query(collection(db, 'history'), orderBy('id', 'desc'), limit(100));
-    const historySnap = await getDocs(historyQuery);
-    const history = historySnap.docs.map(doc => {
-      const data = doc.data();
-      try {
-        // Unpack sanitized content
-        return { ...data, content: typeof data.content === 'string' ? JSON.parse(data.content) : (data.content || []) };
-      } catch (e) {
-        return data;
-      }
-    });
-
-    // Load Email History
-    const emailHistoryQuery = query(collection(db, 'emailHistory'), orderBy('sentAt', 'desc'), limit(50));
-    const emailHistorySnap = await getDocs(emailHistoryQuery);
-    const emailHistory = emailHistorySnap.docs.map(doc => doc.data());
-
-    // Load Price Lists
-    const plSnap = await getDocs(collection(db, 'priceLists'));
-    const priceLists = plSnap.docs.map(doc => doc.data());
-
-    // Load Drive Files
-    const dfSnap = await getDocs(collection(db, 'driveFiles'));
-    const driveFilesData = dfSnap.docs.map(doc => doc.data());
-    
-    // Reconstruct driveFiles structure (srr/vendor/personal)
-    const srr = driveFilesData.filter(f => f.type === 'drive_srr');
-    const personal = driveFilesData.filter(f => f.type === 'drive_personal');
-    
-    const vendorMap = {};
-    const personalMap = {};
-    
-    driveFilesData.forEach(file => {
-      if (file.type === 'drive_vendor_files') {
-        if (!vendorMap[file.folderId]) vendorMap[file.folderId] = [];
-        vendorMap[file.folderId].push(file);
-      } else if (file.type === 'drive_personal_files') {
-        if (!personalMap[file.folderId]) personalMap[file.folderId] = [];
-        personalMap[file.folderId].push(file);
-      }
-    });
-
-    const foldersSnap = await getDocs(collection(db, 'driveFolders'));
-    const allFolders = foldersSnap.docs.map(doc => doc.data());
-    
-    const vendorFolders = allFolders
-      .filter(f => f.type === 'drive_folders' || !f.type) 
-      .map(folder => ({ ...folder, files: vendorMap[folder.id] || [] }));
-      
-    const personalFolders = allFolders
-      .filter(f => f.type === 'drive_personal_folders')
-      .map(folder => ({ ...folder, files: personalMap[folder.id] || [] }));
-
-    return {
-      companyData,
-      templates,
-      history,
-      emailHistory,
-      priceLists,
-      driveFiles: { srr, vendor: vendorFolders, personal, personalFolders }
-    };
-  } catch (err) {
-    console.error('Firestore Load Error:', err);
-    return null;
+    companyData = companySnap.exists() ? companySnap.data() : null;
+  } catch (e) {
+    console.error('Error loading company data:', e);
   }
+
+  // Load Templates
+  try {
+    const templatesSnap = await getDocs(collection(db, 'templates'));
+    templates = templatesSnap.docs.map(doc => {
+      const data = doc.data();
+      try {
+        return { ...data, content: typeof data.content === 'string' ? JSON.parse(data.content) : (data.content || []) };
+      } catch (e) {
+        return data;
+      }
+    });
+  } catch (e) {
+    console.error('Error loading templates:', e);
+  }
+
+  // Load History (Try with orderBy, fallback to plain getDocs)
+  try {
+    let historySnap;
+    try {
+      const historyQuery = query(collection(db, 'history'), orderBy('id', 'desc'), limit(100));
+      historySnap = await getDocs(historyQuery);
+    } catch (err) {
+      historySnap = await getDocs(collection(db, 'history'));
+    }
+    history = historySnap.docs.map(doc => {
+      const data = doc.data();
+      try {
+        return { ...data, content: typeof data.content === 'string' ? JSON.parse(data.content) : (data.content || []) };
+      } catch (e) {
+        return data;
+      }
+    });
+  } catch (e) {
+    console.error('Error loading history:', e);
+  }
+
+  // Load Email History (Try with orderBy, fallback to plain getDocs)
+  try {
+    let emailHistorySnap;
+    try {
+      const emailHistoryQuery = query(collection(db, 'emailHistory'), orderBy('sentAt', 'desc'), limit(50));
+      emailHistorySnap = await getDocs(emailHistoryQuery);
+    } catch (err) {
+      emailHistorySnap = await getDocs(collection(db, 'emailHistory'));
+    }
+    emailHistory = emailHistorySnap.docs.map(doc => doc.data());
+  } catch (e) {
+    console.error('Error loading email history:', e);
+  }
+
+  // Load Price Lists
+  try {
+    const plSnap = await getDocs(collection(db, 'priceLists'));
+    priceLists = plSnap.docs.map(doc => doc.data());
+  } catch (e) {
+    console.error('Error loading price lists:', e);
+  }
+
+  // Load Drive Files
+  try {
+    const dfSnap = await getDocs(collection(db, 'driveFiles'));
+    driveFilesData = dfSnap.docs.map(doc => doc.data());
+  } catch (e) {
+    console.error('Error loading drive files:', e);
+  }
+
+  // Load Drive Folders
+  try {
+    const foldersSnap = await getDocs(collection(db, 'driveFolders'));
+    allFolders = foldersSnap.docs.map(doc => doc.data());
+  } catch (e) {
+    console.error('Error loading drive folders:', e);
+  }
+
+  // Reconstruct driveFiles structure
+  const srr = driveFilesData.filter(f => f.type === 'drive_srr');
+  const personal = driveFilesData.filter(f => f.type === 'drive_personal');
+  
+  const vendorMap = {};
+  const personalMap = {};
+  
+  driveFilesData.forEach(file => {
+    if (file.type === 'drive_vendor_files') {
+      if (!vendorMap[file.folderId]) vendorMap[file.folderId] = [];
+      vendorMap[file.folderId].push(file);
+    } else if (file.type === 'drive_personal_files') {
+      if (!personalMap[file.folderId]) personalMap[file.folderId] = [];
+      personalMap[file.folderId].push(file);
+    }
+  });
+
+  const vendorFolders = allFolders
+    .filter(f => f.type === 'drive_folders' || !f.type) 
+    .map(folder => ({ ...folder, files: vendorMap[folder.id] || [] }));
+    
+  const personalFolders = allFolders
+    .filter(f => f.type === 'drive_personal_folders')
+    .map(folder => ({ ...folder, files: personalMap[folder.id] || [] }));
+
+  return {
+    companyData,
+    templates,
+    history,
+    emailHistory,
+    priceLists,
+    driveFiles: { srr, vendor: vendorFolders, personal, personalFolders }
+  };
 };
 
 // Legacy support

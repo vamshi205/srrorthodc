@@ -56,9 +56,21 @@ import {
 } from 'lucide-react';
 
 function App() {
-  const [view, setView] = useState('library');
-  const [user, setUser] = useState(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isAdminOnlyMode] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('adminOnly') === 'true';
+  });
+
+  const [view, setView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('adminOnly') === 'true' || params.get('view') === 'settings') {
+      return 'settings';
+    }
+    return 'library';
+  });
+  const DEFAULT_USER = { uid: 'srr-ortho-user', email: 'srrorthoplus999@gmail.com' };
+  const [user, setUser] = useState(DEFAULT_USER);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [syncStatus, setSyncStatus] = useState('saved');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -257,7 +269,7 @@ function App() {
   const [isDraftingMaximized, setIsDraftingMaximized] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [isManagementActive, setIsManagementActive] = useState(false);
+  const [isManagementActive, setIsManagementActive] = useState(true);
   const ADMIN_PASSWORD = "2025";
 
   useEffect(() => {
@@ -267,20 +279,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!hasFirebaseConfig) {
-      setIsAuthLoading(false);
-      return;
+    // Auto-load Firestore database data on startup
+    refreshData(DEFAULT_USER);
+
+    if (hasFirebaseConfig) {
+      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        if (currentUser) {
+          setUser(currentUser);
+          await refreshData(currentUser);
+        }
+      });
+      return () => unsubscribe();
     }
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        await refreshData(currentUser);
-      } else {
-        setUser(currentUser);
-      }
-      setIsAuthLoading(false);
-    });
-    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -306,8 +316,7 @@ function App() {
     }
   }, [previewingItem, priceLists]);
 
-  const refreshData = async (currentUser = user) => {
-    if (!currentUser) return;
+  const refreshData = async (currentUser = user || DEFAULT_USER) => {
     setSyncStatus('syncing');
     setIsDataLoading(true);
     try {
@@ -318,7 +327,7 @@ function App() {
         // 1. Templates: Always trust the backend.
         if (data.templates && data.templates.length > 0) {
           setTemplates(data.templates);
-        } else if (currentUser) {
+        } else {
           // If Firestore is empty, seed it with a professional default template
           const defaultTemplate = {
             id: 'default-' + Date.now(),
@@ -1227,23 +1236,6 @@ function App() {
     );
   }
 
-  // If Firebase is configured but no user is logged in, OR if Firebase is completely missing its config (in which case Login shows the setup guide)
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[var(--apple-bg)] relative flex items-center justify-center overflow-hidden w-full">
-        {/* Ambient background blobs matching whatsappconnect */}
-        <div className="blob blob-1"></div>
-        <div className="blob blob-2"></div>
-        {authError && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-100 border border-red-200 text-red-700 px-6 py-3 rounded-2xl shadow-lg font-medium text-[14px]">
-            {authError}
-          </div>
-        )}
-        <Login />
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-screen text-[var(--apple-black)] font-sans overflow-hidden bg-[var(--apple-bg)] relative">
       {/* Ambient background blobs matching whatsappconnect */}
@@ -1253,63 +1245,98 @@ function App() {
       {/* ─────────────────────────────────────────
           WORKSPACE SUB-HEADER (CASH INVOICE MATCHING TOOLBAR)
           ───────────────────────────────────────── */}
-      <header className="bg-slate-50/90 backdrop-blur-md border-b border-slate-200 px-6 py-2.5 flex items-center justify-between z-40 shrink-0">
-        <div className="flex items-center gap-3">
-          {/* Ready Status Badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-200 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Ready</span>
+      {!isAdminOnlyMode && (
+        <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 md:px-6 py-2 flex items-center justify-between gap-3 z-40 shrink-0 shadow-sm">
+          {/* Left: Ready Badge & Nav Tabs */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+            {/* Ready Status Badge */}
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-200 shadow-xs shrink-0 mr-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Ready</span>
+            </div>
+
+            <NavItem id="library" label="Library" icon={<LayoutDashboard size={14} />} />
+            <NavItem id="history" label="History" icon={<Database size={14} />} />
+            <NavItem id="drive" label="Drive" icon={<HardDrive size={14} />} />
+            <NavItem id="emailer" label="Emailer" icon={<Mail size={14} />} />
+            <NavItem id="emailHistory" label="Email History" icon={<RefreshCw size={14} />} />
+            <NavItem id="pricelists" label="Price List" icon={<FileText size={14} />} />
           </div>
-        </div>
 
-        {/* Submenu Options matching Cash Invoice Buttons */}
-        <div className="hidden lg:flex items-center gap-2">
-          <NavItem id="library" label="Library" icon={<LayoutDashboard size={14} />} />
-          <NavItem id="history" label="History" icon={<Database size={14} />} />
-          <NavItem id="drive" label="Drive" icon={<HardDrive size={14} />} />
-          <NavItem id="emailer" label="Emailer" icon={<Mail size={14} />} />
-          <NavItem id="emailHistory" label="Email History" icon={<RefreshCw size={14} />} />
-          <NavItem id="pricelists" label="Price List" icon={<FileText size={14} />} />
-          <NavItem id="settings" label="Settings" icon={<Settings size={14} />} />
-        </div>
-
-        {/* Action Button */}
-        <div className="flex items-center gap-3">
-          {isManagementActive && (
-            <button
+          {/* Right: Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Admin Toggle Button */}
+            <button 
               onClick={() => {
-                setEditingTemplate({
-                  id: Date.now().toString(),
-                  name: 'New Template',
-                  description: '',
-                  requiresPriceList: false,
-                  subject: '',
-                  defaultMake: '',
-                  defaultDelivery: '',
-                  defaultDiscount: '',
-                  defaultGst: '',
-                  defaultPayment: '',
-                  defaultValidity: '',
-                  defaultWarranty: '',
-                  content: []
-                });
-                setView('builder');
+                if (isManagementActive) {
+                  setIsManagementActive(false);
+                } else {
+                  showPrompt('Admin Access', 'Enter Admin Password to enable management tools:', (pass) => {
+                    if (pass === ADMIN_PASSWORD) {
+                      setIsManagementActive(true);
+                      showAlert('Access Granted', 'Management tools are now active.', 'success');
+                    } else if (pass !== null) {
+                      showAlert('Access Denied', 'The password you entered is incorrect.', 'error');
+                    }
+                  });
+                }
               }}
-              className="btn-primary !py-1.5 !px-3.5 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                isManagementActive 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs' 
+                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+              }`}
+              title="Toggle Admin Management Tools"
             >
-              <Plus size={14} /> New Template
+              <ShieldCheck size={14} className={isManagementActive ? "text-emerald-600" : "text-slate-500"} />
+              <span className="hidden sm:inline">{isManagementActive ? 'Admin Active' : 'Admin'}</span>
             </button>
-          )}
 
-          {/* Mobile Menu Button */}
-          <button 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-          >
-            {isMobileMenuOpen ? <Plus className="rotate-45" size={20} /> : <Menu size={20} />}
-          </button>
-        </div>
-      </header>
+            <button
+              onClick={() => refreshData()}
+              className="btn-outline !py-1.5 !px-3 text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:bg-slate-100"
+              title="Refresh Database"
+            >
+              <RefreshCw size={13} className={isDataLoading ? "animate-spin text-teal-600" : "text-slate-500"} />
+              <span className="hidden sm:inline">Sync</span>
+            </button>
+
+            {isManagementActive && (
+              <button
+                onClick={() => {
+                  setEditingTemplate({
+                    id: Date.now().toString(),
+                    name: 'New Template',
+                    description: '',
+                    requiresPriceList: false,
+                    subject: '',
+                    defaultMake: '',
+                    defaultDelivery: '',
+                    defaultDiscount: '',
+                    defaultGst: '',
+                    defaultPayment: '',
+                    defaultValidity: '',
+                    defaultWarranty: '',
+                    content: []
+                  });
+                  setView('builder');
+                }}
+                className="btn-primary !py-1.5 !px-3.5 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              >
+                <Plus size={14} /> New Template
+              </button>
+            )}
+
+            {/* Mobile Menu Button */}
+            <button 
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="lg:hidden p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg"
+            >
+              {isMobileMenuOpen ? <Plus className="rotate-45" size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (

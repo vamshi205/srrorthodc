@@ -4,26 +4,19 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: "AIzaSyDzZBf78Qg-iNhcnRF3JcF7obL-lK2KpJE",
+  authDomain: "quotationmakersrr.firebaseapp.com",
+  projectId: "quotationmakersrr",
+  storageBucket: "quotationmakersrr.firebasestorage.app",
+  messagingSenderId: "426066228311",
+  appId: "1:426066228311:web:178f88119ac88818411f12"
 };
 
-const hasFirebaseConfig = !!firebaseConfig.apiKey;
+const hasFirebaseConfig = true;
 
-let app;
-let auth;
-let db;
-let storage;
-
-if (hasFirebaseConfig) {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  storage = getStorage(app);
-}
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
 
 export { auth, db, storage, hasFirebaseConfig };
