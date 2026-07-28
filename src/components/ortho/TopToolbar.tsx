@@ -87,7 +87,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     }`;
 
   return (
-    <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-4">
+    <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-1.5">
       <div className="rounded-2xl border border-white/20 dark:border-white/10 bg-gradient-to-r from-teal-600/90 via-teal-700/90 to-cyan-800/90 dark:from-slate-900/95 dark:via-teal-950/90 dark:to-slate-900/95 backdrop-blur-xl shadow-lg px-4 py-3 flex items-center justify-between gap-4 text-white">
         
         {/* Left Side: Logo & Brand */}

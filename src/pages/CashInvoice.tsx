@@ -100,7 +100,7 @@ export default function CashInvoice() {
         />
         
         {/* Floating dashboard card aligned with the main toolbar */}
-        <div className="mt-4 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[600px]">
+        <div className="mt-0 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[600px]">
           <iframe
             src={iframeSrc}
             title="Cash Invoice Maker"

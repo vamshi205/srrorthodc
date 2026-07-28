@@ -56,7 +56,7 @@ export function ProcedureSelector({
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-border">
+      <div className="flex items-center gap-2.5 overflow-x-auto pb-2 border-b border-border">
         {procedureTypes.map((type) => {
           const typeCount = type === 'All'
             ? procedures.length
@@ -65,7 +65,7 @@ export function ProcedureSelector({
             <button
               key={type}
               onClick={() => setSelectedType(type)}
-              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
                 selectedType === type
                   ? 'bg-teal-600 text-white shadow-md'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'

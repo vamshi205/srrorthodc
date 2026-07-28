@@ -22,6 +22,7 @@ import logoImg from './assets/logo.png';
 import {
   Download,
   Plus,
+  Minus,
   FileText,
   Settings,
   ChevronLeft,
@@ -188,6 +189,7 @@ function App() {
 
   const [formData, setFormData] = useState({
     hospitalName: '',
+    doctorName: '',
     address: '',
     subject: '',
     date: new Date().toLocaleDateString('en-GB'),
@@ -270,7 +272,7 @@ function App() {
   const [isDraftingMaximized, setIsDraftingMaximized] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [isManagementActive, setIsManagementActive] = useState(true);
+  const [isManagementActive, setIsManagementActive] = useState(false);
   const ADMIN_PASSWORD = "2025";
 
   useEffect(() => {
@@ -538,6 +540,8 @@ function App() {
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [templateSearchQuery, setTemplateSearchQuery] = useState('');
+  const [docZoom, setDocZoom] = useState(1.1);
+  const [showMobilePreviewModal, setShowMobilePreviewModal] = useState(false);
   const [openVendorFolder, setOpenVendorFolder] = useState(null);
   const [openPersonalFolder, setOpenPersonalFolder] = useState(null);
   const [showEmailComposer, setShowEmailComposer] = useState(false);
@@ -750,8 +754,11 @@ function App() {
           }
         }
 
-        const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
-        const fileName = `Quotation_${regeneratingItem.formData.hospitalName}.pdf`;
+        const rawSubject = (regeneratingItem.formData?.subject || 'Quotation for Orthopedic Implants')
+          .replace(/^Sub\s*:\s*/i, '')
+          .replace(/[/\\?%*:|"<>]/g, '')
+          .trim();
+        const fileName = `${rawSubject || 'Quotation'}.pdf`;
         const blobUrl = URL.createObjectURL(blob);
 
         if (regeneratingItem._viewMode) {
@@ -803,9 +810,16 @@ function App() {
           // Prepare Email Composer from History
           setFormData(regeneratingItem.formData);
           setDraftContent(regeneratingItem.content || []);
+          const itemHosp = (regeneratingItem.formData?.hospitalName || '').trim();
+          const itemDoc = (regeneratingItem.formData?.doctorName || '').trim();
+          const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
+          const dynSubject = (regeneratingItem.formData?.subject || 'Quotation for Orthopedic Implants & instruments').replace(/^Sub\s*:\s*/i, '').trim();
+          const dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for your reference.\n\nQuotation Details:\n• Reference No: ${regeneratingItem.formData?.referenceNumber}\n• Subject: ${regeneratingItem.formData?.subject || 'Quotation for Orthopedic Implants & instruments'}\n• Date: ${regeneratingItem.formData?.date}\n• Recipient: ${itemRecipient}\n\nIf you have any questions or require further information, please feel free to reach out.\n\nBest regards,\nSri Raja Rajeshwari Ortho Plus\nPhone: +91 99897 44433`;
+
           setEmailForm(prev => ({
             ...prev,
-            subject: `Quotation: ${regeneratingItem.formData.referenceNumber} - ${regeneratingItem.formData.hospitalName}`,
+            subject: dynSubject,
+            body: dynBody,
             selectedDriveFiles: [
               ...prev.selectedDriveFiles.filter(f => !f.isGenerated),
               {
@@ -892,6 +906,7 @@ function App() {
   const useTemplate = (template) => {
     setFormData({
       hospitalName: '',
+      doctorName: '',
       address: '',
       date: getTodayFormatted(),
       referenceNumber: getNextRefNumber(quotationHistory),
@@ -1077,7 +1092,10 @@ function App() {
 
 
   const generatePDF = async () => {
-    if (!formData.hospitalName) return showAlert('Missing Info', 'Please enter Hospital Name.', 'error');
+    const hasHospital = (formData.hospitalName || '').trim();
+    const hasDoctor = (formData.doctorName || '').trim();
+    if (!hasHospital && !hasDoctor) return showAlert('Missing Info', 'Please enter either Hospital Name or Doctor Name.', 'error');
+    
     setIsGenerating(true);
     try {
       const element = document.getElementById('quotation-template');
@@ -1116,10 +1134,11 @@ function App() {
 
       // Handle History (Save or Update)
       const existingHistoryItem = quotationHistory.find(h => h.ref === formData.referenceNumber);
+      const displayTitle = hasHospital ? (hasDoctor ? `${hasHospital} (Dr. ${hasDoctor})` : hasHospital) : `Dr. ${hasDoctor}`;
       
       const historyItem = {
         id: existingHistoryItem ? existingHistoryItem.id : Date.now().toString(),
-        hospital: formData.hospitalName,
+        hospital: displayTitle,
         date: formData.date,
         ref: formData.referenceNumber,
         templateName: templates.find(t => t.id === formData.selectedTemplateId)?.name || 'Custom',
@@ -1137,7 +1156,12 @@ function App() {
 
       const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-      return { blob, blobUrl: url, fileName: `Quotation_${formData.hospitalName}.pdf` };
+      const cleanSubject = (formData.subject || 'Quotation for Orthopedic Implants')
+        .replace(/^Sub\s*:\s*/i, '')
+        .replace(/[/\\?%*:|"<>]/g, '')
+        .trim();
+      const pdfFileName = `${cleanSubject || 'Quotation'}.pdf`;
+      return { blob, blobUrl: url, fileName: pdfFileName };
     } catch (e) { 
       console.error(e); 
       showAlert('PDF Error', 'Error generating PDF: ' + e.message, 'error');
@@ -1148,8 +1172,11 @@ function App() {
   };
 
   const handleSubmitQuotation = async () => {
-    if (!formData.hospitalName.trim() || !formData.address.trim()) {
-      showAlert('Required Fields', 'Please enter Hospital Name and Hospital Address.', 'error');
+    const hasHospital = (formData.hospitalName || '').trim();
+    const hasDoctor = (formData.doctorName || '').trim();
+
+    if (!hasHospital && !hasDoctor) {
+      showAlert('Required Fields', 'Please enter either a Hospital Name or Doctor Name.', 'error');
       return;
     }
 
@@ -1175,9 +1202,16 @@ function App() {
               "Quotation saved successfully! Do you want to send it via Email now?",
               () => {
                 // Setup Email Composer
+                const itemHosp = (formData.hospitalName || '').trim();
+                const itemDoc = (formData.doctorName || '').trim();
+                const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
+                const dynSubject = (formData.subject || 'Quotation for Orthopedic Implants & instruments').replace(/^Sub\s*:\s*/i, '').trim();
+                const dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for your reference.\n\nQuotation Details:\n• Reference No: ${formData.referenceNumber}\n• Subject: ${formData.subject || 'Quotation for Orthopedic Implants & instruments'}\n• Date: ${formData.date}\n• Recipient: ${itemRecipient}\n\nIf you have any questions or require further information, please feel free to reach out.\n\nBest regards,\nSri Raja Rajeshwari Ortho Plus\nPhone: +91 99897 44433`;
+
                 setEmailForm(prev => ({
                   ...prev,
-                  subject: formData.subject,
+                  subject: dynSubject,
+                  body: dynBody,
                   selectedDriveFiles: [
                     ...prev.selectedDriveFiles.filter(f => !f.isGenerated),
                     {
@@ -1222,13 +1256,18 @@ function App() {
   };
 
   const NavItem = ({ id, label, icon }) => (
-    <span
+    <button
+      type="button"
       onClick={() => setView(id)}
-      className={`apple-nav-link ${view === id ? 'active' : ''}`}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] md:text-[12.5px] font-bold transition-all shrink-0 whitespace-nowrap ${
+        view === id 
+          ? 'bg-teal-600 text-white shadow-2xs' 
+          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+      }`}
     >
       {icon}
-      {label}
-    </span>
+      <span>{label}</span>
+    </button>
   );
 
   const handleLogout = async () => {
@@ -1239,10 +1278,10 @@ function App() {
     }
   };
 
-  if (isAuthLoading) {
+  if (isAuthLoading || (isDataLoading && syncStatus === 'syncing')) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center w-full font-sans">
-        <LoadingSpinner message="Loading Quotations Workspace..." subtext="Initializing Database & Auth" />
+        <LoadingSpinner message="Refreshing Files & Database..." subtext="Fetching latest documents from Google Drive & Cloud storage" />
       </div>
     );
   }
@@ -1257,9 +1296,9 @@ function App() {
           WORKSPACE SUB-HEADER (CASH INVOICE MATCHING TOOLBAR)
           ───────────────────────────────────────── */}
       {!isAdminOnlyMode && (
-        <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 md:px-6 py-2 flex items-center justify-between gap-3 z-40 shrink-0 shadow-sm">
+        <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 px-3 md:px-6 py-2 flex items-center justify-between gap-2 z-40 shrink-0 shadow-2xs">
           {/* Left: Nav Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 min-w-0 flex-1">
             <NavItem id="library" label="Library" icon={<LayoutDashboard size={14} />} />
             <NavItem id="history" label="History" icon={<Database size={14} />} />
             <NavItem id="drive" label="Drive" icon={<HardDrive size={14} />} />
@@ -1270,11 +1309,12 @@ function App() {
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Admin Toggle Button */}
+            {/* Icon-Only Admin Status Indicator Button */}
             <button 
               onClick={() => {
                 if (isManagementActive) {
                   setIsManagementActive(false);
+                  showAlert('Admin Disabled', 'Management tools are now inactive.', 'info');
                 } else {
                   showPrompt('Admin Access', 'Enter Admin Password to enable management tools:', (pass) => {
                     if (pass === ADMIN_PASSWORD) {
@@ -1286,15 +1326,17 @@ function App() {
                   });
                 }
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+              className={`p-2 rounded-xl border transition-all shadow-2xs flex items-center justify-center ${
                 isManagementActive 
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-2xs' 
-                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                  ? 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100' 
+                  : 'bg-red-50 border-red-300 hover:bg-red-100'
               }`}
-              title="Toggle Admin Management Tools"
+              title={isManagementActive ? "Admin Mode: Active (Click to Disable)" : "Admin Mode: Disabled (Click to Enable)"}
             >
-              <ShieldCheck size={14} className={isManagementActive ? "text-emerald-600" : "text-slate-500"} />
-              <span className="hidden sm:inline">{isManagementActive ? 'Admin Active' : 'Admin'}</span>
+              {/* Green (Active) / Red (Off) Status Dot */}
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                isManagementActive ? 'bg-emerald-500 animate-pulse shadow-sm ring-2 ring-emerald-300' : 'bg-red-500 ring-2 ring-red-300'
+              }`} />
             </button>
 
             <button
@@ -1376,54 +1418,86 @@ function App() {
 
         {/* VIEW: LIBRARY */}
         {view === 'library' && (
-          <div className="h-full overflow-y-auto px-8 py-12 md:px-16 md:py-16">
-            <div className="max-w-6xl mx-auto">
-              <header className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+          <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
+            <div className="max-w-7xl mx-auto space-y-4">
+              
+              {/* Sleek Workspace Header & Quick Metrics Banner */}
+              <header className="bg-white/80 backdrop-blur-sm border border-slate-200/90 rounded-2xl p-4 md:p-5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <h1 className="apple-title-1">Templates</h1>
-                  <p className="apple-subtitle">Select a template to generate a quotation, or create a new one.</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h1 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">Quotations & Templates</h1>
+                    <span className="text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200 px-2.5 py-0.5 rounded-full">
+                      {templates.length} {templates.length === 1 ? 'Template' : 'Templates'}
+                    </span>
+                  </div>
+                  <p className="text-[13px] text-slate-500 font-medium">Select a template to generate a quotation, or manage custom templates.</p>
                 </div>
-                {isManagementActive && (
-                  <button
-                    onClick={() => {
-                      setEditingTemplate({
-                        id: Date.now().toString(),
-                        name: 'New Template',
-                        description: '',
-                        requiresPriceList: false,
-                        defaultPriceListId: '',
-                        subject: '',
-                        defaultMake: '',
-                        defaultDelivery: '',
-                        defaultDiscount: '',
-                        defaultGst: '',
-                        defaultPayment: '',
-                        defaultValidity: '',
-                        defaultWarranty: '',
-                        content: []
-                      });
-                      setView('builder');
-                    }}
-                    className="btn-primary"
-                  >
-                    <Plus size={18} /> New Template
-                  </button>
-                )}
+
+                {/* Quick Metrics & Actions */}
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-bold text-slate-700 shrink-0">
+                    <FileText size={14} className="text-teal-600" />
+                    <span>{quotationHistory.length} Generated</span>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-bold text-slate-700 shrink-0">
+                    <Mail size={14} className="text-emerald-600" />
+                    <span>{emailHistory.length} Emails</span>
+                  </div>
+                  {isManagementActive && (
+                    <button
+                      onClick={() => {
+                        setEditingTemplate({
+                          id: Date.now().toString(),
+                          name: 'New Template',
+                          description: '',
+                          requiresPriceList: false,
+                          defaultPriceListId: '',
+                          subject: '',
+                          defaultMake: '',
+                          defaultDelivery: '',
+                          defaultDiscount: '',
+                          defaultGst: '',
+                          defaultPayment: '',
+                          defaultValidity: '',
+                          defaultWarranty: '',
+                          content: []
+                        });
+                        setView('builder');
+                      }}
+                      className="btn-primary !py-2 !px-4 text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:shadow-xs shrink-0"
+                    >
+                      <Plus size={15} /> New Template
+                    </button>
+                  )}
+                </div>
               </header>
 
-              <div className="relative mb-6 max-w-md">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none z-10 text-slate-400">
-                  <Search size={16} />
+              {/* Search Bar */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="relative w-full sm:w-80">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Search size={15} />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search templates..."
+                    value={templateSearchQuery}
+                    onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                    autoComplete="off"
+                    className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-all shadow-2xs"
+                  />
+                  {templateSearchQuery && (
+                    <button 
+                      onClick={() => setTemplateSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
-                <input
-                  type="text"
-                  placeholder="Search templates..."
-                  value={templateSearchQuery}
-                  onChange={(e) => setTemplateSearchQuery(e.target.value)}
-                  autoComplete="off"
-                  className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 transition-all shadow-sm"
-                />
               </div>
+
+              {/* Templates Grid */}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {isDataLoading ? (
@@ -1885,38 +1959,41 @@ function App() {
           <div className="flex flex-col lg:flex-row h-full overflow-hidden">
             {/* Left Input Form */}
             <div className={`${isDraftingMaximized ? 'flex-1' : (showPreview ? 'w-full lg:w-[450px]' : 'flex-1')} bg-white border-r border-[var(--apple-gray-2)] flex flex-col overflow-y-auto transition-all duration-500 ${showEmailComposer ? 'blur-md opacity-30 pointer-events-none' : ''}`}>
-              <div className="p-8 pb-4">
-                <div className="flex justify-between items-center mb-8">
+              <div className="p-4 sm:p-5 pb-3">
+                <div className="flex justify-between items-center mb-3">
                   <button
                     onClick={() => setView('library')}
-                    className="flex items-center gap-1 text-[13px] font-semibold text-[var(--emerald)] hover:opacity-80"
+                    className="flex items-center gap-1 text-[13px] font-bold text-[var(--emerald)] hover:opacity-80 transition-opacity"
                   >
                     <ChevronLeft size={16} /> Library
                   </button>
                   <div className="flex gap-2">
                     <button
                       onClick={() => setShowPreview(!showPreview)}
-                      className="px-3 py-1.5 border border-[var(--apple-gray-3)] rounded-lg text-[11px] font-semibold text-[var(--apple-gray-6)] hover:bg-[var(--apple-gray-1)] transition-colors"
+                      className="px-2.5 py-1 border border-[var(--apple-gray-3)] rounded-lg text-[11px] font-bold text-[var(--apple-gray-6)] hover:bg-[var(--apple-gray-1)] transition-colors"
                     >
                       {showPreview ? 'Hide Preview' : 'Show Preview'}
                     </button>
                     <button
                       onClick={() => setIsDraftingMaximized(!isDraftingMaximized)}
-                      className="px-3 py-1.5 border border-[var(--apple-gray-3)] rounded-lg text-[11px] font-semibold text-[var(--apple-gray-6)] hover:bg-[var(--apple-gray-1)] transition-colors"
+                      className="px-2.5 py-1 border border-[var(--apple-gray-3)] rounded-lg text-[11px] font-bold text-[var(--apple-gray-6)] hover:bg-[var(--apple-gray-1)] transition-colors"
                       title={isDraftingMaximized ? "Restore Sidebar" : "Maximize Table"}
                     >
                       {isDraftingMaximized ? 'Minimize' : 'Maximize'}
                     </button>
                   </div>
                 </div>
-                <h2 className="text-[28px] font-bold tracking-tight leading-tight mb-8">Draft Quotation</h2>
+                <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight mb-4">Draft Quotation</h2>
 
                 <div className="space-y-6">
-                  {/* Hospital Details */}
+                  {/* Client Details */}
                   <div className="space-y-4">
                     <h3 className="apple-label border-b border-[var(--apple-gray-2)] pb-2">Client Details</h3>
                     <div>
-                      <input name="hospitalName" value={formData.hospitalName} onChange={handleInputChange} className="apple-input" placeholder="Hospital Name" />
+                      <input name="hospitalName" value={formData.hospitalName} onChange={handleInputChange} className="apple-input" placeholder="Hospital Name (Optional if Dr Name entered)" />
+                    </div>
+                    <div>
+                      <input name="doctorName" value={formData.doctorName || ''} onChange={handleInputChange} className="apple-input" placeholder="Doctor Name (e.g. Dr. A. Sharma)" />
                     </div>
                     <div>
                       <textarea name="address" value={formData.address} onChange={handleInputChange} rows="2" className="apple-input" placeholder="Full Address" />
@@ -2238,11 +2315,21 @@ function App() {
                 </div>
               </div>
 
-              <div className="p-8 mt-auto pt-4 bg-white border-t border-[var(--apple-gray-2)] sticky bottom-0 flex gap-3">
+              <div className="p-4 sm:p-6 mt-auto bg-white border-t border-[var(--apple-gray-2)] sticky bottom-0 flex items-center gap-3 z-20">
+                {/* Mobile Preview Trigger Button (Visible < lg) */}
+                <button 
+                  type="button"
+                  onClick={() => setShowMobilePreviewModal(true)}
+                  className="lg:hidden flex items-center justify-center gap-2 px-4 py-3 bg-teal-50 text-teal-800 border border-teal-200 rounded-xl text-[13px] font-bold hover:bg-teal-100 transition-all shadow-2xs"
+                >
+                  <Eye size={17} className="text-teal-600" />
+                  <span>Preview</span>
+                </button>
+
                 <button 
                   onClick={handleSubmitQuotation} 
                   disabled={isGenerating} 
-                  className="btn-primary flex-1"
+                  className="btn-primary flex-1 !py-3 text-[14px]"
                 >
                   {isGenerating ? 'Processing...' : (
                     <div className="flex items-center justify-center gap-2">
@@ -2254,12 +2341,13 @@ function App() {
               </div>
             </div>
 
-            {/* Right Live Preview Area */}
+            {/* Right Live Preview Area (Desktop Only, Hidden on Mobile) */}
             {(showPreview && !isDraftingMaximized) && (
-              <div className="flex-1 bg-[var(--apple-bg)] overflow-y-auto p-4 md:p-12 relative">
-                <div className="flex flex-col items-center gap-8">
-                  <div className="scale-[0.85] origin-top">
-                    <QuotationTemplate id="quotation-template" data={formData} content={draftContent} company={companyData} />
+              <div className="hidden lg:flex flex-1 bg-[var(--apple-bg)] overflow-y-auto p-2 sm:p-4 relative flex-col items-center">
+                
+                <div className="flex flex-col items-center gap-8 w-full flex-1 pb-16">
+                  <div className="origin-top transition-transform duration-200">
+                    <QuotationTemplate id="quotation-template" data={formData} content={draftContent} company={companyData} forceScale={docZoom} />
                   </div>
 
                   {formData.priceListId && (
@@ -2291,6 +2379,53 @@ function App() {
                     </div>
                   )}
                 </div>
+
+                {/* Sticky Bottom-Right Floating Zoom Bar for Desktop */}
+                <div className="sticky bottom-1 sm:bottom-2 ml-auto mr-2 z-30 flex items-center gap-2 bg-slate-900/95 text-white backdrop-blur-md border border-slate-700/80 shadow-2xl rounded-full px-3 py-1 font-sans max-w-[calc(100%-1.5rem)] shrink-0">
+                  <Search size={13} className="text-teal-400 shrink-0 ml-1" />
+                  <span className="text-[12px] font-extrabold text-teal-300 min-w-[36px] text-center shrink-0">
+                    {Math.round(docZoom * 100)}%
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setDocZoom(prev => Math.max(0.5, parseFloat((prev - 0.1).toFixed(2))))}
+                    className="w-5 h-5 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-full text-white font-bold transition-all text-[11px] shrink-0"
+                    title="Zoom Out (-)"
+                  >
+                    -
+                  </button>
+
+                  <input 
+                    type="range" 
+                    min="50" 
+                    max="250" 
+                    step="5"
+                    value={Math.round(docZoom * 100)} 
+                    onChange={(e) => setDocZoom(Number(e.target.value) / 100)}
+                    className="w-20 sm:w-24 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-400 shrink min-w-[60px]"
+                    title="Drag to zoom document"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setDocZoom(prev => Math.min(2.5, parseFloat((prev + 0.1).toFixed(2))))}
+                    className="w-5 h-5 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-full text-white font-bold transition-all text-[11px] shrink-0"
+                    title="Zoom In (+)"
+                  >
+                    +
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDocZoom(1.0)}
+                    className="text-[9.5px] font-bold uppercase text-slate-300 hover:text-white px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 shrink-0 ml-0.5"
+                    title="Reset to 100%"
+                  >
+                    100%
+                  </button>
+                </div>
+
               </div>
             )}
           </div>
@@ -2298,9 +2433,9 @@ function App() {
 
         {/* VIEW: HISTORY */}
         {view === 'history' && (
-          <div className="h-full overflow-y-auto px-8 py-12 md:px-16 md:py-16">
+          <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
             <div className="max-w-7xl mx-auto">
-              <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+              <div className="flex flex-col md:flex-row md:items-end justify-between mb-4 md:mb-6 gap-4">
                 <div>
                   <h1 className="apple-title-1 mb-2">History</h1>
                   <p className="apple-subtitle">Recent quotations generated. <span className="font-semibold text-[var(--apple-black)]">{quotationHistory.length}</span> total</p>
@@ -2519,10 +2654,10 @@ function App() {
 
         {/* VIEW: DRIVE */}
         {view === 'drive' && (
-          <div className="h-full overflow-y-auto px-8 py-12 md:px-16 md:py-16">
+          <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
             <div className="max-w-4xl mx-auto">
-              <header className="mb-12">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+              <header className="mb-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                   <div>
                     <h1 className="apple-title-1 mb-2">Drive</h1>
                     <p className="apple-subtitle">Manage your business documents and vendor files.</p>
@@ -3063,9 +3198,9 @@ function App() {
 
         {/* VIEW: PRICE LISTS */}
         {view === 'pricelists' && (
-          <div className="h-full overflow-y-auto px-8 py-12 md:px-16 md:py-16">
+          <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
             <div className="max-w-6xl mx-auto">
-              <header className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+              <header className="flex flex-col md:flex-row md:items-end justify-between mb-4 md:mb-6 gap-4">
                 <div>
                   <h1 className="apple-title-1 mb-2">Price Lists</h1>
                   <p className="apple-subtitle">Manage and access manufacturer price lists. <span className="font-semibold text-[var(--apple-black)]">{priceLists.filter(p => isManagementActive || !p.hidden).length}</span> total</p>
@@ -3169,9 +3304,9 @@ function App() {
 
         {/* VIEW: SETTINGS */}
         {view === 'settings' && (
-          <div className="h-full overflow-y-auto px-8 py-12 md:px-16 md:py-16">
+          <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
             <div className="max-w-4xl mx-auto">
-              <header className="mb-12">
+              <header className="mb-4 md:mb-6">
                 <h1 className="apple-title-1">Settings</h1>
                 <p className="apple-subtitle">Manage your company profile and application preferences.</p>
               </header>
@@ -3344,7 +3479,7 @@ function App() {
 
         {/* VIEW: EMAILER */}
         {view === 'emailer' && (
-          <div className="h-full relative">
+          <div className="h-full w-full overflow-y-auto relative">
             <button
               onClick={() => refreshData()}
               className="absolute top-6 right-8 z-10 flex items-center gap-2 px-4 py-2 bg-white border border-[var(--apple-gray-3)] rounded-full text-[13px] font-bold text-[var(--apple-gray-6)] hover:bg-[var(--apple-gray-1)] transition-all shadow-sm"
@@ -3355,6 +3490,8 @@ function App() {
             <EmailerView 
               driveFiles={driveFiles} 
               priceLists={priceLists} 
+              emailHistory={emailHistory}
+              quotationHistory={quotationHistory}
               onEmailSent={async (item) => {
                 setEmailHistory(prev => [item, ...prev]);
                 await saveEmailHistoryItem(item);
@@ -3506,45 +3643,131 @@ function App() {
       )}
       {/* GLOBAL EMAIL COMPOSER OVERLAY */}
       {showEmailComposer && (
-        <div className="fixed inset-0 z-[2000] flex flex-col bg-[var(--apple-bg)] overflow-hidden animate-in slide-in-from-bottom duration-500 relative">
-          {/* Ambient background blobs matching whatsappconnect */}
-          <div className="blob blob-1"></div>
-          <div className="blob blob-2"></div>
+        <div className="fixed inset-0 z-[2000] flex flex-col bg-slate-900/60 backdrop-blur-sm animate-in slide-in-from-bottom duration-300 overflow-y-auto p-3 sm:p-6 lg:p-8">
+          <div className="w-full max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 my-auto">
+            <header className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shadow-2xs shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center text-white shadow-xs">
+                  <Mail size={18} />
+                </div>
+                <div>
+                  <h3 className="text-[16px] font-extrabold text-slate-900">Compose Email</h3>
+                  <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">New Dispatched Document</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowEmailComposer(false)}
+                className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-all shadow-xs"
+                title="Close Modal"
+              >
+                <Plus className="rotate-45" size={20} />
+              </button>
+            </header>
+            
+            <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50">
+              <EmailerView 
+                key={emailForm.subject + '-' + emailForm.selectedDriveFiles.length}
+                driveFiles={driveFiles}
+                priceLists={priceLists}
+                emailHistory={emailHistory}
+                quotationHistory={quotationHistory}
+                onEmailSent={async (item) => {
+                  setEmailHistory(prev => [item, ...prev]);
+                  await saveEmailHistoryItem(item);
+                  setShowEmailComposer(false);
+                  setView('history');
+                }}
+                showAlert={showAlert}
+                initialForm={emailForm}
+                isModal={true}
+              />
+            </main>
+          </div>
+        </div>
+      )}
 
-          <header className="px-8 py-4 bg-[var(--apple-surface)] backdrop-blur-md border-b border-[var(--apple-gray-2)] flex items-center justify-between shadow-sm z-10">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-[var(--accent)] rounded-xl flex items-center justify-center text-white shadow-lg">
-                <Mail size={20} />
-              </div>
-              <div>
-                <h3 className="text-[17px] font-bold text-[var(--apple-black)]">Compose Email</h3>
-                <p className="text-[11px] text-[var(--apple-gray-5)] uppercase font-bold tracking-wider">New Dispatched Document</p>
-              </div>
+      {/* MOBILE DOCUMENT PREVIEW MODAL */}
+      {showMobilePreviewModal && (
+        <div className="fixed inset-0 z-[5000] flex flex-col bg-slate-900/95 backdrop-blur-md animate-in slide-in-from-bottom duration-300 font-sans">
+          {/* Header */}
+          <header className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between shadow-sm shrink-0">
+            <div className="flex items-center gap-2">
+              <Eye size={18} className="text-teal-400" />
+              <h3 className="text-[15px] font-bold text-white">Quotation Preview</h3>
             </div>
             <button 
-              onClick={() => setShowEmailComposer(false)}
-              className="w-10 h-10 flex items-center justify-center bg-white border border-[var(--apple-gray-3)] rounded-full text-[var(--apple-gray-5)] hover:bg-[var(--apple-gray-1)] transition-all z-10"
+              type="button"
+              onClick={() => setShowMobilePreviewModal(false)}
+              className="w-8 h-8 flex items-center justify-center bg-slate-800 border border-slate-700 rounded-full text-slate-400 hover:text-white transition-all"
             >
-              <Plus className="rotate-45" size={24} />
+              <Plus className="rotate-45" size={20} />
             </button>
           </header>
-          
-          <main className="flex-1 overflow-y-auto p-4 md:p-12 z-10">
-            <EmailerView 
-              key={emailForm.subject + '-' + emailForm.selectedDriveFiles.length}
-              driveFiles={driveFiles}
-              priceLists={priceLists}
-              onEmailSent={async (item) => {
-                setEmailHistory(prev => [item, ...prev]);
-                await saveEmailHistoryItem(item);
-                setShowEmailComposer(false);
-                setView('history');
-              }}
-              showAlert={showAlert}
-              initialForm={emailForm}
-              isModal={true}
-            />
+
+          {/* Main Mobile Preview Area with Pan & Scroll Support */}
+          <main className="flex-1 overflow-auto p-3 sm:p-6 bg-slate-950 flex justify-center items-start w-full">
+            <QuotationTemplate id="mobile-quotation-template" data={formData} content={draftContent} company={companyData} forceScale={docZoom} />
           </main>
+
+          {/* Mobile Bottom Bar with Zoom Slider + Submit Button */}
+          <footer className="p-3 bg-slate-900 border-t border-slate-800 flex flex-col gap-2.5 shrink-0">
+            {/* Dragger Zoom Bar */}
+            <div className="flex items-center justify-between gap-3 bg-slate-800/90 border border-slate-700 rounded-full px-4 py-2 text-white">
+              <div className="flex items-center gap-1.5">
+                <Search size={14} className="text-teal-400" />
+                <span className="text-[12px] font-extrabold text-teal-300 min-w-[40px]">
+                  {Math.round(docZoom * 100)}%
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 flex-1 max-w-[200px]">
+                <button
+                  type="button"
+                  onClick={() => setDocZoom(prev => Math.max(0.5, parseFloat((prev - 0.1).toFixed(2))))}
+                  className="w-6 h-6 flex items-center justify-center bg-slate-700 rounded-full text-white font-bold text-xs"
+                >
+                  -
+                </button>
+                <input 
+                  type="range" 
+                  min="50" 
+                  max="250" 
+                  step="5"
+                  value={Math.round(docZoom * 100)} 
+                  onChange={(e) => setDocZoom(Number(e.target.value) / 100)}
+                  className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setDocZoom(prev => Math.min(2.5, parseFloat((prev + 0.1).toFixed(2))))}
+                  className="w-6 h-6 flex items-center justify-center bg-slate-700 rounded-full text-white font-bold text-xs"
+                >
+                  +
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setDocZoom(1.0)}
+                className="text-[10px] font-bold uppercase text-slate-300 bg-slate-700 px-2 py-0.5 rounded"
+              >
+                Reset
+              </button>
+            </div>
+
+            {/* Confirm Submit Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowMobilePreviewModal(false);
+                handleSubmitQuotation();
+              }}
+              disabled={isGenerating}
+              className="btn-primary w-full !py-3 text-[14px] flex items-center justify-center gap-2"
+            >
+              <ShieldCheck size={18} /> Finish & Save Quotation
+            </button>
+          </footer>
         </div>
       )}
       {/* GENERATING QUOTATION OVERLAY */}

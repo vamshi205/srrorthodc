@@ -49,7 +49,7 @@ export default function Quotation() {
         />
         
         {/* Floating Quotation card aligned with the main toolbar */}
-        <div className="mt-4 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[700px] h-[calc(100vh-140px)]">
+        <div className="mt-0 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[700px] h-[calc(100vh-115px)]">
           <iframe
             src="/quotation/index.html"
             title="Quotation Maker"

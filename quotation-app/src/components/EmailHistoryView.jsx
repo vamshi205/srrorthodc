@@ -10,9 +10,9 @@ const EmailHistoryView = ({ history = [], onDelete }) => {
   );
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-12 md:px-16 md:py-16">
+    <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
       <div className="max-w-5xl mx-auto">
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-4 md:mb-6 gap-4">
           <div>
             <h1 className="apple-title-1 mb-2">Email History</h1>
             <p className="apple-subtitle">Logs of all communications dispatched via Resend.</p>

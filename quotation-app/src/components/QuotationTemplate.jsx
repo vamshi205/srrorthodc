@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import logoImg from '../assets/logo.png';
 
 const QuotationTemplate = memo(({ id = "quotation-template", data, company, content, forceScale }) => {
-  const { hospitalName, address, date, referenceNumber, discount, payment, gst, validity, warranty, make, delivery, subject, lineSpacing = 'standard' } = data;
+  const { hospitalName, doctorName, address, date, referenceNumber, discount, payment, gst, validity, warranty, make, delivery, subject, lineSpacing = 'standard' } = data;
   const { 
     name: companyName, 
     address: companyAddress, 
@@ -78,7 +78,7 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
     if (!containerRef.current || !contentRef.current) return;
     
     const updateScale = () => {
-      if (forceScale && forceScale !== 1) {
+      if (typeof forceScale === 'number' && forceScale > 0) {
         setScale(forceScale);
         return;
       }
@@ -93,15 +93,10 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
       const scaleW = availableWidth / targetWidth;
       const scaleH = availableHeight / targetHeight;
       
-      // On mobile, only scale by width so it's readable and can scroll vertically
-      // On desktop, scale to fit both dimensions
       const isMobile = window.innerWidth < 768;
       let newScale = isMobile ? scaleW : Math.min(scaleW, scaleH, 1);
-      
-      // If forceScale is 1, it means "Actual Size"
-      if (forceScale === 1) newScale = 1;
 
-      setScale(newScale * (forceScale === 1 ? 1 : 0.98));
+      setScale(newScale * 0.98);
     };
 
     updateScale();
@@ -111,29 +106,35 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
       window.removeEventListener('resize', updateScale);
       clearTimeout(timer);
     };
-  }, [data, company, content]);
+  }, [data, company, content, forceScale]);
+
+  const scaledWidth = Math.round(794 * scale);
+  const scaledHeight = Math.round(1123 * scale);
 
   return (
-    <div ref={containerRef} className="w-full h-full flex items-start justify-center overflow-auto p-4 md:p-8 bg-[var(--apple-bg)]">
+    <div ref={containerRef} className="w-full h-full flex items-start justify-center overflow-auto p-2 sm:p-4 bg-[var(--apple-bg)] font-sans">
       {/* UI Wrapper with Shadow */}
-      <div 
-        style={{ 
-          transform: `scale(${scale})`, 
-          transformOrigin: 'top center',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.15)' 
+      <div
+        style={{
+          width: `${scaledWidth}px`,
+          height: `${scaledHeight}px`,
+          position: 'relative'
         }}
-        className="shrink-0 rounded-sm overflow-hidden"
+        className="shrink-0 transition-all duration-150 my-2"
       >
         <div 
           id={id}
           ref={contentRef} 
-          className="quotation-page bg-white text-black font-sans select-none p-[10mm]"
           style={{ 
-            width: '210mm', 
-            height: '297mm',
+            transform: `scale(${scale})`, 
+            transformOrigin: 'top left',
+            width: '794px',
+            height: '1123px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
             display: 'flex', 
             flexDirection: 'column'
           }}
+          className="quotation-page bg-white text-black font-sans select-none p-[10mm] shrink-0 rounded-sm overflow-hidden transition-transform duration-150"
         >
           {/* Header */}
           <div className="flex justify-between items-center mb-2">
@@ -174,12 +175,21 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
           <div className={`${spacing.subGap} text-[11pt]`}>
             <p className="font-bold mb-1">To</p>
             <div className="max-w-md">
-              <p className="font-bold uppercase text-[12pt] mb-1">{hospitalName || '[HOSPITAL NAME]'}</p>
-              <div className="text-left">
-                {(address || '[HOSPITAL ADDRESS]').split('\n').map((line, i) => (
-                  <React.Fragment key={i}>{line}<br/></React.Fragment>
-                ))}
-              </div>
+              {hospitalName && (
+                <p className="font-bold uppercase text-[12pt] mb-0.5">{hospitalName}</p>
+              )}
+              {doctorName && (
+                <p className="font-bold text-[11pt] text-slate-900 mb-0.5">
+                  Dr. {doctorName.replace(/^dr\.?\s*/i, '')}
+                </p>
+              )}
+              {address && (
+                <div className="text-left font-normal">
+                  {address.split('\n').map((line, i) => (
+                    <React.Fragment key={i}>{line}<br/></React.Fragment>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
