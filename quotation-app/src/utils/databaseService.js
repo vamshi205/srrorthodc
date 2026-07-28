@@ -139,11 +139,24 @@ export const loadDatabase = async () => {
     }
     history = historySnap.docs.map(doc => {
       const data = doc.data();
+      let parsedContent = [];
       try {
-        return { ...data, content: typeof data.content === 'string' ? JSON.parse(data.content) : (data.content || []) };
+        parsedContent = typeof data.content === 'string' ? JSON.parse(data.content) : (data.content || []);
       } catch (e) {
-        return data;
+        parsedContent = data.content || [];
       }
+      return {
+        id: data.id || doc.id,
+        hospital: data.hospital || data.formData?.hospitalName || 'Unnamed Hospital',
+        ref: data.ref || data.formData?.referenceNumber || 'SRR/QUOT/000000',
+        templateName: data.templateName || 'Standard Template',
+        date: data.date || data.formData?.date || '',
+        formData: data.formData || null,
+        content: parsedContent,
+        isEmailed: data.isEmailed || false,
+        lastEmailedTo: data.lastEmailedTo || '',
+        lastEmailedAt: data.lastEmailedAt || ''
+      };
     });
   } catch (e) {
     console.error('Error loading history:', e);

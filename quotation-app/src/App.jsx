@@ -11,7 +11,7 @@ import EmailHistoryView from './components/EmailHistoryView';
 import { sendEmailWithResend } from './utils/emailService';
 import { saveDatabase, loadDatabase, saveTemplate, deleteTemplate, saveHistoryItem, saveCompanyData, saveEmailHistoryItem, syncItem } from './utils/databaseService';
 import { auth, db, storage, hasFirebaseConfig } from './firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut, signInAnonymously } from 'firebase/auth';
 import { ref, getBlob } from 'firebase/storage';
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy, writeBatch } from 'firebase/firestore';
 import { validateFile } from './utils/fileValidation';
@@ -279,8 +279,19 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Auto-load Firestore database data on startup
-    refreshData(DEFAULT_USER);
+    // Silent auth & Auto-load Firestore database data on startup
+    const initAuthAndData = async () => {
+      if (hasFirebaseConfig && !auth.currentUser) {
+        try {
+          await signInAnonymously(auth);
+        } catch (e) {
+          console.warn("Silent auth fallback note:", e);
+        }
+      }
+      await refreshData(auth.currentUser || DEFAULT_USER);
+    };
+
+    initAuthAndData();
 
     if (hasFirebaseConfig) {
       const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -2313,9 +2324,9 @@ function App() {
 
               {(() => {
                 const filtered = quotationHistory.filter(item =>
-                  item.hospital.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  item.ref.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  item.templateName.toLowerCase().includes(searchQuery.toLowerCase())
+                  (item.hospital || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (item.ref || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (item.templateName || '').toLowerCase().includes(searchQuery.toLowerCase())
                 );
                 if (filtered.length === 0) return (
                   <div className="text-center py-20 opacity-40">
