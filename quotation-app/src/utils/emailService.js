@@ -69,7 +69,7 @@ export const fileToBase64 = async (url) => {
  */
 export const sendEmailWithResend = async ({ to, subject, body, files = [] }) => {
   const proxyUrl = import.meta.env.VITE_RESEND_PROXY_URL || '/api/send-email';
-  const fromEmail = import.meta.env.VITE_EMAIL_FROM || 'Sri Raja Rajeshwari Ortho Plus <onboarding@resend.dev>';
+  const fromEmail = import.meta.env.VITE_EMAIL_FROM || 'Sri Raja Rajeshwari Ortho Plus <docs@srrorthoplus.com>';
 
   try {
     // Convert all attachments to Base64

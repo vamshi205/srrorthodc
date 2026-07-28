@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     }
 
     const payload = {
-      from: from || process.env.VITE_EMAIL_FROM || 'Sri Raja Rajeshwari Ortho Plus <onboarding@resend.dev>',
+      from: from || process.env.VITE_EMAIL_FROM || 'Sri Raja Rajeshwari Ortho Plus <docs@srrorthoplus.com>',
       to: Array.isArray(to) ? to : [to],
       cc: cc ? (Array.isArray(cc) ? cc : [cc]) : undefined,
       reply_to: reply_to || undefined,
