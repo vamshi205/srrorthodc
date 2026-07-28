@@ -104,13 +104,16 @@ export const loadDatabase = async () => {
   let driveFilesData = [];
   let allFolders = [];
 
+  console.log('[loadDatabase] Starting Firestore data fetch from project:', db?.app?.options?.projectId);
+
   // Load Company Data
   try {
     const companyRef = doc(db, 'settings', 'company');
     const companySnap = await getDoc(companyRef);
     companyData = companySnap.exists() ? companySnap.data() : null;
+    console.log('[loadDatabase] companyData loaded:', !!companyData);
   } catch (e) {
-    console.error('Error loading company data:', e);
+    console.error('[loadDatabase] Error loading company data:', e);
   }
 
   // Load Templates
@@ -124,8 +127,9 @@ export const loadDatabase = async () => {
         return data;
       }
     });
+    console.log('[loadDatabase] templates count:', templates.length);
   } catch (e) {
-    console.error('Error loading templates:', e);
+    console.error('[loadDatabase] Error loading templates:', e);
   }
 
   // Load History (Try with orderBy, fallback to plain getDocs)
@@ -135,8 +139,10 @@ export const loadDatabase = async () => {
       const historyQuery = query(collection(db, 'history'), orderBy('id', 'desc'), limit(100));
       historySnap = await getDocs(historyQuery);
     } catch (err) {
+      console.warn('[loadDatabase] History orderBy query failed, trying un-ordered getDocs:', err);
       historySnap = await getDocs(collection(db, 'history'));
     }
+    console.log('[loadDatabase] history docs fetched:', historySnap?.docs?.length);
     history = historySnap.docs.map(doc => {
       const data = doc.data();
       let parsedContent = [];
@@ -159,7 +165,7 @@ export const loadDatabase = async () => {
       };
     });
   } catch (e) {
-    console.error('Error loading history:', e);
+    console.error('[loadDatabase] Error loading history:', e);
   }
 
   // Load Email History (Try with orderBy, fallback to plain getDocs)
@@ -172,24 +178,27 @@ export const loadDatabase = async () => {
       emailHistorySnap = await getDocs(collection(db, 'emailHistory'));
     }
     emailHistory = emailHistorySnap.docs.map(doc => doc.data());
+    console.log('[loadDatabase] emailHistory count:', emailHistory.length);
   } catch (e) {
-    console.error('Error loading email history:', e);
+    console.error('[loadDatabase] Error loading email history:', e);
   }
 
   // Load Price Lists
   try {
     const plSnap = await getDocs(collection(db, 'priceLists'));
     priceLists = plSnap.docs.map(doc => doc.data());
+    console.log('[loadDatabase] priceLists count:', priceLists.length);
   } catch (e) {
-    console.error('Error loading price lists:', e);
+    console.error('[loadDatabase] Error loading price lists:', e);
   }
 
   // Load Drive Files
   try {
     const dfSnap = await getDocs(collection(db, 'driveFiles'));
     driveFilesData = dfSnap.docs.map(doc => doc.data());
+    console.log('[loadDatabase] driveFiles count:', driveFilesData.length);
   } catch (e) {
-    console.error('Error loading drive files:', e);
+    console.error('[loadDatabase] Error loading drive files:', e);
   }
 
   // Load Drive Folders
