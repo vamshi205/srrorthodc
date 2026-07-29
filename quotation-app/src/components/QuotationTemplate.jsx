@@ -195,11 +195,15 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
     };
   }, [data, company, content, forceScale]);
 
-  const scaledWidth = Math.round(794 * scale);
-  const scaledHeight = Math.round(1123 * scale);
+  const effectiveScale = isPdfPrinting ? 1 : scale;
+  const scaledWidth = isPdfPrinting ? 794 : Math.round(794 * effectiveScale);
+  const scaledHeight = isPdfPrinting ? 1123 : Math.round(1123 * effectiveScale);
 
   return (
-    <div ref={containerRef} className="w-full h-full flex items-start justify-center overflow-auto p-2 sm:p-4 bg-[var(--apple-bg)] font-sans">
+    <div 
+      ref={containerRef} 
+      className={isPdfPrinting ? "w-[794px] h-[1123px] bg-white font-sans overflow-hidden" : "w-full h-full flex items-start justify-center overflow-auto p-2 sm:p-4 bg-[var(--apple-bg)] font-sans"}
+    >
       {/* UI Wrapper with Shadow */}
       <div
         style={{
@@ -207,21 +211,21 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
           height: `${scaledHeight}px`,
           position: 'relative'
         }}
-        className="shrink-0 transition-all duration-150 my-2"
+        className={isPdfPrinting ? "" : "shrink-0 transition-all duration-150 my-2"}
       >
         <div 
           id={id}
           ref={contentRef} 
           style={{ 
-            transform: `scale(${scale})`, 
+            transform: isPdfPrinting ? 'none' : `scale(${effectiveScale})`, 
             transformOrigin: 'top left',
             width: '794px',
             height: '1123px',
-            boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
+            boxShadow: isPdfPrinting ? 'none' : '0 20px 50px rgba(0,0,0,0.15)',
             display: 'flex', 
             flexDirection: 'column'
           }}
-          className="quotation-page bg-white text-black font-sans select-none p-[10mm] shrink-0 rounded-sm overflow-hidden transition-transform duration-150"
+          className={`quotation-page bg-white text-black font-sans select-none p-[10mm] shrink-0 overflow-hidden ${isPdfPrinting ? '' : 'rounded-sm transition-transform duration-150'}`}
         >
           {/* Header */}
           <div className="flex justify-between items-center mb-2">
@@ -243,7 +247,7 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
                 src={logoImg} 
                 alt="Logo" 
                 className="w-full object-contain max-h-[26mm]" 
-                style={{ transform: 'translateX(45px)' }} 
+                style={isPdfPrinting ? { transform: 'none' } : { transform: 'translateX(45px)' }} 
                 onError={(e) => {
                   e.target.onerror = null;
                   e.target.src = './logo.png';

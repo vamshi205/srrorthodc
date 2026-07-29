@@ -736,8 +736,10 @@ function App() {
     const generateHistoryPDF = async () => {
       setIsGenerating(true);
       try {
+        await new Promise(resolve => setTimeout(resolve, 150));
         const element = document.getElementById('history-quotation-template');
-        const dataUrl = await toJpeg(element, { quality: 0.95, backgroundColor: '#ffffff', pixelRatio: 1.5, filter: (node) => !node.classList?.contains('no-pdf') });
+        if (!element) throw new Error("History quotation template element not found.");
+        const dataUrl = await toJpeg(element, { quality: 0.98, backgroundColor: '#ffffff', pixelRatio: 2, filter: (node) => !node.classList?.contains('no-pdf') });
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         pdf.addImage(dataUrl, 'JPEG', 0, 0, 210, 297);
         let finalPdfBytes = pdf.output('arraybuffer');
@@ -1122,8 +1124,10 @@ function App() {
     
     setIsGenerating(true);
     try {
-      const element = document.getElementById('quotation-template');
-      const dataUrl = await toJpeg(element, { quality: 0.95, backgroundColor: '#ffffff', pixelRatio: 1.5, filter: (node) => !node.classList?.contains('no-pdf') });
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const element = document.getElementById('pdf-export-template') || document.getElementById('quotation-template');
+      if (!element) throw new Error("Quotation template element not found.");
+      const dataUrl = await toJpeg(element, { quality: 0.98, backgroundColor: '#ffffff', pixelRatio: 2, filter: (node) => !node.classList?.contains('no-pdf') });
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       pdf.addImage(dataUrl, 'JPEG', 0, 0, 210, 297);
       let finalPdfBytes = pdf.output('arraybuffer');
@@ -3567,10 +3571,55 @@ function App() {
         </div>
       )}
 
+      {/* HIDDEN EXPORT TEMPLATE FOR PDF GENERATION */}
+      <div 
+        aria-hidden="true"
+        style={{ 
+          position: 'fixed', 
+          left: '-9999px', 
+          top: '0px', 
+          width: '794px', 
+          height: '1123px', 
+          overflow: 'hidden', 
+          backgroundColor: '#ffffff', 
+          zIndex: -9999, 
+          pointerEvents: 'none' 
+        }}
+      >
+        <QuotationTemplate 
+          id="pdf-export-template" 
+          data={formData} 
+          content={draftContent} 
+          company={companyData} 
+          isPdfPrinting={true} 
+          forceScale={1} 
+        />
+      </div>
+
       {/* HIDDEN REGENERATION TEMPLATE */}
       {regeneratingItem && (
-        <div style={{ position: 'fixed', left: '-9999px', top: 0, width: '210mm', backgroundColor: '#ffffff' }}>
-          <QuotationTemplate id="history-quotation-template" data={regeneratingItem.formData} content={regeneratingItem.content || []} company={companyData} />
+        <div 
+          aria-hidden="true"
+          style={{ 
+            position: 'fixed', 
+            left: '-9999px', 
+            top: '0px', 
+            width: '794px', 
+            height: '1123px', 
+            overflow: 'hidden', 
+            backgroundColor: '#ffffff', 
+            zIndex: -9999, 
+            pointerEvents: 'none' 
+          }}
+        >
+          <QuotationTemplate 
+            id="history-quotation-template" 
+            data={regeneratingItem.formData} 
+            content={regeneratingItem.content || []} 
+            company={companyData} 
+            isPdfPrinting={true} 
+            forceScale={1} 
+          />
         </div>
       )}
       {/* PREVIEW MODAL */}
