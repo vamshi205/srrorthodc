@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 // import { LoginScreen } from '@/components/ortho/LoginScreen'; // Removed
 import { ProcedureSelector } from '@/components/ortho/ProcedureSelector';
@@ -39,6 +39,7 @@ export default function OrthoApp() {
   const [activeProcedures, setActiveProcedures] = useState<ActiveProcedure[]>([]);
   const [collapsedProcedures, setCollapsedProcedures] = useState<Set<string>>(new Set());
   const [hospitalName, setHospitalName] = useState('');
+  const [doctorName, setDoctorName] = useState('');
   const [dcNo, setDcNo] = useState('');
   const [receivedBy, setReceivedBy] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -52,6 +53,15 @@ export default function OrthoApp() {
   const [showConfirmSaveDialog, setShowConfirmSaveDialog] = useState(false);
   const [deliveredBy, setDeliveredBy] = useState('');
   const [customDcDate, setCustomDcDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Details Prompt before displaying Procedure
+  const [pendingProcedure, setPendingProcedure] = useState<Procedure | null>(null);
+  const [showSelectDetailsDialog, setShowSelectDetailsDialog] = useState(false);
+  const [tempHospital, setTempHospital] = useState('');
+  const [tempDoctor, setTempDoctor] = useState('');
+  const [tempDcNo, setTempDcNo] = useState('');
+  const [tempDeliveredBy, setTempDeliveredBy] = useState('');
+  const [tempReceivedBy, setTempReceivedBy] = useState('');
 
   // Manual DC builder
   const [dcMode, setDcMode] = useState<'procedure' | 'manual'>('procedure');
@@ -98,45 +108,54 @@ export default function OrthoApp() {
     }
   }, [location.search]);
 
+  // Auto-generate default DC No if empty
+  useEffect(() => {
+    if (!dcNo) {
+      setDcNo(`DC-${Math.floor(1000 + Math.random() * 9000)}`);
+    }
+  }, [dcNo]);
+
   const handleSelectProcedure = useCallback((procedure: Procedure) => {
-    setActiveProcedures((prev) => {
-      const exists = prev.find((p) => p.name === procedure.name);
-      if (exists) {
+    const exists = activeProcedures.find((p) => p.name === procedure.name);
+    if (exists) {
+      setActiveProcedures((prev) => {
         const newProcedures = prev.filter((p) => p.name !== procedure.name);
-        // Show selector if no procedures left
         if (newProcedures.length === 0) {
           setShowProcedureSelector(true);
         }
         return newProcedures;
-      }
-      const activeProcedure: ActiveProcedure = {
-        ...procedure,
-        materialType: 'SS',
-        selectedItems: new Map(),
-        selectedFixedItems: new Map(procedure.fixedItems.map((fi) => [fi.name, true])),
-        fixedQtyEdits: new Map(),
-        boxNumbers: [],
-        instrumentImageMapping: procedure.instrumentImageMapping || {},
-        fixedItemImageMapping: procedure.fixedItemImageMapping || {},
-        itemImageMapping: procedure.itemImageMapping || {},
-        instrumentLocationMapping: procedure.instrumentLocationMapping || {},
-        fixedItemLocationMapping: procedure.fixedItemLocationMapping || {},
-        itemLocationMapping: procedure.itemLocationMapping || {},
-      };
+      });
+      return;
+    }
 
-      // Auto collapse previous procedures when a new procedure is added
+    // Instant procedure selection with 0 popups!
+    const activeProcedure: ActiveProcedure = {
+      ...procedure,
+      materialType: 'SS',
+      selectedItems: new Map(),
+      selectedFixedItems: new Map(procedure.fixedItems.map((fi) => [fi.name, true])),
+      fixedQtyEdits: new Map(),
+      boxNumbers: [],
+      instrumentImageMapping: procedure.instrumentImageMapping || {},
+      fixedItemImageMapping: procedure.fixedItemImageMapping || {},
+      itemImageMapping: procedure.itemImageMapping || {},
+      instrumentLocationMapping: procedure.instrumentLocationMapping || {},
+      fixedItemLocationMapping: procedure.fixedItemLocationMapping || {},
+      itemLocationMapping: procedure.itemLocationMapping || {},
+    };
+
+    setActiveProcedures((prev) => {
       const previousNames = prev.map((p) => p.name);
       setCollapsedProcedures((collapsedSet) => {
         const nextSet = new Set(collapsedSet);
         previousNames.forEach((name) => nextSet.add(name));
         return nextSet;
       });
-
-      // Collapse selector once a procedure is selected
-      setShowProcedureSelector(false);
       return [...prev, activeProcedure];
     });
-  }, []);
+
+    setShowProcedureSelector(false);
+  }, [activeProcedures]);
 
   const handleRemoveProcedure = useCallback((name: string) => {
     setActiveProcedures((prev) => {
@@ -966,7 +985,7 @@ export default function OrthoApp() {
                 <>
                   {/* Procedure Selector - Shown when no procedures selected OR when user clicks 'Add New Procedure' */}
                   {(activeProcedures.length === 0 || showProcedureSelector) && (
-                    <div className="glass-card rounded-xl p-2.5 sm:p-4 min-w-0">
+                    <div className="glass-card rounded-xl p-2.5 sm:p-4 min-w-0 flex-1 flex flex-col min-h-[calc(100vh-140px)]">
                       <h2 className="font-display font-semibold text-base sm:text-lg mb-2 sm:mb-4">Select Procedures</h2>
                       {loading ? (
                         <AppLoadingSpinner message="Loading Procedures..." subtext="Fetching procedure catalogs from Firestore database" />
@@ -982,9 +1001,172 @@ export default function OrthoApp() {
                       )}
                     </div>
                   )}
+
+                  {/* Case Details Header Card - Shown ONLY after selecting a procedure */}
+                  {activeProcedures.length > 0 && !showProcedureSelector && (
+                    <div className="rounded-xl p-3.5 sm:p-4 mb-4 border-2 border-slate-300/80 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-900/90 shadow-md">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-300 dark:border-slate-800">
+                        <h2 className="font-display font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-teal-700" />
+                          Delivery Challan Header Details
+                        </h2>
+                        <div className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                          Fill details once • Auto-applied to print
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div>
+                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                            Hospital Name <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            id="hospital-name-input"
+                            value={hospitalName}
+                            onChange={(e) => setHospitalName(e.target.value)}
+                            placeholder="Enter hospital name"
+                            className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Doctor Name</Label>
+                          <Input
+                            value={doctorName}
+                            onChange={(e) => setDoctorName(e.target.value)}
+                            placeholder="Dr. Name"
+                            className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                            DC No. <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            value={dcNo}
+                            onChange={(e) => setDcNo(e.target.value)}
+                            placeholder="DC-1001"
+                            className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Delivered By</Label>
+                          <Input
+                            value={deliveredBy}
+                            onChange={(e) => setDeliveredBy(e.target.value)}
+                            placeholder="Personnel Name"
+                            className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Received By</Label>
+                          <Input
+                            value={receivedBy}
+                            onChange={(e) => setReceivedBy(e.target.value)}
+                            placeholder="Staff / Recipient"
+                            className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">DC Date</Label>
+                          <Input
+                            type="date"
+                            value={customDcDate}
+                            onChange={(e) => setCustomDcDate(e.target.value)}
+                            className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
-                <div className="rounded-xl border border-border/60 bg-card/70 backdrop-blur-md p-3 sm:p-5 space-y-4 min-w-0 shadow-sm">
+                <div className="space-y-4">
+                  {/* Case Details Header Card for Manual DC */}
+                  <div className="rounded-xl p-3.5 sm:p-4 border-2 border-slate-300/80 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-900/90 shadow-md">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-300 dark:border-slate-800">
+                      <h2 className="font-display font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-teal-700" />
+                        Delivery Challan Header Details (Manual DC)
+                      </h2>
+                      <div className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                        Fill details once • Auto-applied to print
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div>
+                        <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          Hospital Name <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="hospital-name-input-manual"
+                          value={hospitalName}
+                          onChange={(e) => setHospitalName(e.target.value)}
+                          placeholder="Enter hospital name"
+                          className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Doctor Name</Label>
+                        <Input
+                          value={doctorName}
+                          onChange={(e) => setDoctorName(e.target.value)}
+                          placeholder="Dr. Name"
+                          className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          DC No. <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          value={dcNo}
+                          onChange={(e) => setDcNo(e.target.value)}
+                          placeholder="DC-1001"
+                          className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Delivered By</Label>
+                        <Input
+                          value={deliveredBy}
+                          onChange={(e) => setDeliveredBy(e.target.value)}
+                          placeholder="Personnel Name"
+                          className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Received By</Label>
+                        <Input
+                          value={receivedBy}
+                          onChange={(e) => setReceivedBy(e.target.value)}
+                          placeholder="Staff / Recipient"
+                          className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">DC Date</Label>
+                        <Input
+                          type="date"
+                          value={customDcDate}
+                          onChange={(e) => setCustomDcDate(e.target.value)}
+                          className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 bg-card/70 backdrop-blur-md p-3 sm:p-5 space-y-4 min-w-0 shadow-sm">
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                     <div>
                       <h2 className="font-display font-semibold text-base sm:text-lg">Manual DC</h2>
@@ -1000,7 +1182,6 @@ export default function OrthoApp() {
                         <SelectContent>
                           <SelectItem value="SS">SS</SelectItem>
                           <SelectItem value="Titanium">Titanium</SelectItem>
-                          <SelectItem value="None">No Prefix</SelectItem>
                         </SelectContent>
                       </Select>
                       <Button
@@ -1411,39 +1592,34 @@ export default function OrthoApp() {
                     )}
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Submission Form (Save DC)
-                - Manual mode: always show (manual entries are the "selection")
-                - Procedure mode: show only when at least one active procedure is selected */}
+              {/* Submission Actions (1-click Save & Print) */}
               {(dcMode === 'manual' || activeProcedures.length > 0) && (
-                <div id="dc-submission" className="glass-card rounded-xl p-4 sm:p-5 space-y-4">
+                <div id="dc-submission" className="glass-card rounded-xl p-4 sm:p-5 space-y-4 border-t-4 border-t-teal-600">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-display font-semibold text-base sm:text-lg">Submission</h3>
-                  </div>
-
-                  <div className="text-sm text-muted-foreground">
-                    {hospitalName || dcNo || receivedBy ? (
-                      <div className="space-y-0.5">
-                        <div><span className="font-semibold text-foreground">Hospital:</span> {hospitalName || '-'}</div>
-                        <div><span className="font-semibold text-foreground">DC No:</span> {dcNo || '-'}</div>
-                        <div><span className="font-semibold text-foreground">Received By:</span> {receivedBy || '-'}</div>
-                      </div>
-                    ) : (
-                      <div>Enter Hospital / DC details in the popup before saving or printing.</div>
-                    )}
+                    <h3 className="font-display font-semibold text-base sm:text-lg">Finalize Delivery Challan</h3>
+                    <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200">
+                      {hospitalName ? hospitalName : 'Enter Hospital Above'}
+                    </span>
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-3 pt-1">
                     <Button
-                      onClick={() => {
-                        if (!hospitalName || !dcNo || !receivedBy) {
-                          setShowSettingsModal(true);
-                        } else {
-                          setShowConfirmSaveDialog(true);
+                      onClick={async () => {
+                        if (!hospitalName.trim()) {
+                          toast({
+                            title: 'Hospital Name Required',
+                            description: 'Please enter the Hospital Name in the top header form.',
+                            variant: 'destructive',
+                          });
+                          document.getElementById('hospital-name-input')?.focus();
+                          return;
                         }
+                        await handleSaveDc();
                       }}
-                      className="w-full sm:flex-1 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm h-11 shadow-md shadow-emerald-600/20"
+                      className="w-full sm:flex-1 gap-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm h-11 shadow-md"
                       disabled={isSavingDc}
                     >
                       {isSavingDc ? (
@@ -1454,9 +1630,34 @@ export default function OrthoApp() {
                       ) : (
                         <>
                           <Save className="w-4 h-4" />
-                          Save DC
+                          Save DC (1-Click)
                         </>
                       )}
+                    </Button>
+
+                    <Button
+                      onClick={async () => {
+                        if (!hospitalName.trim()) {
+                          toast({
+                            title: 'Hospital Name Required',
+                            description: 'Please enter the Hospital Name in the top header form.',
+                            variant: 'destructive',
+                          });
+                          document.getElementById('hospital-name-input')?.focus();
+                          return;
+                        }
+                        const success = await handleSaveDc();
+                        if (success) {
+                          setTimeout(() => {
+                            handlePrintPDF();
+                          }, 300);
+                        }
+                      }}
+                      className="w-full sm:flex-1 gap-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm h-11 shadow-md shadow-teal-600/20"
+                      disabled={isSavingDc}
+                    >
+                      <Printer className="w-4 h-4" />
+                      Save & Print DC
                     </Button>
 
                     <Button
@@ -1464,15 +1665,14 @@ export default function OrthoApp() {
                         setDcMode('procedure');
                         setInitialFilterType('All');
                         setShowProcedureSelector(true);
-                        // Immediately collapse all currently active procedures
                         setCollapsedProcedures(new Set(activeProcedures.map((p) => p.name)));
-                        // Scroll smoothly to top procedure selector
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
-                      className="w-full sm:flex-1 gap-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm h-11 shadow-md shadow-teal-600/20 border border-teal-500/40"
+                      variant="outline"
+                      className="w-full sm:w-auto gap-2 border-slate-300 hover:bg-slate-100 font-bold text-sm h-11"
                     >
-                      <Plus className="w-4.5 h-4.5" />
-                      Add New Procedure
+                      <Plus className="w-4 h-4 text-teal-700" />
+                      + Add Procedure
                     </Button>
                   </div>
                 </div>
@@ -1652,15 +1852,11 @@ export default function OrthoApp() {
             <p className="text-sm text-muted-foreground">
               This DC will be saved to Google Sheets. You can manage it later from the "Saved DC List".
             </p>
-
-            <div className="flex flex-col-reverse sm:flex-row gap-2">
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setShowConfirmSaveDialog(false);
-                  setShowSettingsModal(true);
-                }}
-                className="w-full sm:flex-1"
+                onClick={() => setShowConfirmSaveDialog(false)}
+                className="w-full sm:w-auto"
                 disabled={isSavingDc}
               >
                 Cancel
@@ -1668,28 +1864,27 @@ export default function OrthoApp() {
               <Button
                 onClick={async () => {
                   setShowConfirmSaveDialog(false);
-                  const success = await handleSaveDc();
-                  if (!success) {
-                    setShowSettingsModal(true);
-                  } else {
-                    // Optionally open print dialog after successful save
-                    // setShowPrintModal(true);
-                  }
+                  await handleSaveDc();
                 }}
-                className="w-full sm:flex-1"
+                className="w-full sm:flex-1 bg-slate-900 text-white hover:bg-slate-800 font-bold"
                 disabled={isSavingDc}
               >
-                {isSavingDc ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    Saving to Sheets...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4 mr-2" />
-                    Confirm & Save
-                  </>
-                )}
+                Save Only
+              </Button>
+              <Button
+                onClick={async () => {
+                  setShowConfirmSaveDialog(false);
+                  const success = await handleSaveDc();
+                  if (success) {
+                    setTimeout(() => {
+                      handlePrintPDF();
+                    }, 300);
+                  }
+                }}
+                className="w-full sm:flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold"
+                disabled={isSavingDc}
+              >
+                Save & Print
               </Button>
             </div>
           </div>
@@ -1722,6 +1917,7 @@ export default function OrthoApp() {
           </div>
         </DialogContent>
       </Dialog >
+
     </div >
   );
 }

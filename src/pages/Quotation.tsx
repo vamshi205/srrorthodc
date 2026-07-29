@@ -32,7 +32,7 @@ export default function Quotation() {
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
-      <main className="flex-grow flex flex-col px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
+      <main className="flex-grow flex flex-col px-2 sm:px-4 py-2 sm:py-3 overflow-x-hidden">
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}
@@ -49,7 +49,7 @@ export default function Quotation() {
         />
         
         {/* Floating Quotation card aligned with the main toolbar */}
-        <div className="mt-0 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[700px] h-[calc(100vh-115px)]">
+        <div className="mt-2 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[700px] h-[calc(100vh-80px)]">
           <iframe
             src="/quotation/index.html"
             title="Quotation Maker"

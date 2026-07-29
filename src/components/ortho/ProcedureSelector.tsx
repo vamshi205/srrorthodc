@@ -57,7 +57,7 @@ export function ProcedureSelector({
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-2.5 overflow-x-auto pb-2 border-b border-border">
-        {procedureTypes.map((type) => {
+        {procedureTypes.filter((t) => t !== 'None' && t !== 'none').map((type) => {
           const typeCount = type === 'All'
             ? procedures.length
             : procedures.filter(p => p.type === type).length;
@@ -83,7 +83,7 @@ export function ProcedureSelector({
       </div>
 
       {/* Procedures List Container */}
-      <div className="max-h-[460px] overflow-y-auto pr-1 space-y-4">
+      <div className="flex-1 min-h-[400px] max-h-[calc(100vh-230px)] sm:max-h-[calc(100vh-210px)] overflow-y-auto pr-1 space-y-4">
         {(() => {
           // Group procedures by type for organized display
           const grouped = filteredProcedures.reduce((acc, proc) => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Activity, CheckCircle2, Circle, Images, List, LogOut, Menu, Plus, Trash2, Wrench, Sun, Moon } from "lucide-react";
+import { Activity, CheckCircle2, Circle, Images, List, LogOut, Menu, Plus, Trash2, Wrench, Sun, Moon, Search } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 
 import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
 import { ProcedureSelector } from "@/components/ortho/ProcedureSelector";
@@ -98,6 +99,7 @@ export default function ImageDatabase() {
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [showProcedurePicker, setShowProcedurePicker] = useState(true);
   const [tab, setTab] = useState<"all" | "items" | "instruments">("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [showPackedSection, setShowPackedSection] = useState(false);
   const [packedMap, setPackedMap] = useState<Record<string, Record<string, ImageDbPackedState>>>(
     () => loadImageDbPacked(),
@@ -180,10 +182,20 @@ export default function ImageDatabase() {
   }, [selectedProcedure]);
 
   const visibleImages = useMemo(() => {
-    if (tab === "items") return gallery.items;
-    if (tab === "instruments") return gallery.instruments;
-    return gallery.all;
-  }, [gallery, tab]);
+    let baseList = gallery.all;
+    if (tab === "items") baseList = gallery.items;
+    if (tab === "instruments") baseList = gallery.instruments;
+
+    if (!searchQuery.trim()) return baseList;
+
+    const q = searchQuery.toLowerCase().trim();
+    return baseList.filter((img) => {
+      const nameMatch = img.name.toLowerCase().includes(q);
+      const locStr = toDisplayLocation(img.location)?.toLowerCase() || "";
+      const locMatch = locStr.includes(q);
+      return nameMatch || locMatch;
+    });
+  }, [gallery, tab, searchQuery]);
 
   const selectedProcedurePacked = useMemo(() => {
     if (!selectedProcedure) return {};
@@ -279,68 +291,67 @@ export default function ImageDatabase() {
             setCollapsedProcedures={() => {}}
           />
 
-          <div className="space-y-6">
-            <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md">
-              <CardHeader className="p-4">
-                <CardTitle className="text-base flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-2">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white text-xs font-bold">
-                      1
+          <div className="space-y-4">
+            {selectedProcedure && !showProcedurePicker ? (
+              <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 via-slate-50 to-indigo-50/70 p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-blue-600 text-white font-bold text-xs">Selected Procedure</Badge>
+                    <span className="text-xs text-slate-500 font-semibold">{selectedProcedure.type || "General"}</span>
+                  </div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 mt-1 truncate">{selectedProcedure.name}</h2>
+                  <p className="text-xs text-slate-600 font-medium">
+                    {gallery.all.length} total images ({gallery.items.length} items, {gallery.instruments.length} instruments)
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-3 border-blue-300 text-blue-800 hover:bg-blue-100 bg-white font-bold text-xs shadow-xs"
+                    onClick={() => setShowProcedurePicker(true)}
+                  >
+                    Change Procedure
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-3 border-red-200 text-red-700 hover:bg-red-50 bg-white font-bold text-xs shadow-xs"
+                    onClick={() => {
+                      setSelectedName(null);
+                      setShowProcedurePicker(true);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md flex-1 min-h-[calc(100vh-180px)] flex flex-col">
+                <CardHeader className="p-4">
+                  <CardTitle className="text-base flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2">
+                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white text-xs font-bold">
+                        1
+                      </span>
+                      Select Procedure
                     </span>
-                    Select Procedure
-                  </span>
-                  {selectedProcedure ? (
-                    <Badge className="bg-blue-100 text-blue-800 border-blue-200" variant="outline">
-                      Ready
-                    </Badge>
-                  ) : (
                     <Badge variant="outline" className="border-slate-300 text-slate-700">
                       Required
                     </Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    Search and pick a procedure. Then follow the packing checklist (Unpacked → Packed).
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 pt-0 space-y-3 flex-1 flex flex-col">
+                  {error && (
+                    <div className="text-sm text-red-700 border border-red-200 bg-red-50 rounded-md p-3">
+                      Failed to load procedures: {error}
+                    </div>
                   )}
-                </CardTitle>
-                <CardDescription>
-                  Search and pick a procedure. Then follow the packing checklist (Unpacked → Packed).
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-4 pt-0 space-y-3">
-                {error && (
-                  <div className="text-sm text-red-700 border border-red-200 bg-red-50 rounded-md p-3">
-                    Failed to load procedures: {error}
-                  </div>
-                )}
 
-                {selectedProcedure && !showProcedurePicker ? (
-                  <div className="rounded-xl border border-slate-200 bg-white p-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 truncate">{selectedProcedure.name}</div>
-                      <div className="text-xs text-slate-600 truncate">
-                        {selectedProcedure.type || "General"} · {gallery.all.length} images
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-3"
-                        onClick={() => setShowProcedurePicker(true)}
-                      >
-                        Change
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-3 border-red-200 text-red-700 hover:bg-red-50"
-                        onClick={() => {
-                          setSelectedName(null);
-                          setShowProcedurePicker(true);
-                        }}
-                      >
-                        Clear
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
                   <ProcedureSelector
                     procedures={procedures}
                     procedureTypes={procedureTypes}
@@ -351,19 +362,18 @@ export default function ImageDatabase() {
                       setShowPackedSection(false);
                       setSelectedName((prev) => {
                         const next = prev === p.name ? null : p.name;
-                        // Hide picker once a procedure is chosen (default behavior like Procedure List)
                         if (next) setShowProcedurePicker(false);
                         else setShowProcedurePicker(true);
                         return next;
                       });
                     }}
                   />
-                )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
             {selectedProcedure && (
-              <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md">
+              <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md flex-1 min-h-[calc(100vh-220px)] flex flex-col">
                 <CardHeader className="p-4 pb-2">
                   <CardTitle className="text-base flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2">
@@ -407,20 +417,29 @@ export default function ImageDatabase() {
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
                   <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-                    <TabsList className="w-full justify-start bg-slate-50 border border-slate-200">
-                      <TabsTrigger value="all" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                        All
-                      </TabsTrigger>
-                      <TabsTrigger value="items" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                        Items
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="instruments"
-                        className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
-                      >
-                        Instruments
-                      </TabsTrigger>
-                    </TabsList>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-3">
+                      <TabsList className="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 p-1">
+                        <TabsTrigger value="all" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold text-xs">
+                          All ({gallery.all.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="items" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold text-xs">
+                          Items ({gallery.items.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="instruments" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold text-xs">
+                          Instruments ({gallery.instruments.length})
+                        </TabsTrigger>
+                      </TabsList>
+
+                      <div className="relative flex-1 max-w-sm">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                        <Input
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Search items or locations (e.g. Rack 1, Box A)..."
+                          className="pl-9 h-9 text-xs font-medium bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-800"
+                        />
+                      </div>
+                    </div>
 
                     <TabsContent value="all" className="mt-4">
                       <PackedSplitGrid
@@ -590,7 +609,7 @@ function GalleryGrid({
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
       {items.map((img) => {
         const location = toDisplayLocation(img.location);
         const packed = isPacked(img);

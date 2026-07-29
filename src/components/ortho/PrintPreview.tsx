@@ -1,4 +1,4 @@
-import { forwardRef, useMemo } from 'react';
+import { forwardRef, Fragment, useMemo } from 'react';
 import { ActiveProcedure } from '@/types/procedure';
 
 interface PrintPreviewProps {
@@ -13,22 +13,24 @@ interface PrintPreviewProps {
   manualMaterialType?: string;
 }
 
-interface PrintItem {
-  name: string;
-  description: string;
-  qty: number;
-  procedure: string;
-  location?: { room: string; rack: string; box: string } | null;
-  isSelectable: boolean;
+interface ProcedureGroup {
+  procedureName: string;
+  items: Array<{
+    name: string;
+    description: string;
+    qty: number;
+  }>;
 }
 
 export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
   ({ activeProcedures, hospitalName, dcNo, deliveredBy, receivedBy, manualItems = [], manualInstruments = [], manualBoxNumbers = [], manualMaterialType = 'SS' }, ref) => {
-    const printItems = useMemo(() => {
-      const items: PrintItem[] = [];
+    const procedureGroups = useMemo(() => {
+      const groups: ProcedureGroup[] = [];
 
       activeProcedures.forEach((procedure) => {
         const procedureMaterial = procedure.materialType || 'SS';
+        const groupItems: Array<{ name: string; description: string; qty: number }> = [];
+
         // Fixed items first
         procedure.fixedItems.forEach((fixedItem) => {
           const isSelected = procedure.selectedFixedItems.get(fixedItem.name) ?? true;
@@ -36,23 +38,19 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
             const editedQty = procedure.fixedQtyEdits.get(fixedItem.name) ?? fixedItem.qty;
             const displayName =
               procedureMaterial !== 'None' ? `${procedureMaterial} ${fixedItem.name}` : fixedItem.name;
-            items.push({
+            groupItems.push({
               name: displayName,
               description: '',
               qty: parseInt(editedQty) || 1,
-              procedure: procedure.name,
-              location: procedure.fixedItemLocationMapping?.[fixedItem.name] || null,
-              isSelectable: false,
             });
           }
         });
 
-        // Selected items (selectable items) - combine all sizes into one item
+        // Selectable items
         procedure.selectedItems.forEach((item, itemName) => {
           const displayName =
             procedureMaterial !== 'None' ? `${procedureMaterial} ${itemName}` : itemName;
 
-          // Build size details string
           const sizeDetails = item.sizeQty
             .filter(sq => sq.size)
             .map(sq => `${sq.size} (Qty: ${sq.qty})`)
@@ -62,32 +60,39 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
             ? item.sizeQty.reduce((sum, sq) => sum + (parseInt(sq.qty) || 1), 0)
             : 1;
 
-          items.push({
+          groupItems.push({
             name: displayName,
             description: sizeDetails,
             qty: totalQty,
-            procedure: procedure.name,
-            location: procedure.itemLocationMapping?.[itemName] || null,
-            isSelectable: true,
           });
         });
+
+        if (groupItems.length > 0) {
+          groups.push({
+            procedureName: procedure.name,
+            items: groupItems,
+          });
+        }
       });
 
-      // Manual DC items
-      manualItems.forEach((mi) => {
-        const displayName = manualMaterialType !== 'None' ? `${manualMaterialType} ${mi.name}` : mi.name;
-        const desc = mi.size ? `${mi.size} (Qty: ${mi.qty})` : '';
-        items.push({
-          name: displayName,
-          description: desc,
-          qty: mi.qty,
-          procedure: 'Manual',
-          location: null,
-          isSelectable: true,
+      // Manual DC items if any
+      if (manualItems.length > 0) {
+        const manualGroupItems = manualItems.map((mi) => {
+          const displayName = manualMaterialType !== 'None' ? `${manualMaterialType} ${mi.name}` : mi.name;
+          const desc = mi.size ? `${mi.size} (Qty: ${mi.qty})` : '';
+          return {
+            name: displayName,
+            description: desc,
+            qty: mi.qty,
+          };
         });
-      });
+        groups.push({
+          procedureName: 'Manual Items',
+          items: manualGroupItems,
+        });
+      }
 
-      return items;
+      return groups;
     }, [activeProcedures, manualItems, manualMaterialType]);
 
     const allInstruments = useMemo(() => {
@@ -128,19 +133,23 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
         }}
       >
         {/* Header */}
-        <div className="text-center mb-1.5 border-b-2 border-black pb-1" style={{ pageBreakInside: 'avoid', marginTop: 0, paddingTop: 0 }}>
-          <h1 className="text-lg font-bold mb-0.5">SRR ORTHO IMPLANTS</h1>
-          <p className="text-[10px]">Orthopedic Implant Delivery Challan</p>
+        <div className="text-center mb-2 border-b-2 border-black pb-1.5" style={{ pageBreakInside: 'avoid', marginTop: 0, paddingTop: 0 }}>
+          <h1 className="text-xl font-bold mb-0.5 tracking-tight">SRI RAJA RAJESHWARI ORTHO PLUS</h1>
+          <p className="text-[11px] font-semibold">Orthopedic Implant Delivery Challan</p>
+          <p className="text-[9.5px] text-gray-700">Hyderabad, India • Mobile: +91 9396857455, +91 8686559393 • srrorthoplus.com</p>
         </div>
 
         {/* Info Section */}
-        <div className="grid grid-cols-2 gap-2 mb-2 text-[10px]" style={{ pageBreakInside: 'avoid' }}>
+        <div className="grid grid-cols-2 gap-2 mb-3 text-[11px]" style={{ pageBreakInside: 'avoid' }}>
           <div>
             <p>
               <strong>Hospital:</strong> {hospitalName || '___________________'}
             </p>
             <p className="mt-1">
               <strong>DC No:</strong> {dcNo || '___________________'}
+            </p>
+            <p className="mt-1">
+              <strong>Date:</strong> {today}
             </p>
           </div>
           <div className="text-right">
@@ -153,37 +162,50 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
           </div>
         </div>
 
-        {/* Items Table */}
-        <table className="w-full border-collapse text-[10px] mb-2" style={{ pageBreakInside: 'avoid' }}>
+        {/* Items Table - Clean, procedure header bold, no procedure column */}
+        <table className="w-full border-collapse text-[10.5px] mb-3" style={{ pageBreakInside: 'avoid' }}>
           <thead style={{ display: 'table-header-group' }}>
-            <tr className="bg-gray-100">
-              <th className="border border-black p-1 text-left w-8" style={{ pageBreakInside: 'avoid' }}>S.No</th>
-              <th className="border border-black p-1 text-left" style={{ pageBreakInside: 'avoid' }}>Item Description</th>
-              <th className="border border-black p-1 text-center w-10" style={{ pageBreakInside: 'avoid' }}>Qty</th>
+            <tr className="bg-gray-100 font-bold">
+              <th className="border border-black p-1.5 text-center w-8" style={{ pageBreakInside: 'avoid' }}>S.No</th>
+              <th className="border border-black p-1.5 text-left" style={{ pageBreakInside: 'avoid' }}>Item Description</th>
+              <th className="border border-black p-1.5 text-center w-12" style={{ pageBreakInside: 'avoid' }}>Qty</th>
             </tr>
           </thead>
           <tbody>
-            {printItems.map((item, index) => (
-              <tr key={index} style={{ pageBreakInside: 'avoid' }}>
-                <td className="border border-black p-1 text-center">{index + 1}</td>
-                <td className="border border-black p-1">
-                  <div>
-                    <div>{item.name}</div>
-                    {item.isSelectable && item.description && (
-                      <div className="text-[9px] text-gray-600 mt-0.5">
-                        {item.description}
+            {procedureGroups.map((group) => (
+              <Fragment key={group.procedureName}>
+                {/* Procedure Name Header Row - Bold in first cell */}
+                <tr className="bg-gray-100" style={{ pageBreakInside: 'avoid' }}>
+                  <td colSpan={3} className="border border-black p-1.5 text-left font-bold text-[11px]">
+                    {group.procedureName}
+                  </td>
+                </tr>
+
+                {/* Procedure Items */}
+                {group.items.map((item, itemIdx) => (
+                  <tr key={itemIdx} style={{ pageBreakInside: 'avoid' }}>
+                    <td className="border border-black p-1.5 text-center">{itemIdx + 1}</td>
+                    <td className="border border-black p-1.5">
+                      <div>
+                        <div className="font-semibold">{item.name}</div>
+                        {item.description && (
+                          <div className="text-[9.5px] text-gray-600 mt-0.5">
+                            {item.description}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </td>
-                <td className="border border-black p-1 text-center font-semibold">
-                  {item.qty}
-                </td>
-              </tr>
+                    </td>
+                    <td className="border border-black p-1.5 text-center font-bold">
+                      {item.qty}
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
             ))}
-            {printItems.length === 0 && (
+
+            {procedureGroups.length === 0 && (
               <tr>
-                <td colSpan={4} className="border border-black p-2 text-center text-gray-500">
+                <td colSpan={3} className="border border-black p-2 text-center text-gray-500">
                   No items selected
                 </td>
               </tr>
@@ -191,40 +213,40 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
           </tbody>
         </table>
 
-        {/* Instruments */}
+        {/* Instruments Details */}
         {allInstruments.length > 0 && (
-          <div className="mb-1.5" style={{ pageBreakInside: 'avoid' }}>
-            <h3 className="font-bold mb-0.5 text-[10px]">Instruments Required:</h3>
-            <p className="text-[10px]">{allInstruments.join(', ')}</p>
+          <div className="mb-2 border border-black p-2" style={{ pageBreakInside: 'avoid' }}>
+            <h3 className="font-bold text-[11px] mb-0.5">Instruments Details:</h3>
+            <p className="text-[10.5px]">{allInstruments.join(', ')}</p>
           </div>
         )}
 
         {/* Box Numbers */}
         {allBoxNumbers.length > 0 && (
-          <div className="mb-1.5" style={{ pageBreakInside: 'avoid' }}>
-            <h3 className="font-bold mb-0.5 text-[10px]">Box Numbers:</h3>
-            <p className="text-[10px]">{allBoxNumbers.join(', ')}</p>
+          <div className="mb-2 border border-black p-2" style={{ pageBreakInside: 'avoid' }}>
+            <h3 className="font-bold text-[11px] mb-0.5">Box Numbers:</h3>
+            <p className="text-[10.5px]">{allBoxNumbers.join(', ')}</p>
           </div>
         )}
 
         {/* Signatures */}
-        <div className="grid grid-cols-2 gap-3 mt-2 pt-1" style={{ pageBreakInside: 'avoid', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+        <div className="grid grid-cols-2 gap-3 mt-12 pt-6" style={{ pageBreakInside: 'avoid', display: 'grid', gridTemplateColumns: '1fr 1fr', marginTop: '50px' }}>
           <div className="text-center">
-            <div className="border-t border-black pt-1 mt-4">
-              <p className="text-[10px] font-semibold">{receivedBy || "Receiver's Signature"}</p>
+            <div className="border-t border-black pt-1 mt-6">
+              <p className="text-[10.5px] font-bold">{receivedBy || "Receiver's Signature"}</p>
               <p className="text-[9px] text-gray-600">Name & Date</p>
             </div>
           </div>
           <div className="text-center">
-            <div className="border-t border-black pt-1 mt-4">
-              <p className="text-[10px] font-semibold">{deliveredBy || "Authorized Signature"}</p>
-              <p className="text-[9px] text-gray-600">SRR Ortho Implants</p>
+            <div className="border-t border-black pt-1 mt-6">
+              <p className="text-[10.5px] font-bold">{deliveredBy || "Authorized Signature"}</p>
+              <p className="text-[9px] text-gray-600">For Sri Raja Rajeshwari Ortho Plus</p>
             </div>
           </div>
         </div>
 
-        {/* Footer - System Generated Notice */}
-        <div className="mt-1 pt-0.5 text-center text-[9px] text-gray-500" style={{ pageBreakInside: 'avoid' }}>
+        {/* Footer */}
+        <div className="mt-2 pt-1 text-center text-[9px] text-gray-500" style={{ pageBreakInside: 'avoid' }}>
           <p>This is a system-generated delivery challan.</p>
         </div>
       </div>

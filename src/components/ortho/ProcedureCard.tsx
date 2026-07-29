@@ -478,7 +478,6 @@ export function ProcedureCard({
               <SelectContent>
                 <SelectItem value="SS">SS</SelectItem>
                 <SelectItem value="Titanium">Titanium</SelectItem>
-                <SelectItem value="None">No Prefix</SelectItem>
               </SelectContent>
             </Select>
           </div>

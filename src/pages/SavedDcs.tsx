@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -174,6 +174,7 @@ const SavedDcs = () => {
   const [cashAmountInput, setCashAmountInput] = useState("");
   const [selectedDcId, setSelectedDcId] = useState<string | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [dcDocumentModalOpen, setDcDocumentModalOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
   const [deletePassword, setDeletePassword] = useState("");
   const [adminPasswordOpen, setAdminPasswordOpen] = useState(false);
@@ -510,42 +511,91 @@ const SavedDcs = () => {
       toast({ title: "Popup blocked", description: "Allow popups to print." });
       return;
     }
-    const rows = dc.items
-      .map((item) => {
-        const totalQty = item.sizes.reduce((sum, size) => sum + size.qty, 0);
-        const sizes = item.sizes
-          .filter((size) => size.size)
-          .map((size) => `${size.size} (${size.qty})`)
-          .join(", ");
-        return `<tr><td>${item.name}</td><td>${item.procedure}</td><td>${sizes || "-"}</td><td>${totalQty}</td></tr>`;
+
+    // Group items by procedure name
+    const groupedItems: Record<string, typeof dc.items> = {};
+    dc.items.forEach((item) => {
+      const proc = item.procedure || "General Items";
+      if (!groupedItems[proc]) groupedItems[proc] = [];
+      groupedItems[proc].push(item);
+    });
+
+    const rows = Object.entries(groupedItems)
+      .map(([procName, items]) => {
+        const itemRows = items
+          .map((item, idx) => {
+            const totalQty = item.sizes.reduce((sum, size) => sum + size.qty, 0);
+            const sizes = item.sizes
+              .filter((size) => size.size)
+              .map((size) => `${size.size} (Qty: ${size.qty})`)
+              .join(", ");
+            const desc = sizes ? `<div style="font-size: 9.5px; color: #555; margin-top: 2px;">${sizes}</div>` : "";
+            return `<tr>
+              <td style="text-align: center; border: 1px solid #000; padding: 5px;">${idx + 1}</td>
+              <td style="border: 1px solid #000; padding: 5px;"><strong>${item.name}</strong>${desc}</td>
+              <td style="text-align: center; font-weight: bold; border: 1px solid #000; padding: 5px;">${totalQty}</td>
+            </tr>`;
+          })
+          .join("");
+
+        return `
+          <tr style="background: #f5f5f5;">
+            <td colSpan="3" style="border: 1px solid #000; padding: 5px; font-weight: bold; font-size: 11px;">${procName}</td>
+          </tr>
+          ${itemRows}
+        `;
       })
       .join("");
+
     win.document.write(`
       <html>
         <head>
           <title>DC ${dc.dcNo}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 16px; }
-            h1 { font-size: 18px; margin-bottom: 4px; }
-            .meta { font-size: 12px; color: #555; margin-bottom: 12px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
-            th { background: #f5f5f5; }
+            body { font-family: Arial, sans-serif; padding: 16px; font-size: 11px; color: #000; }
+            h1 { font-size: 18px; font-weight: bold; margin-bottom: 2px; text-align: center; }
+            p { margin: 2px 0; }
+            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 12px; }
+            .meta-grid { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 11px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11px; }
+            th, td { border: 1px solid #000; padding: 5px; }
+            th { background: #f0f0f0; }
+            .box { border: 1px solid #000; padding: 6px; margin-between: 8px; margin-bottom: 10px; font-size: 11px; }
+            .sig-grid { display: flex; justify-content: space-between; margin-top: 60px; margin-bottom: 25px; }
+            .sig { border-top: 1px solid #000; width: 180px; text-align: center; padding-top: 4px; font-weight: bold; }
           </style>
         </head>
         <body>
-          <h1>DC ${dc.dcNo}</h1>
-          <div class="meta">Party: ${dc.hospitalName} | Date: ${formatDate(dc.savedAt)}</div>
-          <div class="meta">Delivered By: ${dc.deliveredBy || "-"} | Received By: ${dc.receivedBy || "-"}</div>
-          <div class="meta">Remarks: ${dc.remarks || "-"}</div>
+          <div class="header">
+            <h1>SRI RAJA RAJESHWARI ORTHO PLUS</h1>
+            <p style="font-weight: bold;">Orthopedic Implant Delivery Challan</p>
+            <p style="font-size: 10px; color: #444;">Hyderabad, India | Mobile: +91 9396857455, +91 8686559393 | srrorthoplus.com</p>
+          </div>
+          <div class="meta-grid">
+            <div>
+              <p><strong>Hospital:</strong> ${dc.hospitalName}</p>
+              <p><strong>DC No:</strong> ${dc.dcNo}</p>
+              <p><strong>Date:</strong> ${formatDate(dc.savedAt)}</p>
+            </div>
+            <div style="text-align: right;">
+              <p><strong>Delivered By:</strong> ${dc.deliveredBy || "-"}</p>
+              <p><strong>Received By:</strong> ${dc.receivedBy || "-"}</p>
+              <p><strong>Material Type:</strong> ${dc.materialType || "SS"}</p>
+            </div>
+          </div>
           <table>
             <thead>
-              <tr><th>Item</th><th>Procedure</th><th>Sizes</th><th>Qty</th></tr>
+              <tr><th style="width: 35px; text-align: center;">S.No</th><th style="text-align: left;">Item Description</th><th style="width: 45px; text-align: center;">Qty</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
-          <div class="meta">Instruments: ${dc.instruments.join(", ") || "-"}</div>
-          <div class="meta">Box Numbers: ${dc.boxNumbers.join(", ") || "-"}</div>
+          ${dc.instruments && dc.instruments.length > 0 ? `<div class="box"><strong>Instruments Details:</strong><br/>${dc.instruments.join(", ")}</div>` : ""}
+          ${dc.boxNumbers && dc.boxNumbers.length > 0 ? `<div class="box"><strong>Box Numbers:</strong><br/>${dc.boxNumbers.join(", ")}</div>` : ""}
+          ${dc.remarks ? `<div class="box"><strong>Remarks:</strong><br/>${dc.remarks}</div>` : ""}
+          <div class="sig-grid">
+            <div class="sig">Receiver Sign</div>
+            <div class="sig">For Sri Raja Rajeshwari Ortho Plus</div>
+          </div>
         </body>
       </html>
     `);
@@ -1110,9 +1160,18 @@ const SavedDcs = () => {
                           size="sm"
                           variant="ghost"
                           className="h-7 text-xs font-bold text-white hover:bg-white/20 gap-1 px-2.5"
+                          onClick={() => setDcDocumentModalOpen(true)}
+                        >
+                          <Eye className="h-3.5 w-3.5 text-teal-300" /> View DC
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs font-bold text-white hover:bg-white/20 gap-1 px-2.5"
                           onClick={() => setDetailsDialogOpen(true)}
                         >
-                          <Eye className="h-3.5 w-3.5 text-teal-300" /> View Details
+                          <Activity className="h-3.5 w-3.5 text-amber-300" /> Track Status
                         </Button>
 
                         <Button
@@ -1130,7 +1189,7 @@ const SavedDcs = () => {
                           className="h-7 text-xs font-bold text-white hover:bg-white/20 gap-1 px-2.5"
                           onClick={() => handleShare(selectedDc)}
                         >
-                          <Share2 className="h-3.5 w-3.5 text-amber-300" /> Share PDF
+                          <Share2 className="h-3.5 w-3.5 text-emerald-300" /> Share PDF
                         </Button>
 
                         {selectedDc.status === "pending" && (
@@ -1244,15 +1303,39 @@ const SavedDcs = () => {
                                       </span>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="radio"
-                                      name="selected-dc-mobile"
-                                      className="h-4 w-4 accent-blue-600 cursor-pointer"
-                                      checked={isSelected}
-                                      onChange={() => setSelectedDcId(dc.id)}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
+                                  <div className="flex items-center gap-1.5">
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedDcId(dc.id);
+                                        setDcDocumentModalOpen(true);
+                                      }}
+                                      className="w-8 h-8 flex items-center justify-center bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 transition-all shadow-xs"
+                                      title="View Delivery Challan (Document Preview)"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedDcId(dc.id);
+                                        setDetailsDialogOpen(true);
+                                      }}
+                                      className="w-8 h-8 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-full text-blue-700 hover:bg-blue-100 transition-all shadow-xs"
+                                      title="Track Status & History"
+                                    >
+                                      <Activity className="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePrint(dc);
+                                      }}
+                                      className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 transition-all shadow-xs"
+                                      title="Print DC"
+                                    >
+                                      <Printer className="w-4 h-4" />
+                                    </button>
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
                                         <Button
@@ -1273,19 +1356,29 @@ const SavedDcs = () => {
                                         <DropdownMenuItem
                                           onClick={() => {
                                             setSelectedDcId(dc.id);
+                                            setDcDocumentModalOpen(true);
+                                          }}
+                                          className="gap-2"
+                                        >
+                                          <Eye className="h-4 w-4 text-teal-600" />
+                                          View DC Document
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() => {
+                                            setSelectedDcId(dc.id);
                                             setDetailsDialogOpen(true);
                                           }}
                                           className="gap-2"
                                         >
-                                          <Eye className="h-4 w-4" />
-                                          View Details
+                                          <Activity className="h-4 w-4 text-blue-600" />
+                                          Track Status
                                         </DropdownMenuItem>
                                         <DropdownMenuItem onClick={() => handlePrint(dc)} className="gap-2">
-                                          <Printer className="h-4 w-4" />
+                                          <Printer className="h-4 w-4 text-indigo-600" />
                                           Print DC
                                         </DropdownMenuItem>
                                         <DropdownMenuItem onClick={() => handleShare(dc)} className="gap-2">
-                                          <Share2 className="h-4 w-4" />
+                                          <Share2 className="h-4 w-4 text-amber-600" />
                                           Share PDF
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
@@ -1512,49 +1605,86 @@ const SavedDcs = () => {
                                         </div>
                                       </td>
                                       <td className="p-3 text-center">
-                                        <DropdownMenu>
-                                          <DropdownMenuTrigger asChild>
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="h-8 w-8 p-0 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                              disabled={(!selectedDcId || selectedDcId !== dc.id) || loadingDcIds.has(dc.id)}
-                                              title="Actions"
-                                              onClick={(e) => e.stopPropagation()}
-                                            >
-                                              {loadingDcIds.has(dc.id) ? (
-                                                <RefreshCw className="h-4 w-4 text-slate-600 animate-spin" />
-                                              ) : (
-                                                <Edit className="h-4 w-4 text-slate-600" />
-                                              )}
-                                            </Button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end" className="w-48">
-                                            <DropdownMenuItem
-                                              onClick={() => {
-                                                setSelectedDcId(dc.id);
-                                                setDetailsDialogOpen(true);
-                                              }}
-                                              className="gap-2"
-                                            >
-                                              <Eye className="h-4 w-4" />
-                                              View Details
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={() => handlePrint(dc)}
-                                              className="gap-2"
-                                            >
-                                              <Printer className="h-4 w-4" />
-                                              Print DC
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={() => handleShare(dc)}
-                                              className="gap-2"
-                                            >
-                                              <Share2 className="h-4 w-4" />
-                                              Share PDF
-                                            </DropdownMenuItem>
-                                            <DropdownMenuSeparator />
+                                        <div className="flex items-center justify-center gap-1.5">
+                                          <button 
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedDcId(dc.id);
+                                              setDcDocumentModalOpen(true);
+                                            }}
+                                            className="w-8 h-8 flex items-center justify-center bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 transition-all shadow-xs"
+                                            title="View Delivery Challan (Document Preview)"
+                                          >
+                                            <Eye className="w-4 h-4 text-teal-700" />
+                                          </button>
+                                          <button 
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedDcId(dc.id);
+                                              setDetailsDialogOpen(true);
+                                            }}
+                                            className="w-8 h-8 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-full text-blue-700 hover:bg-blue-100 transition-all shadow-xs"
+                                            title="Track Status & History"
+                                          >
+                                            <Activity className="w-4 h-4 text-blue-700" />
+                                          </button>
+                                          <button 
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handlePrint(dc);
+                                            }}
+                                            className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 transition-all shadow-xs"
+                                            title="Print DC"
+                                          >
+                                            <Printer className="w-4 h-4 text-slate-700" />
+                                          </button>
+                                          <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-8 w-8 p-0 hover:bg-slate-200"
+                                                disabled={loadingDcIds.has(dc.id)}
+                                                title="Actions"
+                                                onClick={(e) => e.stopPropagation()}
+                                              >
+                                                {loadingDcIds.has(dc.id) ? (
+                                                  <RefreshCw className="h-4 w-4 text-slate-600 animate-spin" />
+                                                ) : (
+                                                  <Edit className="h-4 w-4 text-slate-600" />
+                                                )}
+                                              </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-48">
+                                              <DropdownMenuItem
+                                                onClick={() => {
+                                                  setSelectedDcId(dc.id);
+                                                  setDcDocumentModalOpen(true);
+                                                }}
+                                                className="gap-2"
+                                              >
+                                                <Eye className="h-4 w-4 text-teal-600" />
+                                                View DC Document
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() => {
+                                                  setSelectedDcId(dc.id);
+                                                  setDetailsDialogOpen(true);
+                                                }}
+                                                className="gap-2"
+                                              >
+                                                <Activity className="h-4 w-4 text-blue-600" />
+                                                Track Status
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem onClick={() => handlePrint(dc)} className="gap-2">
+                                                <Printer className="h-4 w-4 text-indigo-600" />
+                                                Print DC
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem onClick={() => handleShare(dc)} className="gap-2">
+                                                <Share2 className="h-4 w-4 text-amber-600" />
+                                                Share PDF
+                                              </DropdownMenuItem>
+                                              <DropdownMenuSeparator />
                                             <DropdownMenuItem
                                               onClick={() => openActionDialog("return", dc)}
                                               disabled={dc.status !== "pending"}
@@ -1619,7 +1749,8 @@ const SavedDcs = () => {
                                             </DropdownMenuItem>
                                           </DropdownMenuContent>
                                         </DropdownMenu>
-                                      </td>
+                                      </div>
+                                    </td>
                                     </tr>
                                   );
                                 })}
@@ -1806,6 +1937,179 @@ const SavedDcs = () => {
                 <Button variant="outline" onClick={closeActionDialog} disabled={isActionLoading}>
                   Cancel
                 </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* DC Document Preview Modal (View DC like Print) */}
+      <Dialog open={dcDocumentModalOpen} onOpenChange={setDcDocumentModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-3 sm:p-6 bg-slate-100 dark:bg-slate-900">
+          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-300">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg font-bold text-slate-900">
+              <FileText className="h-5 w-5 text-teal-700" />
+              Delivery Challan Document — {selectedDc?.dcNo}
+            </DialogTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => selectedDc && handlePrint(selectedDc)}
+                className="bg-teal-700 text-white hover:bg-teal-800 font-bold gap-1.5 h-8 text-xs"
+              >
+                <Printer className="h-3.5 w-3.5" /> Print DC
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => selectedDc && handleShare(selectedDc)}
+                className="border-slate-300 gap-1.5 h-8 text-xs bg-white text-slate-800 hover:bg-slate-50"
+              >
+                <Share2 className="h-3.5 w-3.5 text-amber-600" /> Share PDF
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {!selectedDc ? (
+            <div className="text-sm text-slate-600 p-4">Select a DC to view document preview.</div>
+          ) : (
+            <div className="bg-white p-4 sm:p-8 rounded-xl shadow-lg border border-slate-300 text-slate-900 space-y-5 font-sans">
+              {/* Document Header */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b-2 border-teal-600 gap-3">
+                <div>
+                  <h1 className="text-lg sm:text-2xl font-extrabold text-teal-900 uppercase tracking-tight">
+                    SRI RAJA RAJESHWARI ORTHO PLUS
+                  </h1>
+                  <p className="text-xs text-slate-600 font-medium mt-0.5">
+                    Implants, Instruments & Surgical Accessories
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Hyderabad, India • Mobile: +91 9396857455, +91 8686559393 • Web: srrorthoplus.com
+                  </p>
+                </div>
+                <div className="bg-teal-50 border border-teal-200 px-4 py-2 rounded-xl text-left sm:text-right shrink-0">
+                  <div className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">DELIVERY CHALLAN</div>
+                  <div className="text-base sm:text-xl font-black text-teal-950">{selectedDc.dcNo}</div>
+                  <div className="text-xs text-slate-600 font-semibold">{formatDate(getDisplayDate(selectedDc))}</div>
+                </div>
+              </div>
+
+              {/* Party & Personnel Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+                <div>
+                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Hospital / Party Name:</span>
+                  <span className="font-extrabold text-slate-900 text-sm">{selectedDc.hospitalName}</span>
+                </div>
+                <div>
+                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Material Type:</span>
+                  <span className="font-semibold text-slate-800">{selectedDc.materialType || 'SS'}</span>
+                </div>
+                <div>
+                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Delivered By:</span>
+                  <span className="font-semibold text-slate-800">{selectedDc.deliveredBy || '-'}</span>
+                </div>
+                <div>
+                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Received By:</span>
+                  <span className="font-semibold text-slate-800">{selectedDc.receivedBy || '-'}</span>
+                </div>
+              </div>
+
+              {/* Despatched Items Table - Clean procedure bold header, no procedure column */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Despatched Items List</h3>
+                  <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                    Total Qty: {getTotalQty(selectedDc)}
+                  </span>
+                </div>
+                <div className="border border-slate-300 rounded-xl overflow-hidden shadow-xs">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-bold">
+                        <th className="p-2.5 border-r border-slate-700 w-10 text-center">S.No</th>
+                        <th className="p-2.5 border-r border-slate-700">Item Description</th>
+                        <th className="p-2.5 text-center w-20">Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {(() => {
+                        const grouped: Record<string, typeof selectedDc.items> = {};
+                        selectedDc.items.forEach((item) => {
+                          const proc = item.procedure || 'General Items';
+                          if (!grouped[proc]) grouped[proc] = [];
+                          grouped[proc].push(item);
+                        });
+
+                        return Object.entries(grouped).map(([procName, items]) => (
+                          <Fragment key={procName}>
+                            {/* Procedure Header Row - Bold in first cell */}
+                            <tr className="bg-slate-100 font-bold border-b border-slate-300">
+                              <td colSpan={3} className="p-2.5 text-left font-bold text-slate-900 bg-slate-100">
+                                {procName}
+                              </td>
+                            </tr>
+                            {items.map((item, idx) => {
+                              const totalQty = item.sizes.reduce((sum, size) => sum + size.qty, 0);
+                              const sizeStr = item.sizes
+                                .filter((s) => s.size)
+                                .map((s) => `${s.size} (Qty: ${s.qty})`)
+                                .join(', ');
+
+                              return (
+                                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'}>
+                                  <td className="p-2.5 text-center font-bold text-slate-500 border-r border-slate-200">{idx + 1}</td>
+                                  <td className="p-2.5 font-bold text-slate-900 border-r border-slate-200">
+                                    <div>{item.name}</div>
+                                    {sizeStr && <div className="text-[11px] text-slate-600 font-normal mt-0.5">{sizeStr}</div>}
+                                  </td>
+                                  <td className="p-2.5 text-center font-extrabold text-teal-800 text-sm">{totalQty}</td>
+                                </tr>
+                              );
+                            })}
+                          </Fragment>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Instruments Details */}
+              {selectedDc.instruments && selectedDc.instruments.length > 0 && (
+                <div className="border-t border-slate-200 pt-3 text-xs">
+                  <span className="font-bold text-slate-800 block uppercase tracking-wider text-[10px] mb-1">Instruments Details:</span>
+                  <div className="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-medium">
+                    {selectedDc.instruments.join(', ')}
+                  </div>
+                </div>
+              )}
+
+              {/* Box Numbers */}
+              {selectedDc.boxNumbers && selectedDc.boxNumbers.length > 0 && (
+                <div className="border-t border-slate-200 pt-3 text-xs">
+                  <span className="font-bold text-slate-800 block uppercase tracking-wider text-[10px] mb-1">Box Numbers:</span>
+                  <div className="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-medium">
+                    {selectedDc.boxNumbers.join(', ')}
+                  </div>
+                </div>
+              )}
+
+              {/* Remarks */}
+              {selectedDc.remarks && (
+                <div className="border-t border-slate-200 pt-2 text-xs">
+                  <span className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">Remarks / Instructions:</span>
+                  <p className="text-slate-700 mt-0.5 italic bg-amber-50/60 p-2 rounded border border-amber-200">{selectedDc.remarks}</p>
+                </div>
+              )}
+
+              {/* Signatures */}
+              <div className="flex justify-between items-end border-t-2 border-slate-300 pt-12 mt-12 text-xs text-slate-600">
+                <div>
+                  <div className="border-t-2 border-slate-400 w-36 text-center pt-1 font-bold text-slate-800">Receiver Sign</div>
+                </div>
+                <div>
+                  <div className="border-t-2 border-slate-400 w-48 text-center pt-1 font-extrabold text-teal-900">For Sri Raja Rajeshwari Ortho Plus</div>
+                </div>
               </div>
             </div>
           )}

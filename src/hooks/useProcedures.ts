@@ -17,8 +17,8 @@ export function useProcedures() {
   const processProcedures = useCallback((data: Procedure[]) => {
     setProcedures(data);
 
-    // Extract unique types - add "None" first as default, then "All", then other types
-    const types = ['None', 'All', ...new Set(data.map((p) => p.type).filter(Boolean))];
+    // Extract unique types - add "All" first, then other types (exclude "None")
+    const types = ['All', ...new Set(data.map((p) => p.type).filter((t) => Boolean(t) && t !== 'None'))];
     setProcedureTypes(types);
 
     // Setup Fuse instances

@@ -1478,7 +1478,7 @@ function App() {
       {/* ─────────────────────────────────────────
           MAIN CONTENT AREA
           ───────────────────────────────────────── */}
-      <main className="flex-1 overflow-hidden mt-[var(--nav-height)]">
+      <main className="flex-1 overflow-hidden">
 
         {/* VIEW: LIBRARY */}
         {view === 'library' && (
