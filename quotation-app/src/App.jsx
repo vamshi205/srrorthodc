@@ -655,31 +655,45 @@ function App() {
   };
 
   const getSignature = () => {
-    return `\n\nRegards\nA.Satyanarayana\nSri Raja Rajeshwari Ortho Plus\nMobile: 9396857455, 9397857455\nWeb: www.srrorthoplus.com`;
+    return `\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
   };
 
   const updateEmailBody = (templateId, selectedFiles = []) => {
     const template = templates.find(t => t.id === templateId);
-    const templateName = template?.name || 'Quotation';
+    const templateName = template?.name || 'Orthopedic Implants';
+    const emailSubject = `Submission for ${templateName} Quotation`;
 
-    let baseMessage = `Dear Sir/Madam,\n\nPlease find the attached Quotation for ${templateName} for your kind reference.`;
+    let baseMessage = `Dear Sir/Madam,\n\nPlease find attached the official quotation for ${templateName} for your kind reference.`;
 
     if (selectedFiles.length > 0) {
-      // Filter out the main generated quotation from the additional documents list
+      const generatedFiles = selectedFiles.filter(f => f.isGenerated);
       const additionalFiles = selectedFiles.filter(f => !f.isGenerated);
-      
-      if (additionalFiles.length > 0) {
-        const srrFiles = additionalFiles.filter(f => !f.folderId);
-        const vendorFiles = additionalFiles.filter(f => f.folderId);
 
-        baseMessage += `\n\nI have also attached the requested documents:`;
+      baseMessage += `\n\nAttached Documents:`;
+
+      if (generatedFiles.length > 0) {
+        generatedFiles.forEach(f => {
+          baseMessage += `\n• Quotation: ${f.fileName || templateName + ' Quotation.pdf'}`;
+        });
+      } else {
+        baseMessage += `\n• Quotation: ${templateName} Quotation.pdf`;
+      }
+
+      if (additionalFiles.length > 0) {
+        const srrFiles = additionalFiles.filter(f => f.col === 'drive_srr' || (!f.folderId && !f.fileId && !f.id?.startsWith('pl-')));
+        const priceListFiles = additionalFiles.filter(f => f.fileId || f.id?.startsWith('pl-') || (f.type && f.type.includes('price')));
+        const vendorFiles = additionalFiles.filter(f => f.folderId || f.col === 'drive_vendor_files');
 
         if (srrFiles.length > 0) {
-          baseMessage += `\n\nSRR Certificates:\n` + srrFiles.map((f, i) => `${i + 1}. ${f.label || f.fileName}`).join('\n');
+          baseMessage += `\n\nSRR Documents & Certificates:\n` + srrFiles.map((f, i) => `  ${i + 1}. ${f.label || f.name || f.fileName}`).join('\n');
+        }
+
+        if (priceListFiles.length > 0) {
+          baseMessage += `\n\nAttached Price List:\n` + priceListFiles.map((f, i) => `  ${i + 1}. ${f.label || f.name || f.fileName}`).join('\n');
         }
 
         if (vendorFiles.length > 0) {
-          baseMessage += `\n\nManufacturer Certificates:\n` + vendorFiles.map((f, i) => `${i + 1}. ${f.label || f.fileName}`).join('\n');
+          baseMessage += `\n\nManufacturer Certificates:\n` + vendorFiles.map((f, i) => `  ${i + 1}. ${f.label || f.name || f.fileName}`).join('\n');
         }
       }
     }
@@ -688,6 +702,7 @@ function App() {
 
     setEmailForm(prev => ({
       ...prev,
+      subject: emailSubject,
       body: baseMessage + getSignature()
     }));
   };
@@ -829,8 +844,8 @@ function App() {
           const itemHosp = (regeneratingItem.formData?.hospitalName || '').trim();
           const itemDoc = (regeneratingItem.formData?.doctorName || '').trim();
           const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
-          const dynSubject = (regeneratingItem.formData?.subject || 'Quotation for Orthopedic Implants & instruments').replace(/^Sub\s*:\s*/i, '').trim();
-          const dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for your reference.\n\nQuotation Details:\n• Reference No: ${regeneratingItem.formData?.referenceNumber}\n• Subject: ${regeneratingItem.formData?.subject || 'Quotation for Orthopedic Implants & instruments'}\n• Date: ${regeneratingItem.formData?.date}\n• Recipient: ${itemRecipient}\n\nIf you have any questions or require further information, please feel free to reach out.\n\nBest regards,\nSri Raja Rajeshwari Ortho Plus\nPhone: +91 99897 44433`;
+          const tName = regeneratingItem.templateName || templates.find(t => t.id === regeneratingItem.formData?.selectedTemplateId)?.name || 'Orthopedic Implants';
+          const dynSubject = `Submission for ${tName} Quotation`;
 
           const generatedFile = {
             id: 'gen-' + Date.now(),
@@ -848,6 +863,14 @@ function App() {
           if (priceListObj) {
             initialSelectedFiles.push(priceListObj);
           }
+
+          let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for ${tName} for your kind reference.\n\nAttached Documents:\n• Quotation: ${fileName}`;
+          
+          if (priceListObj) {
+            dynBody += `\n• Price List: ${priceListObj.label || priceListObj.fileName || 'Price List.pdf'}`;
+          }
+
+          dynBody += `\n\nWe look forward to your positive response.\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
 
           setResendEmailForm({
             to: regeneratingItem.lastEmailedTo || regeneratingItem.formData?.email || '',
@@ -1233,22 +1256,35 @@ function App() {
                 const itemHosp = (formData.hospitalName || '').trim();
                 const itemDoc = (formData.doctorName || '').trim();
                 const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
-                const dynSubject = (formData.subject || 'Quotation for Orthopedic Implants & instruments').replace(/^Sub\s*:\s*/i, '').trim();
-                const dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for your reference.\n\nQuotation Details:\n• Reference No: ${formData.referenceNumber}\n• Subject: ${formData.subject || 'Quotation for Orthopedic Implants & instruments'}\n• Date: ${formData.date}\n• Recipient: ${itemRecipient}\n\nIf you have any questions or require further information, please feel free to reach out.\n\nBest regards,\nSri Raja Rajeshwari Ortho Plus\nPhone: +91 99897 44433`;
+                const template = templates.find(t => t.id === formData.selectedTemplateId);
+                const tName = template?.name || 'Orthopedic Implants';
+                const dynSubject = `Submission for ${tName} Quotation`;
+
+                const priceListObj = formData.priceListId 
+                  ? priceLists.find(pl => pl.id === formData.priceListId)
+                  : null;
+
+                const attachedFiles = [
+                  {
+                    id: 'draft-' + Date.now(),
+                    fileName: fileName,
+                    data: blobUrl,
+                    isGenerated: true
+                  }
+                ];
+                if (priceListObj) attachedFiles.push(priceListObj);
+
+                let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for ${tName} for your kind reference.\n\nAttached Documents:\n• Quotation: ${fileName}`;
+                if (priceListObj) {
+                  dynBody += `\n• Price List: ${priceListObj.label || priceListObj.fileName || 'Price List.pdf'}`;
+                }
+                dynBody += `\n\nWe look forward to your positive response.\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
 
                 setEmailForm(prev => ({
                   ...prev,
                   subject: dynSubject,
                   body: dynBody,
-                  selectedDriveFiles: [
-                    ...prev.selectedDriveFiles.filter(f => !f.isGenerated),
-                    {
-                      id: 'draft-' + Date.now(),
-                      fileName: fileName,
-                      data: blobUrl,
-                      isGenerated: true
-                    }
-                  ]
+                  selectedDriveFiles: attachedFiles
                 }));
                 setShowEmailComposer(true);
               },
@@ -3529,6 +3565,7 @@ function App() {
                 setEmailHistory(prev => [item, ...prev]);
                 await saveEmailHistoryItem(item);
                 setResendEmailForm(null);
+                setView('history');
               }}
               showAlert={showAlert}
               showConfirm={showConfirm}

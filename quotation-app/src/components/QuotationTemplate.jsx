@@ -247,7 +247,7 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
                 src={logoImg} 
                 alt="Logo" 
                 className="w-full object-contain max-h-[26mm]" 
-                style={isPdfPrinting ? { transform: 'none' } : { transform: 'translateX(45px)' }} 
+                style={{ transform: 'translateX(48px)' }} 
                 onError={(e) => {
                   e.target.onerror = null;
                   e.target.src = './logo.png';

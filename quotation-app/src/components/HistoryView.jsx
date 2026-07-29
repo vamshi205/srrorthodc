@@ -92,7 +92,7 @@ const HistoryView = ({ quotationHistory, searchQuery, setSearchQuery, isGenerati
                             <Printer size={16} />
                           </button>
                           <button 
-                            onClick={() => setRegeneratingItem({ ...item, _shareMode: true })}
+                            onClick={() => setRegeneratingItem({ ...item, _emailMode: true })}
                             disabled={isGenerating || regeneratingItem}
                             className="w-9 h-9 flex items-center justify-center bg-white border border-[var(--apple-gray-2)] rounded-full text-[var(--coral)] hover:border-[var(--coral)] hover:bg-red-50 transition-all disabled:opacity-50 shadow-sm"
                             title="Email Quotation"
@@ -147,7 +147,7 @@ const HistoryView = ({ quotationHistory, searchQuery, setSearchQuery, isGenerati
                       <Printer size={18} />
                     </button>
                     <button 
-                      onClick={() => setRegeneratingItem({ ...item, _shareMode: true })}
+                      onClick={() => setRegeneratingItem({ ...item, _emailMode: true })}
                       disabled={isGenerating || regeneratingItem}
                       className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--coral)] active:scale-[0.98] transition-all"
                       title="Email"

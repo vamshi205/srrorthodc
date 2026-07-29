@@ -12,19 +12,21 @@ const EmailerView = ({
   initialForm = null, 
   isModal = false 
 }) => {
+  const defaultSignature = `\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
+
   const [emailForm, setEmailForm] = useState(() => {
     if (initialForm) {
       return {
         to: initialForm.to || '',
-        subject: initialForm.subject || '',
-        body: initialForm.body || '',
+        subject: initialForm.subject || 'Submission for Quotation',
+        body: initialForm.body || `Dear Sir/Madam,\n\nPlease find the attached documents for your kind reference.${defaultSignature}`,
         selectedDriveFiles: initialForm.selectedDriveFiles || []
       };
     }
     return {
       to: '',
-      subject: 'Documents from Sri Raja Rajeshwari Ortho Plus',
-      body: 'Dear Sir/Madam,\n\nPlease find the attached documents for your reference.\n\nRegards,\nSri Raja Rajeshwari Ortho Plus',
+      subject: 'Submission for Quotation',
+      body: `Dear Sir/Madam,\n\nPlease find the attached documents for your kind reference.${defaultSignature}`,
       selectedDriveFiles: []
     };
   });
@@ -33,8 +35,8 @@ const EmailerView = ({
     if (initialForm) {
       setEmailForm({
         to: initialForm.to || '',
-        subject: initialForm.subject || 'Documents from Sri Raja Rajeshwari Ortho Plus',
-        body: initialForm.body || '',
+        subject: initialForm.subject || 'Submission for Quotation',
+        body: initialForm.body || `Dear Sir/Madam,\n\nPlease find the attached documents for your kind reference.${defaultSignature}`,
         selectedDriveFiles: initialForm.selectedDriveFiles || []
       });
     }
