@@ -855,22 +855,9 @@ function App() {
             isGenerated: true
           };
 
-          const priceListObj = regeneratingItem.formData?.priceListId 
-            ? priceLists.find(pl => pl.id === regeneratingItem.formData.priceListId)
-            : null;
-
           const initialSelectedFiles = [generatedFile];
-          if (priceListObj) {
-            initialSelectedFiles.push(priceListObj);
-          }
 
-          let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for ${tName} for your kind reference.\n\nAttached Documents:\n• Quotation: ${fileName}`;
-          
-          if (priceListObj) {
-            dynBody += `\n• Price List: ${priceListObj.label || priceListObj.fileName || 'Price List.pdf'}`;
-          }
-
-          dynBody += `\n\nWe look forward to your positive response.\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
+          let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for ${tName} for your kind reference.\n\nAttached Documents:\n• Quotation: ${fileName}\n\nWe look forward to your positive response.\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
 
           setResendEmailForm({
             to: regeneratingItem.lastEmailedTo || regeneratingItem.formData?.email || '',
@@ -1260,10 +1247,6 @@ function App() {
                 const tName = template?.name || 'Orthopedic Implants';
                 const dynSubject = `Submission for ${tName} Quotation`;
 
-                const priceListObj = formData.priceListId 
-                  ? priceLists.find(pl => pl.id === formData.priceListId)
-                  : null;
-
                 const attachedFiles = [
                   {
                     id: 'draft-' + Date.now(),
@@ -1272,13 +1255,8 @@ function App() {
                     isGenerated: true
                   }
                 ];
-                if (priceListObj) attachedFiles.push(priceListObj);
 
-                let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for ${tName} for your kind reference.\n\nAttached Documents:\n• Quotation: ${fileName}`;
-                if (priceListObj) {
-                  dynBody += `\n• Price List: ${priceListObj.label || priceListObj.fileName || 'Price List.pdf'}`;
-                }
-                dynBody += `\n\nWe look forward to your positive response.\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
+                let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for ${tName} for your kind reference.\n\nAttached Documents:\n• Quotation: ${fileName}\n\nWe look forward to your positive response.\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
 
                 setEmailForm(prev => ({
                   ...prev,
