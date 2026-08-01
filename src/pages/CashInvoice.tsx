@@ -10,6 +10,8 @@ import {
   saveCashCustomerToFirestore,
 } from "@/services/cashInvoiceFirebaseService";
 
+import { loadSavedDcs, transitionSavedDc } from "@/lib/savedDcStorage";
+
 export default function CashInvoice() {
   const navigate = useNavigate();
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -27,7 +29,11 @@ export default function CashInvoice() {
     }
   };
 
-  const [iframeSrc, setIframeSrc] = useState(`/cash-invoice/index.html?t=${Date.now()}`);
+  const [iframeSrc, setIframeSrc] = useState(() => {
+    const search = window.location.search;
+    const sep = search ? '&' : '?';
+    return `/cash-invoice/index.html${search}${sep}t=${Date.now()}`;
+  });
 
   useEffect(() => {
     // Skip the inner auth overlay screen in Cash Invoice Maker
@@ -36,7 +42,8 @@ export default function CashInvoice() {
     // Pass the Google OAuth redirect hash to the iframe if present
     const parentHash = window.location.hash;
     if (parentHash && parentHash.includes("access_token")) {
-      setIframeSrc(`/cash-invoice/index.html?t=${Date.now()}${parentHash}`);
+      const search = window.location.search;
+      setIframeSrc(`/cash-invoice/index.html${search}${search ? '&' : '?'}t=${Date.now()}${parentHash}`);
       // Clean parent URL hash so it doesn't linger in the address bar
       setTimeout(() => {
         window.history.replaceState(null, "", window.location.pathname + window.location.search);
@@ -54,6 +61,55 @@ export default function CashInvoice() {
         targetWindow?.postMessage({ action: 'FETCH_CASH_INVOICES_RESPONSE', payload: invoices, requestId }, '*');
       } else if (action === 'SAVE_CASH_INVOICE') {
         const success = await saveCashInvoiceToFirestore(payload);
+        if (success && payload && payload.dcNumber) {
+          try {
+            const dcs = await loadSavedDcs();
+            const matchingDc = dcs.find(d => d.dcNo && d.dcNo.trim().toLowerCase() === payload.dcNumber.trim().toLowerCase());
+            if (matchingDc) {
+              const grandTotal = parseFloat(payload.grandTotal) || 0;
+              const paymentReceived = parseFloat(payload.paymentReceived) || 0;
+              const isFullyPaid = grandTotal > 0 && paymentReceived >= grandTotal;
+
+              if (isFullyPaid) {
+                // When Cash Memo is fully paid -> move DC status to 'completed' queue
+                await transitionSavedDc(matchingDc.id, {
+                  toStatus: "completed",
+                  action: "MOVE_CASH_TO_COMPLETED",
+                  updates: {
+                    invoiceRef: payload.invNumber,
+                    cashAmount: grandTotal,
+                    cashRemarks: `Linked Cash Memo ${payload.invNumber} Paid (₹${grandTotal})`,
+                  },
+                  meta: {
+                    invoiceRef: payload.invNumber,
+                    cashAmount: grandTotal,
+                    cashRemarks: `Linked Cash Memo ${payload.invNumber} Paid (₹${grandTotal})`
+                  }
+                });
+              } else {
+                // When Cash Memo is unpaid / partial -> move DC status to 'cash' queue
+                await transitionSavedDc(matchingDc.id, {
+                  toStatus: "cash",
+                  action: "MOVE_TO_CASH",
+                  updates: {
+                    invoiceRef: payload.invNumber,
+                    cashAt: new Date().toISOString(),
+                    cashAmount: grandTotal,
+                    cashRemarks: `Linked Cash Memo ${payload.invNumber} (Unpaid)`,
+                  },
+                  meta: {
+                    invoiceRef: payload.invNumber,
+                    cashAt: new Date().toISOString(),
+                    cashAmount: grandTotal,
+                    cashRemarks: `Linked Cash Memo ${payload.invNumber} (Unpaid)`
+                  }
+                });
+              }
+            }
+          } catch (err) {
+            console.error("Error auto-linking cash invoice to DC:", err);
+          }
+        }
         targetWindow?.postMessage({ action: 'SAVE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
       } else if (action === 'DELETE_CASH_INVOICE') {
         const success = await deleteCashInvoiceFromFirestore(payload);

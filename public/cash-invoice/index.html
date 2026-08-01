@@ -121,7 +121,7 @@
                                 </tr>
                                 <tr>
                                     <td>DC No:</td>
-                                    <td><span class="editable-text" id="preview-dc-number" contenteditable="true">-</span></td>
+                                    <td><span class="editable-text" id="preview-dc-number" contenteditable="true"></span></td>
                                 </tr>
                                 <tr>
                                     <td>Date:</td>
@@ -269,6 +269,9 @@
             <button type="button" class="btn btn-primary" id="save-print-btn" title="Save and Print Invoice" style="padding: 10px 24px; font-size: 13px; border-radius: 20px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow-glow); height: 38px;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> Save / Print
             </button>
+            <button type="button" class="btn btn-secondary" id="email-invoice-btn" title="Email Invoice" style="padding: 10px 20px; font-size: 13px; border-radius: 20px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow-sm); height: 38px; background: #0284c7; color: #fff; border: none;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg> Email
+            </button>
         </div>
         </main>
     </div>
@@ -279,6 +282,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 24px; background:#f9fafb; border-bottom:1px solid #e5e7eb;">
                 <span style="font-weight:700; font-size:15px; color:#111827;">Invoice Preview</span>
                 <div style="display:flex; gap:10px; align-items:center;">
+                    <button type="button" id="view-modal-email-btn" style="padding:8px 18px; border-radius:8px; background:#0284c7; color:#fff; border:none; font-size:13px; font-weight:600; cursor:pointer;">✉️ Email</button>
                     <button type="button" id="view-modal-print-btn" style="padding:8px 20px; border-radius:8px; background:#2a9d8f; color:#fff; border:none; font-size:13px; font-weight:600; cursor:pointer;">🖨 Print</button>
                     <button type="button" id="view-modal-close-btn" style="padding:8px 16px; border-radius:8px; background:#f3f4f6; color:#374151; border:1px solid #d1d5db; font-size:13px; font-weight:600; cursor:pointer;">✕ Close</button>
                 </div>
@@ -386,6 +390,38 @@
                 <button type="button" class="btn btn-secondary" id="btn-print-ledger">🖨️ Print Ledger</button>
                 <button type="button" class="btn btn-primary" id="btn-export-ledger-excel">📥 Export Excel</button>
                 <button type="button" class="btn btn-secondary" id="close-ledger-modal-btn2">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Email Invoice Modal -->
+    <div class="modal-backdrop" id="email-invoice-modal" style="display:none;">
+        <div class="modal-card" style="max-width: 540px; width: 92%;">
+            <div class="modal-header">
+                <h2>✉️ Email Cash Memo</h2>
+                <button type="button" class="close-modal-btn" id="close-email-modal-btn">&times;</button>
+            </div>
+            <div class="modal-body" style="gap: 14px; display: flex; flex-direction: column; padding: 18px;">
+                <div class="form-group">
+                    <label for="email-to-input" style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px; display:block;">RECIPIENT EMAIL <span style="color:var(--danger)">*</span></label>
+                    <input type="email" id="email-to-input" placeholder="e.g. client@hospital.com" style="padding:8px 12px; font-size:12.5px; border-radius:6px; border:1px solid var(--border-color); width:100%;" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="email-subject-input" style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px; display:block;">SUBJECT LINE</label>
+                    <input type="text" id="email-subject-input" placeholder="Cash Memo Subject" style="padding:8px 12px; font-size:12.5px; border-radius:6px; border:1px solid var(--border-color); width:100%;" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="email-body-input" style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px; display:block;">MESSAGE BODY</label>
+                    <textarea id="email-body-input" rows="5" style="padding:8px 12px; font-size:12px; font-family:inherit; border-radius:6px; border:1px solid var(--border-color); width:100%; resize:vertical;" autocomplete="off"></textarea>
+                </div>
+                <div style="background: rgba(2, 132, 199, 0.08); border: 1px solid rgba(2, 132, 199, 0.3); border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #0369a1; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size:16px;">📄</span>
+                    <span id="email-attachment-label">Cash_Memo.pdf (Auto-Attached)</span>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 14px 18px; display:flex; justify-content:flex-end; gap:10px;">
+                <button type="button" class="btn btn-secondary" id="cancel-email-modal-btn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="send-email-submit-btn" style="background:#0284c7; border-color:#0284c7; padding:8px 20px; font-weight:700;">✉️ Send Email</button>
             </div>
         </div>
     </div>
@@ -499,6 +535,9 @@
 
     <!-- SheetJS CDN for reading excel/csv -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- html2canvas and jsPDF for Email PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script type="module" src="app.js"></script>
 </body>
 </html>

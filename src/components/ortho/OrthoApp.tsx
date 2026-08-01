@@ -108,12 +108,7 @@ export default function OrthoApp() {
     }
   }, [location.search]);
 
-  // Auto-generate default DC No if empty
-  useEffect(() => {
-    if (!dcNo) {
-      setDcNo(`DC-${Math.floor(1000 + Math.random() * 9000)}`);
-    }
-  }, [dcNo]);
+
 
   const handleSelectProcedure = useCallback((procedure: Procedure) => {
     const exists = activeProcedures.find((p) => p.name === procedure.name);
@@ -693,7 +688,7 @@ export default function OrthoApp() {
     setRemarks('');
   }, []);
 
-  const handleSaveDc = useCallback(async (): Promise<boolean> => {
+  const handleSaveDc = useCallback(async (shouldNavigate: boolean = true, shouldClear: boolean = true): Promise<boolean> => {
     if (!hospitalName || !dcNo || !receivedBy || !deliveredBy) {
       setShowSettingsModal(true);
       return false;
@@ -735,22 +730,24 @@ export default function OrthoApp() {
       const dcs = await loadSavedDcs();
       setRecentSavedDcs(dcs.slice(0, 6));
 
-      // After saving: close modal and reset to default procedure list
-      setShowSettingsModal(false);
-      setShowPrintModal(false);
-      setDcMode('procedure');
-      setActiveProcedures([]);
-      setCollapsedProcedures(new Set());
-      setInitialFilterType('None');
-      setShowProcedureSelector(true);
-      setManualMaterialType('SS');
-      handleClearManualEntry();
-      setCustomDcDate(new Date().toISOString().split('T')[0]);
+      if (shouldClear) {
+        setShowSettingsModal(false);
+        setShowPrintModal(false);
+        setDcMode('procedure');
+        setActiveProcedures([]);
+        setCollapsedProcedures(new Set());
+        setInitialFilterType('None');
+        setShowProcedureSelector(true);
+        setManualMaterialType('SS');
+        handleClearManualEntry();
+        setCustomDcDate(new Date().toISOString().split('T')[0]);
+      }
 
-      // Navigate to Saved DC List
-      setTimeout(() => {
-        navigate('/saved');
-      }, 500); // Small delay to let user see the success toast
+      if (shouldNavigate) {
+        setTimeout(() => {
+          navigate('/saved');
+        }, 500);
+      }
 
       return true;
     } catch (error) {
@@ -764,7 +761,7 @@ export default function OrthoApp() {
     } finally {
       setIsSavingDc(false);
     }
-  }, [activeProcedures, buildSavePayload, dcNo, handleClearManualEntry, hospitalName, manualBoxNumbers.length, manualInstruments.length, manualItems.length, manualMaterialType, receivedBy, remarks, toast]);
+  }, [activeProcedures, buildSavePayload, customDcDate, dcNo, deliveredBy, handleClearManualEntry, hospitalName, manualBoxNumbers.length, manualInstruments.length, manualItems.length, manualMaterialType, navigate, receivedBy, remarks, toast]);
 
   const handleSavePDF = async () => {
     if (!printRef.current) return;
@@ -1046,7 +1043,7 @@ export default function OrthoApp() {
                           <Input
                             value={dcNo}
                             onChange={(e) => setDcNo(e.target.value)}
-                            placeholder="DC-1001"
+                            placeholder="Enter DC No."
                             className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
                           />
                         </div>
@@ -1129,7 +1126,7 @@ export default function OrthoApp() {
                         <Input
                           value={dcNo}
                           onChange={(e) => setDcNo(e.target.value)}
-                          placeholder="DC-1001"
+                          placeholder="Enter DC No."
                           className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
                         />
                       </div>
@@ -1646,11 +1643,9 @@ export default function OrthoApp() {
                           document.getElementById('hospital-name-input')?.focus();
                           return;
                         }
-                        const success = await handleSaveDc();
+                        const success = await handleSaveDc(false, false);
                         if (success) {
-                          setTimeout(() => {
-                            handlePrintPDF();
-                          }, 300);
+                          setShowPrintModal(true);
                         }
                       }}
                       className="w-full sm:flex-1 gap-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm h-11 shadow-md shadow-teal-600/20"
@@ -1874,11 +1869,9 @@ export default function OrthoApp() {
               <Button
                 onClick={async () => {
                   setShowConfirmSaveDialog(false);
-                  const success = await handleSaveDc();
+                  const success = await handleSaveDc(false, false);
                   if (success) {
-                    setTimeout(() => {
-                      handlePrintPDF();
-                    }, 300);
+                    setShowPrintModal(true);
                   }
                 }}
                 className="w-full sm:flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold"
@@ -1892,7 +1885,26 @@ export default function OrthoApp() {
       </Dialog >
 
       {/* Print Modal */}
-      < Dialog open={showPrintModal} onOpenChange={setShowPrintModal} >
+      <Dialog 
+        open={showPrintModal} 
+        onOpenChange={(open) => {
+          setShowPrintModal(open);
+          if (!open) {
+            // After closing print preview of a saved DC, clear form & navigate to Saved DCs
+            setShowSettingsModal(false);
+            setDcMode('procedure');
+            setActiveProcedures([]);
+            setCollapsedProcedures(new Set());
+            setInitialFilterType('None');
+            setShowProcedureSelector(true);
+            setManualMaterialType('SS');
+            handleClearManualEntry();
+            setCustomDcDate(new Date().toISOString().split('T')[0]);
+            setDcNo('');
+            navigate('/saved');
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
           <DialogHeader className="no-print">
             <DialogTitle>Print Preview</DialogTitle>

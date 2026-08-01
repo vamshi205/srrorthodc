@@ -55,7 +55,8 @@ import {
   Menu,
   RefreshCw,
   ChevronRight,
-  RotateCcw
+  RotateCcw,
+  MessageCircle
 } from 'lucide-react';
 
 function App() {
@@ -555,6 +556,7 @@ function App() {
   const [templateSearchQuery, setTemplateSearchQuery] = useState('');
   const [docZoom, setDocZoom] = useState(1.1);
   const [showMobilePreviewModal, setShowMobilePreviewModal] = useState(false);
+  const [showDCWizardModal, setShowDCWizardModal] = useState(false);
   const [openVendorFolder, setOpenVendorFolder] = useState(null);
   const [openPersonalFolder, setOpenPersonalFolder] = useState(null);
   const [showEmailComposer, setShowEmailComposer] = useState(false);
@@ -887,6 +889,46 @@ function App() {
     setTimeout(generateHistoryPDF, 150);
   }, [regeneratingItem]);
 
+  // Handle WhatsApp Sharing for a quotation item
+  const handleWhatsAppShare = (item) => {
+    if (!item) return;
+    const rawMobile = item?.formData?.mobile || item?.formData?.phone || '';
+    const hosp = (item?.formData?.hospitalName || item?.hospital || '').trim();
+    const doc = (item?.formData?.doctorName || '').trim();
+    const recipient = hosp ? (doc ? `${hosp} (Dr. ${doc})` : hosp) : (doc ? `Dr. ${doc}` : 'Client');
+    const refNo = item?.ref || item?.referenceNumber || item?.formData?.referenceNumber || '';
+    const tName = item?.templateName || templates.find(t => t.id === item?.formData?.selectedTemplateId)?.name || 'Orthopedic Implants';
+
+    const inputPhone = prompt(`Enter WhatsApp Mobile Number for ${recipient}:`, rawMobile);
+    if (inputPhone === null) return; // User cancelled
+
+    let cleanPhone = (inputPhone || '').replace(/[^\d]/g, '');
+    if (cleanPhone.length === 10) {
+      cleanPhone = '91' + cleanPhone; // Default to India +91
+    }
+
+    const messageText = `*Sri Raja Rajeshwari Ortho Plus*
+*Quotation for ${tName}*
+
+🏥 *Client:* ${recipient}
+📄 *Ref No:* ${refNo}
+📅 *Date:* ${item?.date || new Date().toLocaleDateString('en-GB')}
+
+Dear Sir/Madam,
+Please find our official quotation for *${tName}* for ${recipient}.
+
+_Sri Raja Rajeshwari Ortho Plus_
+Hyderabad | Mobile: +91 9396857455, +91 8686559393
+Website: srrorthoplus.com`;
+
+    const encodedMsg = encodeURIComponent(messageText);
+    const waUrl = cleanPhone 
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMsg}`
+      : `https://api.whatsapp.com/send?text=${encodedMsg}`;
+
+    window.open(waUrl, '_blank');
+  };
+
   // Global Sync to Firebase (Granular saves)
   useEffect(() => {
     if (!user) return;
@@ -1218,83 +1260,110 @@ function App() {
       return;
     }
 
-    showConfirm(
-      "Confirm Save",
-      "Are you sure you want to save invoice?",
-      () => {
-        setIsGenerating(true);
-        
-        // Allow UI to render the overlay before heavy PDF processing
-        setTimeout(async () => {
-          try {
-            const result = await generatePDF();
-            if (!result) {
-              setIsGenerating(false);
-              return;
+    // Launch guided Multi-Popup Save Wizard Modal
+    setShowDCWizardModal(true);
+  };
+
+  const handleSaveDC = async (dcPayload, action = 'download') => {
+    const hasHospital = (formData.hospitalName || '').trim();
+    const hasDoctor = (formData.doctorName || '').trim();
+
+    if (!hasHospital && !hasDoctor) {
+      showAlert('Required Fields', 'Please enter either a Hospital Name or Doctor Name.', 'error');
+      return;
+    }
+
+    setIsGenerating(true);
+    setShowDCWizardModal(false);
+
+    setTimeout(async () => {
+      try {
+        const result = await generatePDF();
+        if (!result) {
+          setIsGenerating(false);
+          return;
+        }
+
+        const { blobUrl, fileName } = result;
+
+        const dcFileName = `DC_${formData.referenceNumber.replace(/[/\\?%*:|"<>]/g, '_')}_${(formData.hospitalName || formData.doctorName || 'Client').replace(/[/\\?%*:|"<>]/g, '_')}.pdf`;
+
+        const existingHistoryItem = quotationHistory.find(h => h.ref === formData.referenceNumber);
+        const displayTitle = hasHospital ? (hasDoctor ? `${hasHospital} (Dr. ${hasDoctor})` : hasHospital) : `Dr. ${hasDoctor}`;
+
+        const dcHistoryItem = {
+          id: existingHistoryItem ? existingHistoryItem.id : Date.now().toString(),
+          hospital: displayTitle,
+          date: formData.date,
+          ref: formData.referenceNumber,
+          templateName: dcPayload.dcMode === 'auto' ? 'Auto DC' : 'Manual DC',
+          documentType: 'DC',
+          isDC: true,
+          transportInfo: dcPayload.transportInfo,
+          formData: JSON.parse(JSON.stringify(formData)),
+          content: JSON.parse(JSON.stringify(draftContent))
+        };
+
+        if (existingHistoryItem) {
+          setQuotationHistory(prev => prev.map(h => h.id === existingHistoryItem.id ? dcHistoryItem : h));
+        } else {
+          setQuotationHistory(prev => [dcHistoryItem, ...prev]);
+        }
+
+        await saveHistoryItem(dcHistoryItem);
+
+        if (action === 'print') {
+          printDocument(blobUrl, dcFileName, 'application/pdf');
+          setView('history');
+          setTimeout(() => {
+            showAlert('DC Saved & Printed', `Delivery Challan ${formData.referenceNumber} printed and archived safely.`, 'success');
+          }, 500);
+        } else if (action === 'download') {
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = dcFileName;
+          link.click();
+          setView('history');
+          setTimeout(() => {
+            showAlert('DC Saved & Downloaded', `Delivery Challan ${formData.referenceNumber} archived safely.`, 'success');
+          }, 500);
+        } else if (action === 'email') {
+          const itemHosp = (formData.hospitalName || '').trim();
+          const itemDoc = (formData.doctorName || '').trim();
+          const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
+          const dynSubject = `Delivery Challan (DC) #${formData.referenceNumber} for ${itemRecipient}`;
+
+          const attachedFiles = [
+            {
+              id: 'dc-' + Date.now(),
+              fileName: dcFileName,
+              data: blobUrl,
+              isGenerated: true
             }
+          ];
 
-            const { blobUrl, fileName } = result;
+          let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official Delivery Challan (DC #${formData.referenceNumber}) for ${itemRecipient}.\n\nAttached Documents:\n• Delivery Challan: ${dcFileName}\n\nWe look forward to your acknowledgment.\n\nFrom\nSri Raja Rajeshwari Ortho Plus,\nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
 
-            showConfirm(
-              "Quotation Saved", 
-              "Quotation saved successfully! Do you want to send it via Email now?",
-              () => {
-                // Setup Email Composer
-                const itemHosp = (formData.hospitalName || '').trim();
-                const itemDoc = (formData.doctorName || '').trim();
-                const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
-                const template = templates.find(t => t.id === formData.selectedTemplateId);
-                const tName = template?.name || 'Orthopedic Implants';
-                const dynSubject = `Submission for ${tName} Quotation`;
-
-                const attachedFiles = [
-                  {
-                    id: 'draft-' + Date.now(),
-                    fileName: fileName,
-                    data: blobUrl,
-                    isGenerated: true
-                  }
-                ];
-
-                let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official quotation for ${tName} for your kind reference.\n\nAttached Documents:\n• Quotation: ${fileName}\n\nWe look forward to your positive response.\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
-
-                setEmailForm(prev => ({
-                  ...prev,
-                  subject: dynSubject,
-                  body: dynBody,
-                  selectedDriveFiles: attachedFiles
-                }));
-                setShowEmailComposer(true);
-              },
-              () => {
-                // Download and go to history
-                const link = document.createElement('a');
-                link.href = blobUrl;
-                link.download = fileName;
-                link.click();
-                
-                setView('history');
-                setTimeout(() => {
-                  showAlert('Saved to History', `Quotation ${formData.referenceNumber} has been safely archived.`, 'success');
-                }, 500);
-              },
-              'confirm',
-              'Yes, Email Now',
-              'No, Just Download'
-            );
-          } catch (err) {
-            console.error(err);
-            showAlert('Error', 'An unexpected error occurred during generation.', 'error');
-          } finally {
-            setIsGenerating(false);
-          }
-        }, 100);
-      },
-      null,
-      'confirm',
-      'Yes',
-      'Back'
-    );
+          setEmailForm(prev => ({
+            ...prev,
+            subject: dynSubject,
+            body: dynBody,
+            selectedDriveFiles: attachedFiles
+          }));
+          setShowEmailComposer(true);
+        } else {
+          setView('history');
+          setTimeout(() => {
+            showAlert('DC Saved to History', `Delivery Challan ${formData.referenceNumber} archived successfully.`, 'success');
+          }, 500);
+        }
+      } catch (err) {
+        console.error(err);
+        showAlert('DC Error', 'Error saving Delivery Challan: ' + err.message, 'error');
+      } finally {
+        setIsGenerating(false);
+      }
+    }, 300);
   };
 
   const NavItem = ({ id, label, icon }) => (
@@ -2028,9 +2097,19 @@ function App() {
                 <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight mb-4">Draft Quotation</h2>
 
                 <div className="space-y-6">
-                  {/* Client Details */}
+                  {/* Client & Header Details */}
                   <div className="space-y-4">
-                    <h3 className="apple-label border-b border-[var(--apple-gray-2)] pb-2">Client Details</h3>
+                    <h3 className="apple-label border-b border-[var(--apple-gray-2)] pb-2">Client & Header Info</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-[11px] font-bold text-[var(--apple-gray-5)] uppercase block mb-1">DC / Document Date</span>
+                        <input type="text" name="date" value={formData.date} onChange={handleInputChange} placeholder="DD/MM/YYYY" className="apple-input !px-3" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-bold text-[var(--apple-gray-5)] uppercase block mb-1">Ref No.</span>
+                        <input type="text" name="referenceNumber" value={formData.referenceNumber} readOnly className="apple-input !px-3 bg-[var(--apple-gray-1)] cursor-not-allowed opacity-70" title="Reference number is automatically generated" />
+                      </div>
+                    </div>
                     <div>
                       <input name="hospitalName" value={formData.hospitalName} onChange={handleInputChange} className="apple-input" placeholder="Hospital Name (Optional if Dr Name entered)" />
                     </div>
@@ -2368,15 +2447,17 @@ function App() {
                   <span>Preview</span>
                 </button>
 
+
+
                 <button 
                   onClick={handleSubmitQuotation} 
                   disabled={isGenerating} 
-                  className="btn-primary flex-1 !py-3 text-[14px]"
+                  className="btn-primary flex-1 !py-3 text-[13.5px]"
                 >
                   {isGenerating ? 'Processing...' : (
                     <div className="flex items-center justify-center gap-2">
                       <ShieldCheck size={18} />
-                      Finish & Save Quotation
+                      Save Quotation
                     </div>
                   )}
                 </button>
@@ -2577,6 +2658,15 @@ function App() {
                                         >
                                           <RotateCcw size={13} />
                                           <span>Resend</span>
+                                        </button>
+
+                                        <button 
+                                          onClick={() => handleWhatsAppShare(item)}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-full text-emerald-700 hover:bg-emerald-100 font-bold text-[11.5px] transition-all shadow-2xs cursor-pointer"
+                                          title="Send Quotation over WhatsApp"
+                                        >
+                                          <MessageCircle size={13} />
+                                          <span>WhatsApp</span>
                                         </button>
                                         
                                         {isManagementActive && (
@@ -3962,6 +4052,15 @@ function App() {
                 <Share2 size={18} />
               </button>
 
+              {/* WhatsApp Button */}
+              <button 
+                onClick={() => handleWhatsAppShare(previewingDoc)}
+                className="w-10 h-10 flex items-center justify-center bg-emerald-50 border border-emerald-200 rounded-full text-emerald-700 hover:bg-emerald-100 transition-all"
+                title="Send over WhatsApp"
+              >
+                <MessageCircle size={18} />
+              </button>
+
               {/* Close Button */}
               <button 
                 onClick={() => setPreviewingDoc(null)}
@@ -4091,6 +4190,7 @@ function App() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

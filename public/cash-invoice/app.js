@@ -100,6 +100,28 @@ document.addEventListener("DOMContentLoaded", () => {
         if (action === "FETCH_CASH_INVOICES_RESPONSE" && Array.isArray(payload)) {
             console.log("[CashInvoice Iframe] Setting savedInvoices from Firestore:", payload);
             state.savedInvoices = payload;
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const viewInvTarget = urlParams.get('viewInv') || sessionStorage.getItem('view_cash_inv_num');
+            if (viewInvTarget) {
+                const targetClean = viewInvTarget.trim().toLowerCase();
+                const matching = payload.find(i => 
+                    (i.invNumber && i.invNumber.trim().toLowerCase() === targetClean) ||
+                    (i.dcNumber && i.dcNumber.trim().toLowerCase() === targetClean)
+                );
+                if (matching) {
+                    showEmbedInvoiceView(matching);
+                } else {
+                    showEmbedInvoiceView({
+                        invNumber: viewInvTarget,
+                        invDate: new Date().toISOString().split('T')[0],
+                        clientName: "Customer",
+                        invoiceItems: [],
+                        grandTotal: 0
+                    });
+                }
+                sessionStorage.removeItem('view_cash_inv_num');
+            }
             // Assign the correct next invoice number now that we have real data
             const nextNum = getNextInvoiceNumber();
             const currentNum = (document.getElementById("inv-number") || {}).value || "";
@@ -176,8 +198,57 @@ function loadPersistedData() {
     // Tentative invoice number (will be corrected after Firestore data arrives)
     state.clientInfo.invNumber = "SRR-2026-0001";
     state._autoAssignedNum = "SRR-2026-0001";
-    if (state.clientInfo.dcNumber === undefined) {
-        state.clientInfo.dcNumber = "";
+    // Check URL parameters or sessionStorage for prefilled DC number & Client name
+    const urlParams = new URLSearchParams(window.location.search);
+    const prefillDc = urlParams.get('dcNo') || sessionStorage.getItem('prefill_cash_dc_no');
+    const prefillClient = urlParams.get('client') || sessionStorage.getItem('prefill_cash_client_name');
+    const viewInv = urlParams.get('viewInv') || sessionStorage.getItem('view_cash_inv_num');
+
+    if (prefillDc) {
+        state.clientInfo.dcNumber = prefillDc;
+        sessionStorage.removeItem('prefill_cash_dc_no');
+    }
+    if (prefillClient) {
+        state.clientInfo.name = prefillClient;
+        sessionStorage.removeItem('prefill_cash_client_name');
+    }
+
+    if (viewInv) {
+        const authOverlay = document.getElementById("auth-gate-overlay");
+        if (authOverlay) authOverlay.style.display = "none";
+        const appContainer = document.querySelector(".app-container");
+        if (appContainer) appContainer.style.display = "none";
+        const dashContainer = document.getElementById("invoices-dashboard-container");
+        if (dashContainer) dashContainer.style.display = "none";
+
+        let embedContainer = document.getElementById("embed-view-container");
+        if (!embedContainer) {
+            embedContainer = document.createElement("div");
+            embedContainer.id = "embed-view-container";
+            embedContainer.style.cssText = "display:block; padding:16px; background:#0f172a; min-height:100vh; font-family:'Outfit', sans-serif;";
+            embedContainer.innerHTML = `<div style="max-width:820px; margin:40px auto; color:#fff; text-align:center; font-size:16px; font-weight:600;">Loading Cash Memo ${viewInv}...</div>`;
+            document.body.appendChild(embedContainer);
+        }
+
+        setTimeout(() => {
+            const targetClean = viewInv.trim().toLowerCase();
+            const matching = state.savedInvoices.find(i => 
+                (i.invNumber && i.invNumber.trim().toLowerCase() === targetClean) ||
+                (i.dcNumber && i.dcNumber.trim().toLowerCase() === targetClean)
+            );
+            if (matching) {
+                showEmbedInvoiceView(matching);
+            } else {
+                showEmbedInvoiceView({
+                    invNumber: viewInv,
+                    invDate: new Date().toISOString().split('T')[0],
+                    clientName: "Customer",
+                    invoiceItems: [],
+                    grandTotal: 0
+                });
+            }
+            sessionStorage.removeItem('view_cash_inv_num');
+        }, 400);
     }
     
     // Sync UI inputs
@@ -201,7 +272,7 @@ function loadPersistedData() {
     document.getElementById("preview-client-mobile").innerText = state.clientInfo.mobile || "";
     document.getElementById("preview-client-email").innerText = state.clientInfo.email || "";
     document.getElementById("preview-inv-number").innerText = state.clientInfo.invNumber || "";
-    document.getElementById("preview-dc-number").innerText = state.clientInfo.dcNumber || "-";
+    document.getElementById("preview-dc-number").innerText = state.clientInfo.dcNumber || "";
     document.getElementById("preview-inv-date").innerText = formatDateString(state.clientInfo.invDate);
     const previewInvDueEl = document.getElementById("preview-inv-due");
     if (previewInvDueEl) previewInvDueEl.innerText = formatDateString(state.clientInfo.invDue);
@@ -961,6 +1032,9 @@ function setupEventListeners() {
         const flatDiscount = parseFloat(document.getElementById("discount-flat-input").value) || 0;
         const grandTotal = Math.round(subtotal - flatDiscount);
 
+        const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === (state.clientInfo.invNumber || getNextInvoiceNumber()));
+        const existingPayment = existingIdx !== -1 ? (parseFloat(state.savedInvoices[existingIdx].paymentReceived) || 0) : 0;
+
         const invoiceToSave = {
             invNumber: state.clientInfo.invNumber || getNextInvoiceNumber(),
             dcNumber: state.clientInfo.dcNumber || "",
@@ -973,14 +1047,13 @@ function setupEventListeners() {
             invoiceItems: JSON.parse(JSON.stringify(state.invoiceItems.filter(item => (item.description || "").trim() !== ""))),
             discount: flatDiscount,
             grandTotal: grandTotal,
-            paymentReceived: grandTotal,
+            paymentReceived: existingPayment,
             savedAt: new Date().getTime()
         };
 
-        const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === invoiceToSave.invNumber);
         if (existingIdx !== -1) {
             if (confirm(`Invoice ${invoiceToSave.invNumber} already exists. Do you want to update it?`)) {
-                invoiceToSave.paymentReceived = grandTotal;
+                invoiceToSave.paymentReceived = existingPayment;
                 state.savedInvoices[existingIdx] = invoiceToSave;
                 showStatus(`Updated saved invoice: ${invoiceToSave.invNumber}`);
             } else {
@@ -1027,6 +1100,9 @@ function setupEventListeners() {
         const flatDiscount = parseFloat(document.getElementById("discount-flat-input").value) || 0;
         const grandTotal = Math.round(subtotal - flatDiscount);
         
+        const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === (state.clientInfo.invNumber || getNextInvoiceNumber()));
+        const existingPayment = existingIdx !== -1 ? (parseFloat(state.savedInvoices[existingIdx].paymentReceived) || 0) : 0;
+
         const invoiceToSave = {
             invNumber: state.clientInfo.invNumber || getNextInvoiceNumber(),
             dcNumber: state.clientInfo.dcNumber || "",
@@ -1039,13 +1115,12 @@ function setupEventListeners() {
             invoiceItems: JSON.parse(JSON.stringify(state.invoiceItems.filter(item => (item.description || "").trim() !== ""))),
             discount: flatDiscount,
             grandTotal: grandTotal,
-            paymentReceived: grandTotal,
+            paymentReceived: existingPayment,
             savedAt: new Date().getTime()
         };
         
-        const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === invoiceToSave.invNumber);
         if (existingIdx !== -1) {
-            invoiceToSave.paymentReceived = grandTotal;
+            invoiceToSave.paymentReceived = existingPayment;
             state.savedInvoices[existingIdx] = invoiceToSave;
             showStatus(`Updated saved invoice: ${invoiceToSave.invNumber}`);
         } else {
@@ -1161,7 +1236,7 @@ function setupEventListeners() {
         setInner("preview-client-mobile", "");
         setInner("preview-client-email", "");
         setInner("preview-inv-number", state.clientInfo.invNumber);
-        setInner("preview-dc-number", "-");
+        setInner("preview-dc-number", "");
         setInner("preview-inv-date", formatDateString(state.clientInfo.invDate));
         const previewInvDueEl = document.getElementById("preview-inv-due");
         if (previewInvDueEl) previewInvDueEl.innerText = formatDateString(state.clientInfo.invDue);
@@ -1239,6 +1314,42 @@ function setupEventListeners() {
             const activeObj = getActiveInvoiceObj();
             openViewInvoiceModal(activeObj, true);
         });
+    }
+
+    // Email Button in Active Editor Floating Bar
+    const emailInvoiceBtn = document.getElementById("email-invoice-btn");
+    if (emailInvoiceBtn) {
+        emailInvoiceBtn.addEventListener("click", () => {
+            if (!validateInvoice()) return;
+            const activeObj = getActiveInvoiceObj();
+            openEmailInvoiceModal(activeObj);
+        });
+    }
+
+    // Email Button in View Invoice Modal Header
+    const viewModalEmailBtn = document.getElementById("view-modal-email-btn");
+    if (viewModalEmailBtn) {
+        viewModalEmailBtn.addEventListener("click", () => {
+            const modal = document.getElementById("view-invoice-modal");
+            if (modal) modal.style.display = "none";
+            openEmailInvoiceModal(currentViewedInvoice || getActiveInvoiceObj());
+        });
+    }
+
+    // Email Modal Event Listeners
+    const sendEmailSubmitBtn = document.getElementById("send-email-submit-btn");
+    if (sendEmailSubmitBtn) {
+        sendEmailSubmitBtn.addEventListener("click", sendCashInvoiceEmail);
+    }
+
+    const closeEmailModalBtn = document.getElementById("close-email-modal-btn");
+    if (closeEmailModalBtn) {
+        closeEmailModalBtn.addEventListener("click", closeEmailInvoiceModal);
+    }
+
+    const cancelEmailModalBtn = document.getElementById("cancel-email-modal-btn");
+    if (cancelEmailModalBtn) {
+        cancelEmailModalBtn.addEventListener("click", closeEmailInvoiceModal);
     }
 
     window.addEventListener("beforeprint", syncAllPrintSpans);
@@ -2421,6 +2532,27 @@ function quickPayInvoice(inv, originalIdx) {
     }
 }
 
+// Helper to sort invoices descending by invoice number / timestamp
+function sortInvoicesDesc(invoices) {
+    if (!Array.isArray(invoices)) return [];
+    return [...invoices].sort((a, b) => {
+        const getNum = (inv) => {
+            if (!inv || !inv.invNumber) return 0;
+            const match = String(inv.invNumber).match(/\d+/g);
+            return match ? parseInt(match[match.length - 1], 10) : 0;
+        };
+        const numA = getNum(a);
+        const numB = getNum(b);
+        if (numA !== numB) {
+            return numB - numA;
+        }
+        if (a.savedAt && b.savedAt && a.savedAt !== b.savedAt) {
+            return b.savedAt - a.savedAt;
+        }
+        return String(b.invNumber || '').localeCompare(String(a.invNumber || ''), undefined, { numeric: true });
+    });
+}
+
 // Render list of saved invoices drafts from browser storage
 function renderSavedInvoicesList() {
     const listEl = document.getElementById("saved-invoices-list");
@@ -2431,8 +2563,11 @@ function renderSavedInvoicesList() {
         return;
     }
     
+    const sortedInvoices = sortInvoicesDesc(state.savedInvoices);
+    
     listEl.innerHTML = "";
-    state.savedInvoices.forEach((inv, idx) => {
+    sortedInvoices.forEach((inv) => {
+        const originalIdx = state.savedInvoices.findIndex(i => i.invNumber === inv.invNumber);
         const item = document.createElement("div");
         item.className = "saved-invoice-item";
         item.innerHTML = `
@@ -2505,7 +2640,7 @@ function loadSavedInvoice(inv) {
     document.getElementById("preview-client-mobile").innerText = state.clientInfo.mobile || "";
     document.getElementById("preview-client-email").innerText = state.clientInfo.email || "";
     document.getElementById("preview-inv-number").innerText = state.clientInfo.invNumber;
-    document.getElementById("preview-dc-number").innerText = state.clientInfo.dcNumber || "-";
+    document.getElementById("preview-dc-number").innerText = state.clientInfo.dcNumber || "";
     document.getElementById("preview-inv-date").innerText = formatDateString(state.clientInfo.invDate);
     const previewInvDueEl = document.getElementById("preview-inv-due");
     if (previewInvDueEl) previewInvDueEl.innerText = formatDateString(state.clientInfo.invDue);
@@ -2684,8 +2819,10 @@ function renderDashboardInvoicesList(filterText = "") {
     console.log("[CashInvoice] renderDashboardInvoicesList called, state.savedInvoices count:", state.savedInvoices.length);
 
     const filter = filterText.toLowerCase().trim();
-    // When filter is empty, show ALL invoices
-    const filtered = filter === "" ? [...state.savedInvoices] : state.savedInvoices.filter(inv =>
+    const sortedInvoices = sortInvoicesDesc(state.savedInvoices);
+    
+    // When filter is empty, show ALL invoices sorted descending by invoice number
+    const filtered = filter === "" ? sortedInvoices : sortedInvoices.filter(inv =>
         (inv.invNumber && inv.invNumber.toLowerCase().includes(filter)) ||
         (inv.dcNumber && inv.dcNumber.toLowerCase().includes(filter)) ||
         (inv.clientName && inv.clientName.toLowerCase().includes(filter))
@@ -2817,7 +2954,7 @@ function renderDashboardReportsList(filterText = "") {
 // Helper to construct invoice object from active invoice form
 function getActiveInvoiceObj() {
     const invNum = (document.getElementById("preview-inv-number")?.innerText || document.getElementById("inv-number")?.value || getNextInvoiceNumber()).trim();
-    const dcNum = (document.getElementById("preview-dc-number")?.innerText || document.getElementById("dc-number")?.value || "-").trim();
+    const dcNum = (document.getElementById("preview-dc-number")?.innerText || document.getElementById("dc-number")?.value || "").trim();
     const invDate = state.clientInfo.invDate || new Date().toISOString().split('T')[0];
     const clientName = (document.getElementById("preview-client-name")?.innerText || state.clientInfo.name || "Walk-in Customer").replace(/\u00a0/g, ' ').trim();
     const clientAddr = (document.getElementById("preview-client-address")?.innerText || state.clientInfo.address || "").replace(/\u00a0/g, ' ').trim();
@@ -2841,6 +2978,9 @@ function getActiveInvoiceObj() {
     const flatDiscountInput = document.getElementById("discount-flat-input");
     const discount = flatDiscountInput ? parseFloat(flatDiscountInput.value) || 0 : 0;
     const grandTotal = Math.round(subtotal - discount);
+
+    const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === invNum);
+    const existingPayment = existingIdx !== -1 ? (parseFloat(state.savedInvoices[existingIdx].paymentReceived) || 0) : 0;
     
     return {
         invNumber: invNum,
@@ -2853,18 +2993,16 @@ function getActiveInvoiceObj() {
         invoiceItems: items,
         discount: discount,
         grandTotal: grandTotal,
-        paymentReceived: grandTotal
+        paymentReceived: existingPayment
     };
 }
 
-// Open a read-only print view modal for a saved or active invoice
-function openViewInvoiceModal(inv, autoPrint = false) {
-    const modal = document.getElementById('view-invoice-modal');
-    const content = document.getElementById('view-invoice-content');
-    const printBtn = document.getElementById('view-modal-print-btn');
-    const closeBtn = document.getElementById('view-modal-close-btn');
-    if (!modal || !content) return;
+// Global variables for viewing & emailing invoices
+let currentViewedInvoice = null;
+let currentEmailInvoice = null;
 
+// Helper to generate printable invoice HTML structure
+function getPrintableInvoiceHTML(inv) {
     const items = (inv.invoiceItems || []).filter(i => (i.description||'').trim());
     const itemRows = items.map((item, idx) => {
         const amt = (parseFloat(item.qty)||0) * (parseFloat(item.rate)||0);
@@ -2881,8 +3019,6 @@ function openViewInvoiceModal(inv, autoPrint = false) {
     const grandTotal = parseFloat(inv.grandTotal)||0;
     const discount = parseFloat(inv.discount)||0;
     const subtotal = grandTotal + discount;
-    const paid = parseFloat(inv.paymentReceived)||0;
-    const balance = grandTotal - paid;
 
     const numberToWords = (num) => {
         return typeof numberToEnglishWords === 'function' ? numberToEnglishWords(num) : '';
@@ -2891,7 +3027,7 @@ function openViewInvoiceModal(inv, autoPrint = false) {
     const words = numberToWords(grandTotal);
     const amountInWordsHtml = words ? `<div style="margin-top:8px;font-size:11px;color:#334155;background:#f8fafc;padding:6px 10px;border-radius:6px;border-left:4px solid #0f766e;">Amount in Words: <strong style="color:#0f172a;">${words}</strong></div>` : '';
 
-    content.innerHTML = `
+    return `
     <div id="printable-inv-area" style="background:#fff;padding:24px 30px;border-radius:8px;font-family:'Outfit',sans-serif;max-width:800px;margin:0 auto;box-shadow:0 4px 20px rgba(0,0,0,0.08);color:#0f172a;">
         <!-- Header -->
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:2px solid #0f766e;margin-bottom:12px;">
@@ -2988,6 +3124,250 @@ function openViewInvoiceModal(inv, autoPrint = false) {
             </div>
         </div>
     </div>`;
+}
+
+// Open Email Modal for an invoice
+function openEmailInvoiceModal(inv) {
+    const modal = document.getElementById('email-invoice-modal');
+    if (!modal) return;
+
+    currentEmailInvoice = inv || getActiveInvoiceObj();
+    const invNum = currentEmailInvoice.invNumber || 'Draft';
+    const clientName = currentEmailInvoice.clientName || 'Walk-in Customer';
+    const clientEmail = currentEmailInvoice.clientEmail || state.clientInfo.email || '';
+    const grandTotal = parseFloat(currentEmailInvoice.grandTotal || 0).toFixed(2);
+    const invDate = formatDateString(currentEmailInvoice.invDate) || new Date().toLocaleDateString();
+
+    const toInput = document.getElementById('email-to-input');
+    const subjectInput = document.getElementById('email-subject-input');
+    const bodyInput = document.getElementById('email-body-input');
+    const label = document.getElementById('email-attachment-label');
+
+    if (toInput) toInput.value = clientEmail;
+    if (subjectInput) subjectInput.value = `Cash Memo #${invNum} for ${clientName}`;
+    if (bodyInput) bodyInput.value = `Dear Sir/Madam,
+
+Please find attached the official Cash Memo (${invNum}) from Sri Raja Rajeshwari Ortho Plus for your reference.
+
+Cash Memo Summary:
+• Cash Memo Number: ${invNum}
+• Date: ${invDate}
+• Client Name: ${clientName}
+• Total Amount: ₹${grandTotal}
+
+Thank you for your business.
+
+Best Regards,
+Sri Raja Rajeshwari Ortho Plus, Hyderabad
+Mobile: +91 9396857455, +91 8686559393
+Website: srrorthoplus.com`;
+
+    if (label) label.innerText = `Cash_Memo_${invNum.replace(/[/\\?%*:|"<>]/g, '_')}.pdf (Auto-Attached)`;
+
+    modal.style.display = 'flex';
+}
+
+function closeEmailInvoiceModal() {
+    const modal = document.getElementById('email-invoice-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+// Generate PDF & Send Email via Vercel serverless / Resend endpoint
+async function sendCashInvoiceEmail() {
+    const toInput = document.getElementById('email-to-input');
+    const subjectInput = document.getElementById('email-subject-input');
+    const bodyInput = document.getElementById('email-body-input');
+    const sendBtn = document.getElementById('send-email-submit-btn');
+
+    const toEmail = toInput ? toInput.value.trim() : '';
+    const subject = subjectInput ? subjectInput.value.trim() : '';
+    const bodyText = bodyInput ? bodyInput.value.trim() : '';
+
+    if (!toEmail) {
+        showStatus('Please enter recipient email address', 'error');
+        alert('Please enter a recipient email address.');
+        if (toInput) toInput.focus();
+        return;
+    }
+
+    const activeObj = currentEmailInvoice && currentEmailInvoice.invNumber ? currentEmailInvoice : getActiveInvoiceObj();
+    const invNum = (activeObj.invNumber || 'Draft').replace(/[/\\?%*:|"<>]/g, '_');
+
+    if (sendBtn) {
+        sendBtn.disabled = true;
+        sendBtn.innerText = '⏳ Generating PDF & Sending...';
+    }
+
+    try {
+        // Generate temporary offscreen printable invoice container
+        const tempContainer = document.createElement('div');
+        tempContainer.style.position = 'fixed';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.top = '-9999px';
+        tempContainer.style.width = '800px';
+        tempContainer.style.background = '#ffffff';
+        tempContainer.style.zIndex = '-9999';
+
+        // Get print HTML string
+        const htmlContent = getPrintableInvoiceHTML(activeObj);
+        tempContainer.innerHTML = htmlContent;
+        document.body.appendChild(tempContainer);
+
+        // Convert DOM element to Canvas
+        const targetElement = tempContainer.querySelector('#printable-inv-area') || tempContainer;
+        const canvas = await window.html2canvas(targetElement, { scale: 2, useCORS: true, logging: false });
+        document.body.removeChild(tempContainer);
+
+        // Convert Canvas to PDF
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const imgProps = pdf.getImageProperties(imgData);
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+
+        const pdfDataUri = pdf.output('datauristring');
+        const base64Content = pdfDataUri.split(',')[1];
+        const fileName = `Cash_Memo_${invNum}.pdf`;
+
+        // Send request to /api/send-email
+        const res = await fetch('/api/send-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to: toEmail,
+                subject: subject,
+                body: bodyText,
+                text: bodyText,
+                attachments: [
+                    {
+                        filename: fileName,
+                        content: base64Content
+                    }
+                ]
+            })
+        });
+
+        const resText = await res.text();
+        let data = {};
+        try {
+            data = JSON.parse(resText);
+        } catch (e) {
+            console.warn('[CashInvoice] /api/send-email non-JSON response:', resText);
+        }
+
+        if (res.ok && data.success) {
+            showStatus(`Email sent successfully to ${toEmail}`);
+            alert(`Email sent successfully to ${toEmail}`);
+            closeEmailInvoiceModal();
+        } else if (res.status === 404) {
+            const devNotice = `The serverless endpoint (/api/send-email) runs when deployed on Vercel.\n\nIn local Vite dev mode, /api/send-email is not hosted on localhost.\n\nWould you like to open your default email app with prefilled details?`;
+            if (confirm(devNotice)) {
+                const mailtoUrl = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+                window.open(mailtoUrl, '_blank');
+                closeEmailInvoiceModal();
+            } else {
+                throw new Error('Local dev serverless endpoint (/api/send-email) returned 404.');
+            }
+        } else {
+            const errDetail = data.message || (resText && resText.length < 200 ? resText : `Server returned error (${res.status})`);
+            throw new Error(errDetail);
+        }
+    } catch (err) {
+        console.error('[CashInvoice] Email dispatch error:', err);
+        showStatus(`Email Error: ${err.message}`, 'error');
+        alert(`Failed to send email: ${err.message}`);
+    } finally {
+        if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.innerText = '✉️ Send Email';
+        }
+    }
+}
+
+// Render clean standalone Cash Memo view when embedded in a modal popup
+function showEmbedInvoiceView(inv) {
+    const authOverlay = document.getElementById("auth-gate-overlay");
+    if (authOverlay) authOverlay.style.display = "none";
+    const appContainer = document.querySelector(".app-container");
+    if (appContainer) appContainer.style.display = "none";
+    const dashContainer = document.getElementById("invoices-dashboard-container");
+    if (dashContainer) dashContainer.style.display = "none";
+
+    let embedContainer = document.getElementById("embed-view-container");
+    if (!embedContainer) {
+        embedContainer = document.createElement("div");
+        embedContainer.id = "embed-view-container";
+        embedContainer.style.cssText = "display:block; padding:16px; background:#0f172a; min-height:100vh; font-family:'Outfit', sans-serif;";
+        document.body.appendChild(embedContainer);
+    } else {
+        embedContainer.style.display = "block";
+    }
+
+    embedContainer.innerHTML = `
+        <div style="max-width: 820px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);">
+            <div style="padding: 12px 20px; background: #1e293b; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155;">
+                <span style="font-weight: 700; font-size: 14px; color: #f8fafc;">
+                    📄 Cash Memo Details — ${inv.invNumber || ''}
+                </span>
+                <button id="embed-print-btn" type="button" style="padding: 6px 16px; background: #0d9488; color: white; font-weight: 700; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                    🖨️ Print Cash Memo
+                </button>
+            </div>
+            <div style="padding: 20px; background: #ffffff; color: #0f172a;">
+                ${getPrintableInvoiceHTML(inv)}
+            </div>
+        </div>
+    `;
+
+    document.body.style.background = "#0f172a";
+    document.body.style.overflow = "auto";
+
+    const printBtn = document.getElementById("embed-print-btn");
+    if (printBtn) {
+        printBtn.onclick = () => {
+            const printArea = document.getElementById("printable-inv-area");
+            if (!printArea) return;
+            const printWin = window.open('', '_blank');
+            if (!printWin) return;
+            printWin.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>CASH MEMO - ${inv.invNumber || 'SRR'}</title>
+                    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+                    <style>
+                        body { margin: 0; padding: 6mm 10mm; font-family: 'Outfit', sans-serif; background: #fff; color: #0f172a; font-size: 11px; }
+                        @page { size: A4 portrait; margin: 6mm; }
+                        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box !important; }
+                    </style>
+                </head>
+                <body>
+                    ${printArea.outerHTML}
+                </body>
+                </html>
+            `);
+            printWin.document.close();
+            printWin.focus();
+            setTimeout(() => {
+                printWin.print();
+                printWin.close();
+            }, 350);
+        };
+    }
+}
+
+// Open a read-only print view modal for a saved or active invoice
+function openViewInvoiceModal(inv, autoPrint = false) {
+    currentViewedInvoice = inv;
+    const modal = document.getElementById('view-invoice-modal');
+    const content = document.getElementById('view-invoice-content');
+    const printBtn = document.getElementById('view-modal-print-btn');
+    const closeBtn = document.getElementById('view-modal-close-btn');
+    if (!modal || !content) return;
+
+    content.innerHTML = getPrintableInvoiceHTML(inv);
 
     modal.style.display = 'block';
     document.body.style.overflow = 'hidden';

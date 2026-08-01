@@ -54,7 +54,12 @@ const HistoryView = ({ quotationHistory, searchQuery, setSearchQuery, isGenerati
                   {filteredHistory.map((item) => (
                     <tr key={item.id} className="border-b border-[var(--apple-gray-2)] last:border-0 hover:bg-[var(--apple-gray-1)] transition-colors">
                       <td className="py-4 px-5">
-                        <span className="text-[13px] font-bold text-[var(--emerald)] bg-[var(--emerald-light)] px-2.5 py-1 rounded-md whitespace-nowrap">{(item.ref || '').replace('SRR/QUOT/', '')}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13px] font-bold text-[var(--emerald)] bg-[var(--emerald-light)] px-2.5 py-1 rounded-md whitespace-nowrap">{(item.ref || '').replace('SRR/QUOT/', '')}</span>
+                          {(item.isDC || item.documentType === 'DC') && (
+                            <span className="text-[10px] font-extrabold text-teal-800 bg-teal-100 border border-teal-200 px-2 py-0.5 rounded-full uppercase tracking-wider">DC</span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-4 px-5">
                         <span className="text-[15px] font-semibold text-[var(--apple-black)]">{item.hospital}</span>

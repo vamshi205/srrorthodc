@@ -175,6 +175,8 @@ const SavedDcs = () => {
   const [selectedDcId, setSelectedDcId] = useState<string | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [dcDocumentModalOpen, setDcDocumentModalOpen] = useState(false);
+  const [cashMemoModalOpen, setCashMemoModalOpen] = useState(false);
+  const [viewingCashMemoRef, setViewingCashMemoRef] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
   const [deletePassword, setDeletePassword] = useState("");
   const [adminPasswordOpen, setAdminPasswordOpen] = useState(false);
@@ -693,6 +695,7 @@ const SavedDcs = () => {
         updates: {
           invoiceRef,
           invoiceRemarks: invoiceRemarksInput.trim() || "",
+          isTaxInvoice: true,
         },
       });
       const dcs = await loadSavedDcs();
@@ -742,6 +745,13 @@ const SavedDcs = () => {
     } finally {
       setIsActionLoading(false);
     }
+  };
+
+  const handleCreateCashMemoForDc = (dc: SavedDc) => {
+    sessionStorage.setItem('prefill_cash_dc_no', dc.dcNo || '');
+    sessionStorage.setItem('prefill_cash_client_name', dc.hospitalName || '');
+    closeActionDialog();
+    navigate(`/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || '')}&client=${encodeURIComponent(dc.hospitalName || '')}`);
   };
 
   const handleConfirmCancel = async (dc: SavedDc) => {
@@ -1283,7 +1293,7 @@ const SavedDcs = () => {
                                         {dc.status.charAt(0).toUpperCase() + dc.status.slice(1)}
                                       </Badge>
                                     </div>
-                                    <div className="text-sm font-medium text-slate-800 mt-1 truncate">
+                                    <div className="text-sm font-semibold text-slate-900 mt-1 break-words whitespace-normal">
                                       {dc.hospitalName}
                                     </div>
                                     <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
@@ -1411,12 +1421,12 @@ const SavedDcs = () => {
                                           Link Invoice
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
-                                          onClick={() => openActionDialog("cash", dc)}
-                                          disabled={dc.status !== "returned"}
-                                          className="gap-2"
+                                          onClick={() => handleCreateCashMemoForDc(dc)}
+                                          disabled={dc.status === "pending" || dc.status === "cancelled"}
+                                          className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
                                         >
-                                          <Wallet className="h-4 w-4" />
-                                          Move to Cash
+                                          <Receipt className="h-4 w-4 text-blue-600" />
+                                          Create Cash Memo
                                         </DropdownMenuItem>
                                         {dc.status === "completed" && (
                                           <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
@@ -1428,12 +1438,6 @@ const SavedDcs = () => {
                                           <DropdownMenuItem onClick={() => cancelReturnToPending(dc)} className="gap-2">
                                             <Undo2 className="h-4 w-4" />
                                             Cancel Return
-                                          </DropdownMenuItem>
-                                        )}
-                                        {dc.status === "cash" && (
-                                          <DropdownMenuItem onClick={() => openActionDialog("invoice", dc)} className="gap-2">
-                                            <Receipt className="h-4 w-4" />
-                                            Link Invoice
                                           </DropdownMenuItem>
                                         )}
                                         <DropdownMenuSeparator />
@@ -1470,7 +1474,12 @@ const SavedDcs = () => {
                                       DC No
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-left p-3 text-xs font-bold text-slate-700 border-r border-slate-300">
+                                  {(activeQueue === "cash" || activeQueue === "completed" || activeQueue === "all") && (
+                                    <th className="text-left p-3 text-xs font-bold text-slate-700 w-[150px] border-r border-slate-300">
+                                      Invoice / Memo No
+                                    </th>
+                                  )}
+                                  <th className="text-left p-3 text-xs font-bold text-slate-700 border-r border-slate-300 min-w-[200px]">
                                     <SortableHeader sortKey="party">
                                       Party Name
                                     </SortableHeader>
@@ -1557,6 +1566,49 @@ const SavedDcs = () => {
                                           {dc.dcNo}
                                         </button>
                                       </td>
+                                      {(activeQueue === "cash" || activeQueue === "completed" || activeQueue === "all") && (
+                                        <td className="p-3 border-r-2 border-slate-200">
+                                          {dc.invoiceRef ? (
+                                            (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) ? (
+                                              <span
+                                                className="inline-flex items-center gap-1 text-[11px] font-extrabold text-purple-800 bg-purple-50 border border-purple-200 px-2 py-1 rounded shadow-2xs"
+                                                title={`Tax Invoice Number: ${dc.invoiceRef}`}
+                                              >
+                                                <FileText className="w-3.5 h-3.5 text-purple-600" />
+                                                <span>{dc.invoiceRef}</span>
+                                              </span>
+                                            ) : (
+                                              <div className="flex flex-col gap-1 items-start">
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setViewingCashMemoRef(dc.invoiceRef!);
+                                                    setCashMemoModalOpen(true);
+                                                  }}
+                                                  className="inline-flex items-center gap-1 text-[11px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded hover:bg-blue-100 hover:text-blue-800 transition-all cursor-pointer shadow-2xs"
+                                                  title="Click to View Cash Memo"
+                                                >
+                                                  <Receipt className="w-3.5 h-3.5 text-blue-600" />
+                                                  <span>{dc.invoiceRef}</span>
+                                                </button>
+                                                {dc.status === "cash" && (
+                                                  <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-amber-100 text-amber-800 border border-amber-300 rounded" title="Cash Memo Unpaid">
+                                                    ● UNPAID {dc.cashAmount ? `₹${dc.cashAmount}` : ''}
+                                                  </span>
+                                                )}
+                                                {dc.status === "completed" && dc.cashAmount && (
+                                                  <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded" title="Cash Memo Paid">
+                                                    ✓ PAID ₹{dc.cashAmount}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            )
+                                          ) : (
+                                            <span className="text-xs text-slate-400 font-medium">-</span>
+                                          )}
+                                        </td>
+                                      )}
                                       <td className="p-3 border-r-2 border-slate-200">
                                         <button
                                           onClick={(e) => {
@@ -1564,7 +1616,7 @@ const SavedDcs = () => {
                                             setSelectedDcId(dc.id);
                                             setDetailsDialogOpen(true);
                                           }}
-                                          className="text-sm hover:text-teal-800 transition-colors text-left max-w-48 truncate"
+                                          className="text-sm font-semibold text-slate-900 hover:text-teal-800 transition-colors text-left break-words whitespace-normal"
                                         >
                                           {dc.hospitalName}
                                         </button>
@@ -1713,14 +1765,33 @@ const SavedDcs = () => {
                                               <Receipt className="h-4 w-4" />
                                               Link Invoice
                                             </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={() => openActionDialog("cash", dc)}
-                                              disabled={dc.status !== "returned"}
-                                              className="gap-2"
-                                            >
-                                              <Wallet className="h-4 w-4" />
-                                              Move to Cash
-                                            </DropdownMenuItem>
+                                            {dc.status === "returned" && !dc.invoiceRef && (
+                                              <DropdownMenuItem
+                                                onClick={() => handleCreateCashMemoForDc(dc)}
+                                                className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
+                                              >
+                                                <Receipt className="h-4 w-4 text-blue-600" />
+                                                Create Cash Memo
+                                              </DropdownMenuItem>
+                                            )}
+                                            {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                                              <DropdownMenuItem disabled className="gap-2 font-bold text-purple-800 bg-purple-50">
+                                                <FileText className="h-4 w-4 text-purple-600" />
+                                                Tax Invoice: {dc.invoiceRef}
+                                              </DropdownMenuItem>
+                                            )}
+                                            {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                                              <DropdownMenuItem
+                                                onClick={() => {
+                                                  setViewingCashMemoRef(dc.invoiceRef!);
+                                                  setCashMemoModalOpen(true);
+                                                }}
+                                                className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
+                                              >
+                                                <Receipt className="h-4 w-4 text-blue-600" />
+                                                View Cash Memo ({dc.invoiceRef})
+                                              </DropdownMenuItem>
+                                            )}
                                             {dc.status === "completed" && (
                                               <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
                                                 <Undo2 className="h-4 w-4" />
@@ -1893,16 +1964,24 @@ const SavedDcs = () => {
                   rows={3}
                 />
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  onClick={() => handleCreateCashMemoForDc(actionDialog.dc!)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 flex-1"
+                >
+                  <Receipt className="w-4 h-4" />
+                  Create Cash Memo (Prefilled)
+                </Button>
                 <Button
                   onClick={() => handleConfirmCash(actionDialog.dc!)}
                   disabled={isActionLoading}
+                  variant="outline"
                   className="gap-2"
                 >
                   {isActionLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  {isActionLoading ? 'Saving...' : 'Move to Cash'}
+                  {isActionLoading ? 'Saving...' : 'Move to Cash Queue'}
                 </Button>
-                <Button variant="outline" onClick={closeActionDialog} disabled={isActionLoading}>
+                <Button variant="ghost" onClick={closeActionDialog} disabled={isActionLoading}>
                   Cancel
                 </Button>
               </div>
@@ -1940,6 +2019,27 @@ const SavedDcs = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Cash Memo Viewer Modal Popup */}
+      <Dialog open={cashMemoModalOpen} onOpenChange={setCashMemoModalOpen}>
+        <DialogContent className="max-w-5xl h-[90vh] p-0 flex flex-col overflow-hidden bg-slate-900 border-slate-700">
+          <DialogHeader className="p-3 sm:p-4 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-slate-800">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-white">
+              <Receipt className="h-5 w-5 text-blue-400" />
+              Cash Memo Details — {viewingCashMemoRef}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 w-full h-full bg-slate-950">
+            {viewingCashMemoRef && (
+              <iframe
+                src={`/cash-invoice/index.html?viewInv=${encodeURIComponent(viewingCashMemoRef)}`}
+                className="w-full h-full border-0"
+                title={`Cash Memo ${viewingCashMemoRef}`}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -2276,20 +2376,35 @@ const SavedDcs = () => {
                           size="sm"
                           variant="outline"
                           className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-green-300 text-green-700 hover:bg-green-50 hover:text-green-800"
-                          disabled={selectedDc.status !== "returned" && selectedDc.status !== "cash"}
+                          disabled={selectedDc.status !== "returned"}
                           onClick={() => openActionDialog("invoice", selectedDc)}
                         >
                           <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> Invoice
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800"
-                          disabled={selectedDc.status !== "returned"}
-                          onClick={() => openActionDialog("cash", selectedDc)}
-                        >
-                          <Wallet className="h-3 w-3 sm:h-4 sm:w-4" /> Cash
-                        </Button>
+                        {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800 font-bold"
+                            onClick={() => handleCreateCashMemoForDc(selectedDc)}
+                          >
+                            <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> Create Cash Memo
+                          </Button>
+                        )}
+                        {selectedDc.invoiceRef && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800 font-bold"
+                            onClick={() => {
+                              setDetailsDialogOpen(false);
+                              setViewingCashMemoRef(selectedDc.invoiceRef!);
+                              setCashMemoModalOpen(true);
+                            }}
+                          >
+                            <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> View Cash Memo ({selectedDc.invoiceRef})
+                          </Button>
+                        )}
                         {selectedDc.status === "pending" && (
                           <Button
                             size="sm"
