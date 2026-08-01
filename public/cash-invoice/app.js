@@ -3311,9 +3311,14 @@ function showEmbedInvoiceView(inv) {
                 <span style="font-weight: 700; font-size: 14px; color: #f8fafc;">
                     📄 Cash Memo Details — ${inv.invNumber || ''}
                 </span>
-                <button id="embed-print-btn" type="button" style="padding: 6px 16px; background: #0d9488; color: white; font-weight: 700; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px;">
-                    🖨️ Print Cash Memo
-                </button>
+                <div style="display: flex; gap: 8px;">
+                    <button id="embed-whatsapp-btn" type="button" style="padding: 6px 14px; background: #16a34a; color: white; font-weight: 700; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                        📲 Share WhatsApp
+                    </button>
+                    <button id="embed-print-btn" type="button" style="padding: 6px 14px; background: #0d9488; color: white; font-weight: 700; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                        🖨️ Print
+                    </button>
+                </div>
             </div>
             <div style="padding: 20px; background: #ffffff; color: #0f172a;">
                 ${getPrintableInvoiceHTML(inv)}
@@ -3323,6 +3328,21 @@ function showEmbedInvoiceView(inv) {
 
     document.body.style.background = "#0f172a";
     document.body.style.overflow = "auto";
+
+    const whatsappBtn = document.getElementById("embed-whatsapp-btn");
+    if (whatsappBtn) {
+        whatsappBtn.onclick = () => {
+            const statusText = inv.paymentStatus === 'PAID' ? 'PAID ✅' : 'UNPAID ⏳';
+            const text = `*SRI RAJA RAJESHWARI ORTHO PLUS*\n*Cash Memo Details*\n\n` +
+              `📄 *Memo No:* ${inv.invNumber || 'N/A'}\n` +
+              `🏥 *Party Name:* ${inv.clientName || 'Customer'}\n` +
+              `💰 *Total Amount:* ₹${inv.grandTotal || 0}\n` +
+              `📌 *Payment Status:* ${statusText}\n\n` +
+              `Thank you!`;
+            const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+            window.open(url, '_blank');
+        };
+    }
 
     const printBtn = document.getElementById("embed-print-btn");
     if (printBtn) {

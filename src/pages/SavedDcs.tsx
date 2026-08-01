@@ -17,6 +17,7 @@ import {
   List,
   LogOut,
   Menu,
+  MessageSquare,
   Package,
   Plus,
   RefreshCw,
@@ -181,6 +182,9 @@ const SavedDcs = () => {
   const [deletePassword, setDeletePassword] = useState("");
   const [adminPasswordOpen, setAdminPasswordOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
+  const [paymentDialog, setPaymentDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
+  const [paymentAmountInput, setPaymentAmountInput] = useState("");
+  const [paymentRemarksInput, setPaymentRemarksInput] = useState("");
 
   useEffect(() => {
     const fetchDcs = async () => {
@@ -213,6 +217,86 @@ const SavedDcs = () => {
       })),
     [savedDcs],
   );
+
+  const dcCounts = useMemo(() => {
+    return {
+      all: normalizedDcs.length,
+      pending: normalizedDcs.filter(d => d.status === "pending").length,
+      returned: normalizedDcs.filter(d => d.status === "returned").length,
+      cash: normalizedDcs.filter(d => d.status === "cash").length,
+      completed: normalizedDcs.filter(d => d.status === "completed").length,
+      cancelled: normalizedDcs.filter(d => d.status === "cancelled").length,
+    };
+  }, [normalizedDcs]);
+
+  const cashQueueStats = useMemo(() => {
+    const cashDcs = normalizedDcs.filter(d => d.status === "cash");
+    const totalOutstanding = cashDcs.reduce((acc, d) => acc + (d.cashAmount || 0), 0);
+    return { count: cashDcs.length, totalOutstanding };
+  }, [normalizedDcs]);
+
+  const completedQueueStats = useMemo(() => {
+    const completedDcs = normalizedDcs.filter(d => d.status === "completed");
+    const totalCollected = completedDcs.reduce((acc, d) => acc + (d.cashAmount || 0), 0);
+    return { count: completedDcs.length, totalCollected };
+  }, [normalizedDcs]);
+
+
+
+  const handleShareWhatsApp = (dc: SavedDc) => {
+    const statusText = dc.status === 'completed' ? 'PAID ✅' : 'UNPAID ⏳';
+    const text = `*SRI RAJA RAJESHWARI ORTHO PLUS*\n*Cash Memo Details*\n\n` +
+      `📄 *Memo No:* ${dc.invoiceRef || 'N/A'}\n` +
+      `🚚 *DC No:* ${dc.dcNo}\n` +
+      `🏥 *Party Name:* ${dc.hospitalName}\n` +
+      `💰 *Amount:* ₹${dc.cashAmount || 0}\n` +
+      `📌 *Status:* ${statusText}\n\n` +
+      `Thank you!`;
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
+  const getCashMemoAgingDays = (dc: SavedDc) => {
+    const cashEvent = dc.history?.find(h => h.action === 'MOVE_TO_CASH');
+    const cashDate = cashEvent ? new Date(cashEvent.at) : (dc.savedAt ? new Date(dc.savedAt) : new Date());
+    const diff = Math.floor((new Date().getTime() - cashDate.getTime()) / (1000 * 3600 * 24));
+    return Math.max(0, diff);
+  };
+
+  const handleQuickRecordPayment = async () => {
+    if (!paymentDialog.dc) return;
+    const dc = paymentDialog.dc;
+    const paidAmount = parseFloat(paymentAmountInput) || (dc.cashAmount || 0);
+    try {
+      setLoadingDcIds(prev => new Set(prev).add(dc.id));
+      await transitionSavedDc(dc.id, {
+        toStatus: "completed",
+        action: "MOVE_CASH_TO_COMPLETED",
+        updates: {
+          cashAmount: paidAmount,
+          cashRemarks: paymentRemarksInput.trim() || `Payment recorded: ₹${paidAmount}`,
+        },
+        meta: {
+          paidAt: new Date().toISOString(),
+          paidAmount,
+          remarks: paymentRemarksInput.trim() || `Payment recorded: ₹${paidAmount}`,
+        }
+      });
+      setSavedDcs(prev => prev.map(d => d.id === dc.id ? { ...d, status: "completed", cashAmount: paidAmount } : d));
+      toast({ title: "Payment Recorded", description: `DC ${dc.dcNo} Cash Memo marked as PAID and moved to Completed Queue.` });
+      setPaymentDialog({ open: false, dc: null });
+      setPaymentAmountInput("");
+      setPaymentRemarksInput("");
+    } catch (err) {
+      toast({ title: "Payment Failed", description: err instanceof Error ? err.message : "Failed to record payment.", variant: "destructive" });
+    } finally {
+      setLoadingDcIds(prev => {
+        const next = new Set(prev);
+        next.delete(dc.id);
+        return next;
+      });
+    }
+  };
 
   // Apply quick filters
   const applyQuickFilter = (dcs: SavedDc[]) => {
@@ -413,16 +497,23 @@ const SavedDcs = () => {
   };
 
   const handleExportCSV = () => {
-    const headers = ["Date", "DC No", "Party", "Status", "Items", "Delivered By", "Received By", "Remarks"];
+    if (filteredDcs.length === 0) {
+      toast({ title: "Export Empty", description: "No records to export in current queue view.", variant: "destructive" });
+      return;
+    }
+    const headers = ["Date", "DC No", "Invoice/Memo No", "Party Name", "Items Count", "Days Pending", "Delivered By", "Received By", "Returned By", "Status", "Cash Amount (INR)"];
     const rows = filteredDcs.map((dc) => [
       formatDate(getDisplayDate(dc)),
-      dc.dcNo,
-      dc.hospitalName,
-      dc.status.toUpperCase(),
+      `"${dc.dcNo || ''}"`,
+      `"${dc.invoiceRef || ''}"`,
+      `"${(dc.hospitalName || '').replace(/"/g, '""')}"`,
       getTotalQty(dc).toString(),
-      dc.deliveredBy || "-",
-      dc.receivedBy || "-",
-      dc.remarks || "-",
+      getDaysPending(dc).toString(),
+      `"${dc.deliveredBy || ''}"`,
+      `"${dc.receivedBy || ''}"`,
+      `"${dc.returnedBy || ''}"`,
+      dc.status.toUpperCase(),
+      dc.cashAmount || 0
     ]);
     const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -1151,6 +1242,56 @@ const SavedDcs = () => {
                   </Tabs>
                 </CardHeader>
 
+                  {activeQueue === "cash" && (
+                    <div className="mx-3 sm:mx-4 mt-1 mb-3 p-4 rounded-xl border border-blue-200 bg-blue-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-blue-100 text-blue-700 rounded-lg">
+                          <Wallet className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900">Cash Queue Financial Summary</h4>
+                          <p className="text-xs text-slate-500 font-medium">Unpaid & partial cash memo balances awaiting collection</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Total Memos</span>
+                          <span className="text-lg font-black text-slate-900">{cashQueueStats.count} Pending</span>
+                        </div>
+                        <div className="h-8 w-px bg-slate-200" />
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Total Outstanding</span>
+                          <span className="text-lg font-black text-blue-700">₹{cashQueueStats.totalOutstanding.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeQueue === "completed" && (
+                    <div className="mx-3 sm:mx-4 mt-1 mb-3 p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-lg">
+                          <Receipt className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900">Completed Queue Summary</h4>
+                          <p className="text-xs text-slate-500 font-medium">Successfully processed transactions & collections</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Completed Transactions</span>
+                          <span className="text-lg font-black text-slate-900">{completedQueueStats.count} Processed</span>
+                        </div>
+                        <div className="h-8 w-px bg-slate-200" />
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Total Revenue (Cash)</span>
+                          <span className="text-lg font-black text-emerald-700">₹{completedQueueStats.totalCollected.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                 <CardContent className="p-0">
                   {selectedDc && (
                     <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t-2 border-teal-500 bg-gradient-to-r from-teal-900 to-slate-900 text-white shadow-md">
@@ -1593,10 +1734,19 @@ const SavedDcs = () => {
                                                   <span>{dc.invoiceRef}</span>
                                                 </button>
                                                 {dc.status === "cash" && (
-                                                  <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-amber-100 text-amber-800 border border-amber-300 rounded" title="Cash Memo Unpaid">
-                                                    ● UNPAID {dc.cashAmount ? `₹${dc.cashAmount}` : ''}
-                                                  </span>
-                                                )}
+                                                   <span
+                                                     className={`inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded border ${
+                                                       getCashMemoAgingDays(dc) > 15
+                                                         ? "bg-rose-100 text-rose-800 border-rose-300 animate-pulse"
+                                                         : getCashMemoAgingDays(dc) > 7
+                                                         ? "bg-amber-100 text-amber-800 border-amber-300"
+                                                         : "bg-blue-50 text-blue-700 border-blue-200"
+                                                     }`}
+                                                     title={`Unpaid for ${getCashMemoAgingDays(dc)} days`}
+                                                   >
+                                                     ● UNPAID {dc.cashAmount ? `₹${dc.cashAmount}` : ''} ({getCashMemoAgingDays(dc)}d)
+                                                   </span>
+                                                 )}
                                                 {dc.status === "completed" && dc.cashAmount && (
                                                   <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded" title="Cash Memo Paid">
                                                     ✓ PAID ₹{dc.cashAmount}
@@ -1781,16 +1931,33 @@ const SavedDcs = () => {
                                               </DropdownMenuItem>
                                             )}
                                             {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                              <DropdownMenuItem
-                                                onClick={() => {
-                                                  setViewingCashMemoRef(dc.invoiceRef!);
-                                                  setCashMemoModalOpen(true);
-                                                }}
-                                                className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
-                                              >
-                                                <Receipt className="h-4 w-4 text-blue-600" />
-                                                View Cash Memo ({dc.invoiceRef})
-                                              </DropdownMenuItem>
+                                              <>
+                                                <DropdownMenuItem
+                                                  onClick={() => {
+                                                    setViewingCashMemoRef(dc.invoiceRef!);
+                                                    setCashMemoModalOpen(true);
+                                                  }}
+                                                  className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
+                                                >
+                                                  <Receipt className="h-4 w-4 text-blue-600" />
+                                                  View Cash Memo ({dc.invoiceRef})
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => handleShareWhatsApp(dc)} className="gap-2">
+                                                  <MessageSquare className="h-4 w-4 text-emerald-600" />
+                                                  Share via WhatsApp
+                                                </DropdownMenuItem>
+                                                {dc.status === "cash" && (
+                                                  <DropdownMenuItem
+                                                    onClick={() => {
+                                                      setPaymentDialog({ open: true, dc });
+                                                    }}
+                                                    className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                                                  >
+                                                    <Wallet className="h-4 w-4 text-emerald-600" />
+                                                    Record Cash Payment
+                                                  </DropdownMenuItem>
+                                                )}
+                                              </>
                                             )}
                                             {dc.status === "completed" && (
                                               <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
@@ -2735,6 +2902,56 @@ const SavedDcs = () => {
               </Button>
               <Button onClick={confirmAdminAccess} className="bg-blue-700 hover:bg-blue-800 text-white rounded-lg">
                 Enter Admin Panel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Record Payment Dialog */}
+      <Dialog
+        open={paymentDialog.open}
+        onOpenChange={(open) => setPaymentDialog({ open, dc: open ? paymentDialog.dc : null })}
+      >
+        <DialogContent className="max-w-sm border-2 border-slate-300 shadow-xl rounded-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-emerald-600" />
+              Record Cash Payment
+            </DialogTitle>
+            <DialogDescription>
+              Record cash memo payment for DC <strong>{paymentDialog.dc?.dcNo}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="payment-amount">Paid Amount (INR)</Label>
+              <Input
+                id="payment-amount"
+                type="number"
+                value={paymentAmountInput}
+                onChange={(e) => setPaymentAmountInput(e.target.value)}
+                placeholder={paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "Enter amount"}
+                className="border-slate-300 focus:border-emerald-500 rounded-lg font-bold text-slate-800"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="payment-remarks">Payment Notes</Label>
+              <Input
+                id="payment-remarks"
+                type="text"
+                value={paymentRemarksInput}
+                onChange={(e) => setPaymentRemarksInput(e.target.value)}
+                placeholder="e.g. Received full cash payment"
+                className="border-slate-300 focus:border-emerald-500 rounded-lg text-xs"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setPaymentDialog({ open: false, dc: null })} className="rounded-lg">
+                Cancel
+              </Button>
+              <Button onClick={handleQuickRecordPayment} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1">
+                Confirm Payment
               </Button>
             </div>
           </div>
