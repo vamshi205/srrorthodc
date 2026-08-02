@@ -1070,12 +1070,19 @@ function setupEventListeners() {
             window.parent.postMessage({ action: "SAVE_CASH_INVOICE", payload: invoiceToSave }, "*");
         }
 
-        // Open dashboard first
-        activeDashboardTab = "invoices";
-        openInvoicesDashboard();
-
+        const fromDcTracker = sessionStorage.getItem('from_dc_tracker') === 'true';
         // Clear active sheet so editor is refreshed for the next bill
         clearActiveInvoiceData();
+
+        if (!fromDcTracker) {
+            // Open dashboard first
+            activeDashboardTab = "invoices";
+            openInvoicesDashboard();
+        } else {
+            showStatus("Saving and redirecting to DC Tracker...");
+            const saveBtn = document.getElementById("save-invoice-btn");
+            if (saveBtn) saveBtn.disabled = true;
+        }
 
         // Background Google Drive sync
         if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
