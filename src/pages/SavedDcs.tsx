@@ -34,6 +34,7 @@ import {
   X,
   Sun,
   Moon,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -289,10 +290,17 @@ const SavedDcs = () => {
     return Math.max(0, diff);
   };
 
+  const openPaymentDialog = (dc: SavedDc) => {
+    setPaymentDialog({ open: true, dc });
+    setPaymentAmountInput(dc.cashAmount ? String(dc.cashAmount) : "");
+    setPaymentRemarksInput("");
+  };
+
   const handleQuickRecordPayment = async () => {
     if (!paymentDialog.dc) return;
     const dc = paymentDialog.dc;
     const paidAmount = parseFloat(paymentAmountInput) || (dc.cashAmount || 0);
+    setIsActionLoading(true);
     try {
       setLoadingDcIds(prev => new Set(prev).add(dc.id));
       await transitionSavedDc(dc.id, {
@@ -325,6 +333,7 @@ const SavedDcs = () => {
         }
       }
       setSavedDcs(prev => prev.map(d => d.id === dc.id ? { ...d, status: "completed", cashAmount: paidAmount } : d));
+      setSelectedDcId(null);
       toast({ title: "Payment Recorded", description: `DC ${dc.dcNo} Cash Memo marked as PAID and moved to Completed Queue.` });
       setPaymentDialog({ open: false, dc: null });
       setPaymentAmountInput("");
@@ -332,6 +341,7 @@ const SavedDcs = () => {
     } catch (err) {
       toast({ title: "Payment Failed", description: err instanceof Error ? err.message : "Failed to record payment.", variant: "destructive" });
     } finally {
+      setIsActionLoading(false);
       setLoadingDcIds(prev => {
         const next = new Set(prev);
         next.delete(dc.id);
@@ -380,8 +390,16 @@ const SavedDcs = () => {
     return normalizedDcs.find((dc) => dc.id === selectedDcId) ?? null;
   }, [normalizedDcs, selectedDcId]);
 
-  const getDisplayDate = (dc: SavedDc) =>
-    dc.status === "pending" ? dc.savedAt : dc.returnedAt || dc.savedAt;
+  const getDisplayDate = (dc: SavedDc) => {
+    if (dc.status === "pending") return dc.savedAt;
+    if (dc.status === "returned") return dc.returnedAt || dc.savedAt;
+    if (dc.status === "cash") return dc.cashAt || dc.returnedAt || dc.savedAt;
+    if (dc.status === "completed") {
+      const completedEvent = dc.history?.find(h => h.action.includes("COMPLETED") || h.action.includes("INVOICE"));
+      return completedEvent?.at || dc.returnedAt || dc.savedAt;
+    }
+    return dc.savedAt;
+  };
 
   const filteredDcs = useMemo(() => {
     const term = filterText.trim().toLowerCase();
@@ -452,19 +470,21 @@ const SavedDcs = () => {
   const dashboardMetrics = useMemo(() => {
     const totalDcs = normalizedDcs.length;
     const pendingDcs = statusCounts.pending;
+    const returnedAwaiting = normalizedDcs.filter(
+      (dc) => dc.status === "returned" && !dc.invoiceRef
+    ).length;
+    const unpaidCash = statusCounts.cash;
     const avgTurnaround = normalizedDcs
-      .filter((dc) => dc.status !== "pending")
-      .reduce((sum, dc) => sum + getDaysPending(dc), 0) / (totalDcs - pendingDcs || 1);
-    const totalItemsOut = normalizedDcs
-      .filter((dc) => dc.status === "pending" || dc.status === "returned")
-      .reduce((sum, dc) => sum + getTotalQty(dc), 0);
+      .filter((dc) => dc.status !== "pending" && dc.status !== "cancelled")
+      .reduce((sum, dc) => sum + getDaysPending(dc), 0) / (totalDcs - pendingDcs - statusCounts.cancelled || 1);
     return {
       totalDcs,
       pendingDcs,
+      returnedAwaiting,
+      unpaidCash,
       avgTurnaround: Math.round(avgTurnaround),
-      totalItemsOut,
     };
-  }, [normalizedDcs, statusCounts.pending]);
+  }, [normalizedDcs, statusCounts.pending, statusCounts.cash, statusCounts.cancelled]);
 
   const handleDelete = async (id: string) => {
     setLoadingDcIds(prev => new Set(prev).add(id));
@@ -799,6 +819,8 @@ const SavedDcs = () => {
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
       closeActionDialog();
+      setActiveQueue("returned");
+      setSearchParams({ queue: "returned" });
       toast({ title: "DC marked as returned" });
     } catch (error) {
       console.error('Error marking DC as returned:', error);
@@ -1054,28 +1076,20 @@ const SavedDcs = () => {
 
           <div className="space-y-8">
             {/* Dashboard Metrics */}
-            {savedDcs.length > 0 && (
+            {(isLoading || savedDcs.length > 0) && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
                 <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Total DCs</p>
-                        <p className="text-xl sm:text-3xl font-extrabold text-teal-700">{dashboardMetrics.totalDcs}</p>
-                      </div>
-                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-teal-700" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
-                  <CardContent className="p-3 sm:p-5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Pending</p>
-                        <p className="text-xl sm:text-3xl font-extrabold text-rose-600">{dashboardMetrics.pendingDcs}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Pending DCs</p>
+                        <p className="text-xl sm:text-3xl font-extrabold text-rose-600">
+                          {isLoading && savedDcs.length === 0 ? (
+                            <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded" />
+                          ) : (
+                            dashboardMetrics.pendingDcs
+                          )}
+                        </p>
                       </div>
                       <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center flex-shrink-0">
                         <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-rose-600" />
@@ -1088,11 +1102,17 @@ const SavedDcs = () => {
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Avg. Turn</p>
-                        <p className="text-xl sm:text-3xl font-extrabold text-teal-800">{dashboardMetrics.avgTurnaround}d</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Awaiting Invoice</p>
+                        <p className="text-xl sm:text-3xl font-extrabold text-amber-600">
+                          {isLoading && savedDcs.length === 0 ? (
+                            <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded" />
+                          ) : (
+                            dashboardMetrics.returnedAwaiting
+                          )}
+                        </p>
                       </div>
-                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center flex-shrink-0">
-                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-teal-800" />
+                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">
+                        <Receipt className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
                       </div>
                     </div>
                   </CardContent>
@@ -1102,11 +1122,37 @@ const SavedDcs = () => {
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Items Out</p>
-                        <p className="text-xl sm:text-3xl font-extrabold text-blue-700">{dashboardMetrics.totalItemsOut}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Unpaid Cash Memos</p>
+                        <p className="text-xl sm:text-3xl font-extrabold text-blue-700">
+                          {isLoading && savedDcs.length === 0 ? (
+                            <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded" />
+                          ) : (
+                            dashboardMetrics.unpaidCash
+                          )}
+                        </p>
                       </div>
                       <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
-                        <Package className="w-4 h-4 sm:w-5 sm:h-5 text-blue-700" />
+                        <Wallet className="w-4 h-4 sm:w-5 sm:h-5 text-blue-700" />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
+                  <CardContent className="p-3 sm:p-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Avg. Turnaround</p>
+                        <p className="text-xl sm:text-3xl font-extrabold text-teal-800">
+                          {isLoading && savedDcs.length === 0 ? (
+                            <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded" />
+                          ) : (
+                            `${dashboardMetrics.avgTurnaround}d`
+                          )}
+                        </p>
+                      </div>
+                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center flex-shrink-0">
+                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-teal-800" />
                       </div>
                     </div>
                   </CardContent>
@@ -1114,20 +1160,11 @@ const SavedDcs = () => {
               </div>
             )}
 
-            {isLoading ? (
-              <AppLoadingSpinner message="Loading DCs..." subtext="Fetching Delivery Challans from database" />
-            ) : savedDcs.length === 0 ? (
-              <Card className="glass-card border-2 border-border/60">
-                <CardHeader>
-                  <CardTitle>No DCs Tracked Yet</CardTitle>
-                  <CardDescription>Save a DC from the generator to start tracking.</CardDescription>
-                </CardHeader>
-              </Card>
-            ) : (
-              <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md">
+            <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md">
+              {(isLoading || savedDcs.length > 0) && (
                 <CardHeader className="p-3 sm:p-4 space-y-3 sm:space-y-4">
-                    {/* Modern Advanced Control Toolbar */}
-                    <div className="space-y-4">
+                  {/* Modern Advanced Control Toolbar */}
+                  <div className="space-y-4">
                       {/* Top Bar: Search, Quick Filters & Export */}
                       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900/60 p-3 sm:p-4 rounded-xl border border-slate-200/80">
                         {/* Search Input */}
@@ -1212,6 +1249,7 @@ const SavedDcs = () => {
                   <Tabs value={activeQueue} onValueChange={(value) => {
                     setActiveQueue(value as SavedDcStatus);
                     setSearchParams({ queue: value });
+                    setSelectedDcId(null);
                   }}>
                     <TabsList className="grid h-auto min-h-[52px] grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1.5">
                       <TabsTrigger
@@ -1287,6 +1325,7 @@ const SavedDcs = () => {
                     </TabsList>
                   </Tabs>
                 </CardHeader>
+              )}
 
                   {activeQueue === "cash" && (
                     <div className="mx-3 sm:mx-4 mt-1 mb-3 p-4 rounded-xl border border-blue-200 bg-blue-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -1339,7 +1378,21 @@ const SavedDcs = () => {
                   )}
 
                 <CardContent className="p-0">
-                  {selectedDc && (
+                  {isLoading && savedDcs.length === 0 ? (
+                    <div className="py-20 flex justify-center items-center">
+                      <AppLoadingSpinner message="Loading DCs..." subtext="Fetching Delivery Challans from database" />
+                    </div>
+                  ) : savedDcs.length === 0 ? (
+                    <div className="p-8 sm:p-12 text-center border-t border-slate-200">
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-muted/20 flex items-center justify-center mx-auto mb-4">
+                        <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
+                      </div>
+                      <h3 className="text-base sm:text-lg font-semibold mb-2">No DCs Tracked Yet</h3>
+                      <p className="text-sm text-muted-foreground mb-4">Save a DC from the generator to start tracking.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {selectedDc && (
                     <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t-2 border-teal-500 bg-gradient-to-r from-teal-900 to-slate-900 text-white shadow-md">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Badge className="bg-teal-500 text-white text-xs font-extrabold px-2 py-0.5">
@@ -1406,6 +1459,39 @@ const SavedDcs = () => {
                             onClick={() => openActionDialog("invoice", selectedDc)}
                           >
                             <Receipt className="h-3.5 w-3.5" /> Link Invoice
+                          </Button>
+                        )}
+
+                        {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-1 px-2.5"
+                            onClick={() => handleCreateCashMemoForDc(selectedDc)}
+                          >
+                            <Receipt className="h-3.5 w-3.5" /> Create Cash Memo
+                          </Button>
+                        )}
+
+                        {selectedDc.invoiceRef && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-1 px-2.5"
+                            onClick={() => {
+                              setViewingCashMemoRef(selectedDc.invoiceRef!);
+                              setCashMemoModalOpen(true);
+                            }}
+                          >
+                            <Receipt className="h-3.5 w-3.5" /> View Cash Memo
+                          </Button>
+                        )}
+
+                        {selectedDc.status === "cash" && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white gap-1 px-2.5"
+                            onClick={() => openPaymentDialog(selectedDc)}
+                          >
+                            <Wallet className="h-3.5 w-3.5" /> Mark as Paid
                           </Button>
                         )}
 
@@ -1760,10 +1846,10 @@ const SavedDcs = () => {
                                           {dc.invoiceRef ? (
                                             (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) ? (
                                               <span
-                                                className="inline-flex items-center gap-1 text-[11px] font-extrabold text-purple-800 bg-purple-50 border border-purple-200 px-2 py-1 rounded shadow-2xs"
+                                                className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full shadow-2xs whitespace-nowrap"
                                                 title={`Tax Invoice Number: ${dc.invoiceRef}`}
                                               >
-                                                <FileText className="w-3.5 h-3.5 text-purple-600" />
+                                                <FileText className="w-3 h-3 text-purple-600 shrink-0" />
                                                 <span>{dc.invoiceRef}</span>
                                               </span>
                                             ) : (
@@ -1775,15 +1861,15 @@ const SavedDcs = () => {
                                                     setViewingCashMemoRef(dc.invoiceRef!);
                                                     setCashMemoModalOpen(true);
                                                   }}
-                                                  className="inline-flex items-center gap-1 text-[11px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded hover:bg-blue-100 hover:text-blue-800 transition-all cursor-pointer shadow-2xs"
+                                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full hover:bg-blue-100 hover:text-blue-800 transition-all cursor-pointer shadow-2xs whitespace-nowrap"
                                                   title="Click to View Cash Memo"
                                                 >
-                                                  <Receipt className="w-3.5 h-3.5 text-blue-600" />
+                                                  <Receipt className="w-3 h-3 text-blue-600 shrink-0" />
                                                   <span>{dc.invoiceRef}</span>
                                                 </button>
                                                 {dc.status === "cash" && (
                                                    <span
-                                                     className={`inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded border ${
+                                                     className={`inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border whitespace-nowrap ${
                                                        getCashMemoAgingDays(dc) > 15
                                                          ? "bg-rose-100 text-rose-800 border-rose-300 animate-pulse"
                                                          : getCashMemoAgingDays(dc) > 7
@@ -1796,7 +1882,7 @@ const SavedDcs = () => {
                                                    </span>
                                                  )}
                                                 {dc.status === "completed" && dc.cashAmount && (
-                                                  <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded" title="Cash Memo Paid">
+                                                  <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full whitespace-nowrap" title="Cash Memo Paid">
                                                     ✓ PAID ₹{dc.cashAmount}
                                                   </span>
                                                 )}
@@ -1997,13 +2083,11 @@ const SavedDcs = () => {
                                                 </DropdownMenuItem>
                                                 {dc.status === "cash" && (
                                                   <DropdownMenuItem
-                                                    onClick={() => {
-                                                      setPaymentDialog({ open: true, dc });
-                                                    }}
+                                                    onClick={() => openPaymentDialog(dc)}
                                                     className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
                                                   >
                                                     <Wallet className="h-4 w-4 text-emerald-600" />
-                                                    Record Cash Payment
+                                                    Mark as Paid
                                                   </DropdownMenuItem>
                                                 )}
                                               </>
@@ -2039,10 +2123,10 @@ const SavedDcs = () => {
                       </>
                     )}
                   </div>
-
+                    </>
+                  )}
                 </CardContent>
               </Card>
-            )}
           </div>
         </main>
       </div>
@@ -2953,13 +3037,19 @@ const SavedDcs = () => {
       {/* Quick Record Payment Dialog */}
       <Dialog
         open={paymentDialog.open}
-        onOpenChange={(open) => setPaymentDialog({ open, dc: open ? paymentDialog.dc : null })}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPaymentDialog({ open: false, dc: null });
+            setPaymentAmountInput("");
+            setPaymentRemarksInput("");
+          }
+        }}
       >
         <DialogContent className="max-w-sm border-2 border-slate-300 shadow-xl rounded-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wallet className="h-5 w-5 text-emerald-600" />
-              Record Cash Payment
+              Mark as Paid
             </DialogTitle>
             <DialogDescription>
               Record cash memo payment for DC <strong>{paymentDialog.dc?.dcNo}</strong>.
@@ -2989,11 +3079,27 @@ const SavedDcs = () => {
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setPaymentDialog({ open: false, dc: null })} className="rounded-lg">
+              <Button 
+                variant="outline" 
+                onClick={() => setPaymentDialog({ open: false, dc: null })} 
+                className="rounded-lg"
+                disabled={isActionLoading}
+              >
                 Cancel
               </Button>
-              <Button onClick={handleQuickRecordPayment} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1">
-                Confirm Payment
+              <Button 
+                onClick={handleQuickRecordPayment} 
+                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1 min-w-[120px]"
+                disabled={isActionLoading}
+              >
+                {isActionLoading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Confirm Payment</span>
+                )}
               </Button>
             </div>
           </div>
