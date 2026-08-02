@@ -111,6 +111,13 @@ export default function CashInvoice() {
           }
         }
         targetWindow?.postMessage({ action: 'SAVE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
+        if (success) {
+          const fromDcTracker = sessionStorage.getItem('from_dc_tracker') === 'true';
+          if (fromDcTracker) {
+            sessionStorage.removeItem('from_dc_tracker');
+            navigate("/saved?queue=cash");
+          }
+        }
       } else if (action === 'DELETE_CASH_INVOICE') {
         const success = await deleteCashInvoiceFromFirestore(payload);
         targetWindow?.postMessage({ action: 'DELETE_CASH_INVOICE_RESPONSE', success, requestId }, '*');

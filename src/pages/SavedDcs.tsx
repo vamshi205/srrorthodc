@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, Fragment } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertCircle,
@@ -61,6 +61,7 @@ import { deleteSavedDc, loadSavedDcs, SavedDc, SavedDcHistoryEvent, SavedDcStatu
 import { AppLoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { auth } from "@/firebase";
 import html2pdf from "html2pdf.js";
+import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore } from "@/services/cashInvoiceFirebaseService";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -134,6 +135,8 @@ const DateFilterPicker = ({ value, onChange, label }: { value: string; onChange:
 
 const SavedDcs = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queueParam = searchParams.get("queue") as SavedDcStatus | null;
   const { toast } = useToast();
   const { fetchProcedures, loading: proceduresLoading } = useProcedures();
 
@@ -161,7 +164,13 @@ const SavedDcs = () => {
   const [quickFilter, setQuickFilter] = useState<string>("all");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [sortBy, setSortBy] = useState<"date" | "dcNo" | "party" | "items" | "days" | "status">("date");
-  const [activeQueue, setActiveQueue] = useState<SavedDcStatus>("pending");
+  const [activeQueue, setActiveQueue] = useState<SavedDcStatus>(queueParam || "pending");
+
+  useEffect(() => {
+    if (queueParam && queueParam !== activeQueue) {
+      setActiveQueue(queueParam);
+    }
+  }, [queueParam]);
   const [actionDialog, setActionDialog] = useState<{
     type: "return" | "invoice" | "cash" | "cancel" | null;
     dc: SavedDc | null;
@@ -205,6 +214,23 @@ const SavedDcs = () => {
     };
     fetchDcs();
   }, [toast]);
+
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      const { action, payload, requestId } = event.data || {};
+      if (!action) return;
+
+      const targetWindow = (event.source as Window) || (document.querySelector('iframe') as HTMLIFrameElement | null)?.contentWindow;
+
+      if (action === 'FETCH_CASH_INVOICES') {
+        const invoices = await fetchCashInvoicesFromFirestore();
+        targetWindow?.postMessage({ action: 'FETCH_CASH_INVOICES_RESPONSE', payload: invoices, requestId }, '*');
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   const normalizedDcs = useMemo(
     () =>
@@ -282,6 +308,22 @@ const SavedDcs = () => {
           remarks: paymentRemarksInput.trim() || `Payment recorded: ₹${paidAmount}`,
         }
       });
+      // Sync payment status to Firestore Cash Invoice
+      if (dc.invoiceRef || dc.dcNo) {
+        try {
+          const invoices = await fetchCashInvoicesFromFirestore();
+          const match = invoices.find(inv => 
+            (dc.invoiceRef && inv.invNumber === dc.invoiceRef) ||
+            (dc.dcNo && inv.dcNumber === dc.dcNo)
+          );
+          if (match) {
+            match.paymentReceived = paidAmount;
+            await saveCashInvoiceToFirestore(match);
+          }
+        } catch (e) {
+          console.error("Failed to sync payment status to Firestore cash invoice:", e);
+        }
+      }
       setSavedDcs(prev => prev.map(d => d.id === dc.id ? { ...d, status: "completed", cashAmount: paidAmount } : d));
       toast({ title: "Payment Recorded", description: `DC ${dc.dcNo} Cash Memo marked as PAID and moved to Completed Queue.` });
       setPaymentDialog({ open: false, dc: null });
@@ -841,6 +883,7 @@ const SavedDcs = () => {
   const handleCreateCashMemoForDc = (dc: SavedDc) => {
     sessionStorage.setItem('prefill_cash_dc_no', dc.dcNo || '');
     sessionStorage.setItem('prefill_cash_client_name', dc.hospitalName || '');
+    sessionStorage.setItem('from_dc_tracker', 'true');
     closeActionDialog();
     navigate(`/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || '')}&client=${encodeURIComponent(dc.hospitalName || '')}`);
   };
@@ -1166,7 +1209,10 @@ const SavedDcs = () => {
                     </div>
 
                   {/* Queue Tabs */}
-                  <Tabs value={activeQueue} onValueChange={(value) => setActiveQueue(value as SavedDcStatus)}>
+                  <Tabs value={activeQueue} onValueChange={(value) => {
+                    setActiveQueue(value as SavedDcStatus);
+                    setSearchParams({ queue: value });
+                  }}>
                     <TabsList className="grid h-auto min-h-[52px] grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1.5">
                       <TabsTrigger
                         value="pending"
@@ -1553,22 +1599,24 @@ const SavedDcs = () => {
                                             Restore to Pending
                                           </DropdownMenuItem>
                                         )}
-                                        <DropdownMenuItem
-                                          onClick={() => openActionDialog("invoice", dc)}
-                                          disabled={dc.status !== "returned"}
-                                          className="gap-2"
-                                        >
-                                          <Receipt className="h-4 w-4" />
-                                          Link Invoice
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={() => handleCreateCashMemoForDc(dc)}
-                                          disabled={dc.status === "pending" || dc.status === "cancelled"}
-                                          className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
-                                        >
-                                          <Receipt className="h-4 w-4 text-blue-600" />
-                                          Create Cash Memo
-                                        </DropdownMenuItem>
+                                        {dc.status === "returned" && (
+                                          <>
+                                            <DropdownMenuItem
+                                              onClick={() => openActionDialog("invoice", dc)}
+                                              className="gap-2"
+                                            >
+                                              <Receipt className="h-4 w-4" />
+                                              Link Invoice
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              onClick={() => handleCreateCashMemoForDc(dc)}
+                                              className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
+                                            >
+                                              <Receipt className="h-4 w-4 text-blue-600" />
+                                              Create Cash Memo
+                                            </DropdownMenuItem>
+                                          </>
+                                        )}
                                         {dc.status === "completed" && (
                                           <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
                                             <Undo2 className="h-4 w-4" />
@@ -1907,14 +1955,15 @@ const SavedDcs = () => {
                                                 Restore to Pending
                                               </DropdownMenuItem>
                                             )}
-                                            <DropdownMenuItem
-                                              onClick={() => openActionDialog("invoice", dc)}
-                                              disabled={dc.status !== "returned"}
-                                              className="gap-2"
-                                            >
-                                              <Receipt className="h-4 w-4" />
-                                              Link Invoice
-                                            </DropdownMenuItem>
+                                            {dc.status === "returned" && (
+                                              <DropdownMenuItem
+                                                onClick={() => openActionDialog("invoice", dc)}
+                                                className="gap-2"
+                                              >
+                                                <Receipt className="h-4 w-4" />
+                                                Link Invoice
+                                              </DropdownMenuItem>
+                                            )}
                                             {dc.status === "returned" && !dc.invoiceRef && (
                                               <DropdownMenuItem
                                                 onClick={() => handleCreateCashMemoForDc(dc)}
@@ -1969,15 +2018,6 @@ const SavedDcs = () => {
                                               <DropdownMenuItem onClick={() => cancelReturnToPending(dc)} className="gap-2">
                                                 <Undo2 className="h-4 w-4" />
                                                 Cancel Return (Back to Pending)
-                                              </DropdownMenuItem>
-                                            )}
-                                            {dc.status === "cash" && (
-                                              <DropdownMenuItem
-                                                onClick={() => openActionDialog("invoice", dc)}
-                                                className="gap-2"
-                                              >
-                                                <Receipt className="h-4 w-4" />
-                                                Link Invoice (Move to Completed)
                                               </DropdownMenuItem>
                                             )}
                                             <DropdownMenuSeparator />
@@ -2530,24 +2570,26 @@ const SavedDcs = () => {
                       </div>
 
                       <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800"
-                          disabled={selectedDc.status !== "pending"}
-                          onClick={() => openActionDialog("return", selectedDc)}
-                        >
-                          <User className="h-3 w-3 sm:h-4 sm:w-4" /> Return
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-green-300 text-green-700 hover:bg-green-50 hover:text-green-800"
-                          disabled={selectedDc.status !== "returned"}
-                          onClick={() => openActionDialog("invoice", selectedDc)}
-                        >
-                          <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> Invoice
-                        </Button>
+                        {selectedDc.status === "pending" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800"
+                            onClick={() => openActionDialog("return", selectedDc)}
+                          >
+                            <User className="h-3 w-3 sm:h-4 sm:w-4" /> Return
+                          </Button>
+                        )}
+                        {selectedDc.status === "returned" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-green-300 text-green-700 hover:bg-green-50 hover:text-green-800"
+                            onClick={() => openActionDialog("invoice", selectedDc)}
+                          >
+                            <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> Link Invoice
+                          </Button>
+                        )}
                         {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
                           <Button
                             size="sm"

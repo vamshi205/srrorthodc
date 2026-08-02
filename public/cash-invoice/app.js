@@ -282,11 +282,14 @@ function loadPersistedData() {
 
     // 5. Invoice Draft Items
     const savedItems = localStorage.getItem("im_invoice_items");
-    if (savedItems) {
+    if (savedItems && !prefillDc) {
         state.invoiceItems = JSON.parse(savedItems);
     } else {
         // Initial empty row
         state.invoiceItems = [{ description: "", sku: "", size: "", qty: 1, rate: 0 }];
+        localStorage.removeItem("im_invoice_items");
+        const discountInput = document.getElementById("discount-flat-input");
+        if (discountInput) discountInput.value = 0;
     }
 
     // 6. Customer Directory
