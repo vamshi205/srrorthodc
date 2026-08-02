@@ -334,6 +334,8 @@ const SavedDcs = () => {
       }
       setSavedDcs(prev => prev.map(d => d.id === dc.id ? { ...d, status: "completed", cashAmount: paidAmount } : d));
       setSelectedDcId(null);
+      setActiveQueue("completed");
+      setSearchParams({ queue: "completed" });
       toast({ title: "Payment Recorded", description: `DC ${dc.dcNo} Cash Memo marked as PAID and moved to Completed Queue.` });
       setPaymentDialog({ open: false, dc: null });
       setPaymentAmountInput("");
@@ -902,12 +904,38 @@ const SavedDcs = () => {
     }
   };
 
-  const handleCreateCashMemoForDc = (dc: SavedDc) => {
-    sessionStorage.setItem('prefill_cash_dc_no', dc.dcNo || '');
-    sessionStorage.setItem('prefill_cash_client_name', dc.hospitalName || '');
-    sessionStorage.setItem('from_dc_tracker', 'true');
-    closeActionDialog();
-    navigate(`/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || '')}&client=${encodeURIComponent(dc.hospitalName || '')}`);
+  const handleCreateCashMemoForDc = async (dc: SavedDc) => {
+    setIsActionLoading(true);
+    try {
+      const invoices = await fetchCashInvoicesFromFirestore();
+      const alreadyExists = invoices.some(
+        (inv) => inv.dcNumber && inv.dcNumber.trim().toLowerCase() === (dc.dcNo || '').trim().toLowerCase()
+      );
+
+      if (alreadyExists) {
+        toast({
+          title: "Cash Invoice Already Created",
+          description: `A cash memo for DC ${dc.dcNo} has already been created by another user.`,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      sessionStorage.setItem('prefill_cash_dc_no', dc.dcNo || '');
+      sessionStorage.setItem('prefill_cash_client_name', dc.hospitalName || '');
+      sessionStorage.setItem('from_dc_tracker', 'true');
+      closeActionDialog();
+      navigate(`/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || '')}&client=${encodeURIComponent(dc.hospitalName || '')}`);
+    } catch (err) {
+      console.error("Failed to verify if cash invoice exists:", err);
+      toast({
+        title: "Verification Failed",
+        description: "Could not verify if a cash invoice already exists. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const handleConfirmCancel = async (dc: SavedDc) => {
