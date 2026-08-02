@@ -1054,10 +1054,9 @@ const SavedDcs = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
-      <div className="flex min-h-screen">
-        {/* Main Content */}
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
+      {/* Main Content */}
+      <main className="flex-grow flex flex-col px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
           {/* Top toolbar */}
           <TopToolbar
             theme={theme}
@@ -1078,7 +1077,7 @@ const SavedDcs = () => {
             {/* Dashboard Metrics */}
             {(isLoading || savedDcs.length > 0) && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
+                <Card className="glass-card border border-border/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md hover:shadow-lg transition-all duration-300 shadow-md rounded-2xl">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
@@ -1098,7 +1097,7 @@ const SavedDcs = () => {
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
+                <Card className="glass-card border border-border/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md hover:shadow-lg transition-all duration-300 shadow-md rounded-2xl">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
@@ -1118,7 +1117,7 @@ const SavedDcs = () => {
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
+                <Card className="glass-card border border-border/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md hover:shadow-lg transition-all duration-300 shadow-md rounded-2xl">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
@@ -1138,7 +1137,7 @@ const SavedDcs = () => {
                   </CardContent>
                 </Card>
 
-                <Card className="glass-card border border-slate-200 bg-white hover:shadow-md transition-all duration-200">
+                <Card className="glass-card border border-border/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md hover:shadow-lg transition-all duration-300 shadow-md rounded-2xl">
                   <CardContent className="p-3 sm:p-5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
@@ -1160,7 +1159,7 @@ const SavedDcs = () => {
               </div>
             )}
 
-            <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md">
+            <Card className="glass-card border border-border/60 bg-white/75 dark:bg-slate-900/75 backdrop-blur-md rounded-2xl shadow-xl">
               {(isLoading || savedDcs.length > 0) && (
                 <CardHeader className="p-3 sm:p-4 space-y-3 sm:space-y-4">
                   {/* Modern Advanced Control Toolbar */}
@@ -1730,60 +1729,60 @@ const SavedDcs = () => {
                         </div>
 
                         {/* Desktop Table View */}
-                        <div className="hidden md:block border-2 border-slate-300 rounded-xl overflow-hidden shadow-xs bg-white">
+                        <div className="hidden md:block border border-border/80 rounded-xl overflow-hidden shadow-md bg-white/95 dark:bg-slate-900/95 backdrop-blur-md">
                           <div className="max-h-[60vh] overflow-y-auto">
                             <table className="w-full border-separate border-spacing-0">
                               <thead>
-                                <tr className="bg-slate-100/90 border-b-2 border-slate-300 sticky top-0 z-10 text-slate-800">
-                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[50px] border-r border-slate-300">
+                                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-border/60 sticky top-0 z-10 text-slate-700 dark:text-slate-300">
+                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[50px] border-r border-border/50">
                                     Select
                                   </th>
-                                  <th className="text-left p-3 text-xs font-bold text-slate-700 w-[110px] border-r border-slate-300">
+                                  <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[110px] border-r border-border/50">
                                     <SortableHeader sortKey="date">
                                       <Calendar className="h-3.5 w-3.5 mr-1" />
                                       Date
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-left p-3 text-xs font-bold text-slate-700 w-[100px] border-r border-slate-300">
+                                  <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[100px] border-r border-border/50">
                                     <SortableHeader sortKey="dcNo">
                                       DC No
                                     </SortableHeader>
                                   </th>
                                   {(activeQueue === "cash" || activeQueue === "completed" || activeQueue === "all") && (
-                                    <th className="text-left p-3 text-xs font-bold text-slate-700 w-[150px] border-r border-slate-300">
+                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[150px] border-r border-border/50">
                                       Invoice / Memo No
                                     </th>
                                   )}
-                                  <th className="text-left p-3 text-xs font-bold text-slate-700 border-r border-slate-300 min-w-[200px]">
+                                  <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 border-r border-border/50 min-w-[200px]">
                                     <SortableHeader sortKey="party">
                                       Party Name
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[80px] border-r border-slate-300">
+                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[80px] border-r border-border/50">
                                     <SortableHeader sortKey="items">
                                       <Package className="h-3.5 w-3.5 mr-1" />
                                       Items
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[70px] border-r border-slate-300">
+                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[70px] border-r border-border/50">
                                     <SortableHeader sortKey="days">
                                       Days
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-left p-3 text-xs font-bold text-slate-700 w-[120px] border-r border-slate-300">
+                                  <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
                                     Delivered
                                   </th>
                                   {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash") && (
-                                    <th className="text-left p-3 text-xs font-bold text-slate-700 w-[120px] border-r border-slate-300">
+                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
                                       Returned
                                     </th>
                                   )}
-                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[100px] border-r border-slate-300">
+                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[100px] border-r border-border/50">
                                     <SortableHeader sortKey="status">
                                       Status
                                     </SortableHeader>
                                   </th>
-                                  <th className="text-center p-3 text-xs font-bold text-slate-700 w-[60px]">
+                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[60px]">
                                     Actions
                                   </th>
                                 </tr>
@@ -1795,9 +1794,9 @@ const SavedDcs = () => {
                                   return (
                                     <tr
                                       key={dc.id}
-                                      className={`border-b transition-colors cursor-pointer ${selectedDcId === dc.id
-                                        ? 'bg-teal-50/80 border-teal-300 shadow-2xs font-semibold'
-                                        : 'border-slate-200 hover:bg-slate-50'
+                                      className={`border-b border-border/50 transition-colors cursor-pointer ${selectedDcId === dc.id
+                                        ? 'bg-teal-500/10 hover:bg-teal-500/15 border-l-4 border-l-teal-600 font-semibold'
+                                        : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/80'
                                         }`}
                                       onClick={() => {
                                         setSelectedDcId(dc.id);
@@ -2129,7 +2128,6 @@ const SavedDcs = () => {
               </Card>
           </div>
         </main>
-      </div>
 
       {/* Action Dialogs */}
       <Dialog
