@@ -1260,110 +1260,18 @@ Website: srrorthoplus.com`;
       return;
     }
 
-    // Launch guided Multi-Popup Save Wizard Modal
-    setShowDCWizardModal(true);
-  };
-
-  const handleSaveDC = async (dcPayload, action = 'download') => {
-    const hasHospital = (formData.hospitalName || '').trim();
-    const hasDoctor = (formData.doctorName || '').trim();
-
-    if (!hasHospital && !hasDoctor) {
-      showAlert('Required Fields', 'Please enter either a Hospital Name or Doctor Name.', 'error');
-      return;
+    const result = await generatePDF();
+    if (result) {
+      const { blobUrl, fileName } = result;
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      link.click();
+      setView('history');
+      setTimeout(() => {
+        showAlert('Quotation Saved & Downloaded', `Quotation ${formData.referenceNumber} archived safely to History.`, 'success');
+      }, 300);
     }
-
-    setIsGenerating(true);
-    setShowDCWizardModal(false);
-
-    setTimeout(async () => {
-      try {
-        const result = await generatePDF();
-        if (!result) {
-          setIsGenerating(false);
-          return;
-        }
-
-        const { blobUrl, fileName } = result;
-
-        const dcFileName = `DC_${formData.referenceNumber.replace(/[/\\?%*:|"<>]/g, '_')}_${(formData.hospitalName || formData.doctorName || 'Client').replace(/[/\\?%*:|"<>]/g, '_')}.pdf`;
-
-        const existingHistoryItem = quotationHistory.find(h => h.ref === formData.referenceNumber);
-        const displayTitle = hasHospital ? (hasDoctor ? `${hasHospital} (Dr. ${hasDoctor})` : hasHospital) : `Dr. ${hasDoctor}`;
-
-        const dcHistoryItem = {
-          id: existingHistoryItem ? existingHistoryItem.id : Date.now().toString(),
-          hospital: displayTitle,
-          date: formData.date,
-          ref: formData.referenceNumber,
-          templateName: dcPayload.dcMode === 'auto' ? 'Auto DC' : 'Manual DC',
-          documentType: 'DC',
-          isDC: true,
-          transportInfo: dcPayload.transportInfo,
-          formData: JSON.parse(JSON.stringify(formData)),
-          content: JSON.parse(JSON.stringify(draftContent))
-        };
-
-        if (existingHistoryItem) {
-          setQuotationHistory(prev => prev.map(h => h.id === existingHistoryItem.id ? dcHistoryItem : h));
-        } else {
-          setQuotationHistory(prev => [dcHistoryItem, ...prev]);
-        }
-
-        await saveHistoryItem(dcHistoryItem);
-
-        if (action === 'print') {
-          printDocument(blobUrl, dcFileName, 'application/pdf');
-          setView('history');
-          setTimeout(() => {
-            showAlert('DC Saved & Printed', `Delivery Challan ${formData.referenceNumber} printed and archived safely.`, 'success');
-          }, 500);
-        } else if (action === 'download') {
-          const link = document.createElement('a');
-          link.href = blobUrl;
-          link.download = dcFileName;
-          link.click();
-          setView('history');
-          setTimeout(() => {
-            showAlert('DC Saved & Downloaded', `Delivery Challan ${formData.referenceNumber} archived safely.`, 'success');
-          }, 500);
-        } else if (action === 'email') {
-          const itemHosp = (formData.hospitalName || '').trim();
-          const itemDoc = (formData.doctorName || '').trim();
-          const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
-          const dynSubject = `Delivery Challan (DC) #${formData.referenceNumber} for ${itemRecipient}`;
-
-          const attachedFiles = [
-            {
-              id: 'dc-' + Date.now(),
-              fileName: dcFileName,
-              data: blobUrl,
-              isGenerated: true
-            }
-          ];
-
-          let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official Delivery Challan (DC #${formData.referenceNumber}) for ${itemRecipient}.\n\nAttached Documents:\n• Delivery Challan: ${dcFileName}\n\nWe look forward to your acknowledgment.\n\nFrom\nSri Raja Rajeshwari Ortho Plus,\nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
-
-          setEmailForm(prev => ({
-            ...prev,
-            subject: dynSubject,
-            body: dynBody,
-            selectedDriveFiles: attachedFiles
-          }));
-          setShowEmailComposer(true);
-        } else {
-          setView('history');
-          setTimeout(() => {
-            showAlert('DC Saved to History', `Delivery Challan ${formData.referenceNumber} archived successfully.`, 'success');
-          }, 500);
-        }
-      } catch (err) {
-        console.error(err);
-        showAlert('DC Error', 'Error saving Delivery Challan: ' + err.message, 'error');
-      } finally {
-        setIsGenerating(false);
-      }
-    }, 300);
   };
 
   const NavItem = ({ id, label, icon }) => (

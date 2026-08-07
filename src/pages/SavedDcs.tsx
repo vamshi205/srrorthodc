@@ -2341,7 +2341,7 @@ const SavedDcs = () => {
 
       {/* Cash Memo Viewer Modal Popup */}
       <Dialog open={cashMemoModalOpen} onOpenChange={setCashMemoModalOpen}>
-        <DialogContent className="max-w-5xl h-[90vh] p-0 flex flex-col overflow-hidden bg-slate-900 border-slate-700">
+        <DialogContent className="max-w-5xl h-[90vh] p-0 flex flex-col overflow-hidden bg-slate-900 border-slate-700" aria-describedby={undefined}>
           <DialogHeader className="p-3 sm:p-4 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-slate-800">
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-white">
               <Receipt className="h-5 w-5 text-blue-400" />
@@ -2362,7 +2362,7 @@ const SavedDcs = () => {
 
       {/* DC Document Preview Modal (View DC like Print) */}
       <Dialog open={dcDocumentModalOpen} onOpenChange={setDcDocumentModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-3 sm:p-6 bg-slate-100 dark:bg-slate-900">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-3 sm:p-6 bg-slate-100 dark:bg-slate-900" aria-describedby={undefined}>
           <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-300">
             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg font-bold text-slate-900">
               <FileText className="h-5 w-5 text-teal-700" />
