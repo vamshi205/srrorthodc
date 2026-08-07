@@ -1263,13 +1263,51 @@ Website: srrorthoplus.com`;
     const result = await generatePDF();
     if (result) {
       const { blobUrl, fileName } = result;
+
+      // 1. Download PDF
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download = fileName;
       link.click();
+
+      // 2. Switch to history view
       setView('history');
+
+      // 3. Prompt user with option to email quotation
       setTimeout(() => {
-        showAlert('Quotation Saved & Downloaded', `Quotation ${formData.referenceNumber} archived safely to History.`, 'success');
+        showConfirm(
+          'Quotation Saved & Downloaded',
+          `Quotation ${formData.referenceNumber} archived to History. Would you like to email this Quotation now?`,
+          () => {
+            const itemHosp = (formData.hospitalName || '').trim();
+            const itemDoc = (formData.doctorName || '').trim();
+            const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
+            const dynSubject = `Quotation #${formData.referenceNumber} for ${itemRecipient}`;
+
+            const attachedFiles = [
+              {
+                id: 'quotation-' + Date.now(),
+                fileName: fileName,
+                data: blobUrl,
+                isGenerated: true
+              }
+            ];
+
+            let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official Quotation (#${formData.referenceNumber}) for ${itemRecipient}.\n\nAttached Documents:\n• Quotation: ${fileName}\n\nWe look forward to your acknowledgment.\n\nFrom\nSri Raja Rajeshwari Ortho Plus,\nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
+
+            setEmailForm(prev => ({
+              ...prev,
+              subject: dynSubject,
+              body: dynBody,
+              selectedDriveFiles: attachedFiles
+            }));
+            setShowEmailComposer(true);
+          },
+          null,
+          'confirm',
+          'Yes, Email Quotation',
+          'Close'
+        );
       }, 300);
     }
   };
