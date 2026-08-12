@@ -598,7 +598,7 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
                 </div>
               </div>
               <div className="text-center w-72 flex flex-col items-center">
-                <p className="font-bold text-[10pt] w-full text-center">For {companyName.toUpperCase()}</p>
+                <p className="font-bold text-[10pt] w-full text-center">For {(companyName || 'Sri Raja Rajeshwari Ortho Plus').toUpperCase()}</p>
                 <div className="h-12 w-full flex items-center justify-center overflow-hidden">
                   {signature ? (
                     <img 
@@ -607,11 +607,16 @@ const QuotationTemplate = memo(({ id = "quotation-template", data, company, cont
                       className="max-h-12 max-w-[200px] object-contain block" 
                     />
                   ) : (
-                    <div className="h-12"></div>
+                    <div 
+                      className="h-12 w-full flex items-center justify-center text-slate-900 text-[15pt] font-extrabold italic tracking-wider select-none"
+                      style={{ fontFamily: "'Dancing Script', 'Caveat', 'Brush Script MT', cursive, serif" }}
+                    >
+                      {signatoryName || 'A. Padmavathi'}
+                    </div>
                   )}
                 </div>
-                <p className="font-bold text-[11pt] border-t border-black pt-1 w-full text-center">({signatoryName})</p>
-                <p className="text-[9pt] font-medium italic w-full text-center">{signatoryRole}</p>
+                <p className="font-bold text-[11pt] border-t border-black pt-1 w-full text-center">({signatoryName || 'A. Padmavathi'})</p>
+                <p className="text-[9pt] font-medium italic w-full text-center">{signatoryRole || 'Proprietor'}</p>
               </div>
             </div>
           </div>

@@ -155,7 +155,11 @@ export const loadDatabase = async () => {
         content: parsedContent,
         isEmailed: data.isEmailed || false,
         lastEmailedTo: data.lastEmailedTo || '',
-        lastEmailedAt: data.lastEmailedAt || ''
+        lastEmailedAt: data.lastEmailedAt || '',
+        parentRef: data.parentRef || data.formData?.parentRef || null,
+        originalRef: data.originalRef || data.formData?.originalRef || null,
+        revisionCount: data.revisionCount ?? data.formData?.revisionCount ?? 0,
+        modificationHistory: data.modificationHistory || data.formData?.modificationHistory || []
       };
     });
   } catch (e) {

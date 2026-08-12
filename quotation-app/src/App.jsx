@@ -56,7 +56,11 @@ import {
   RefreshCw,
   ChevronRight,
   RotateCcw,
-  MessageCircle
+  MessageCircle,
+  History,
+  Clock,
+  Layers,
+  MoreVertical
 } from 'lucide-react';
 
 function App() {
@@ -86,8 +90,72 @@ function App() {
   const [previewScale, setPreviewScale] = useState(1);
   const [previewPriceListUrl, setPreviewPriceListUrl] = useState(null);
   const [regeneratingItem, setRegeneratingItem] = useState(null);
+  const [selectedRevisionItem, setSelectedRevisionItem] = useState(null);
+  const [activeDropdownId, setActiveDropdownId] = useState(null);
+  const [postSaveModal, setPostSaveModal] = useState(null);
   const [alertModal, setAlertModal] = useState(null); // { type, title, message, onConfirm, onCancel, confirmText, cancelText, showInput, onInput }
   const [isDataLoading, setIsDataLoading] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.history-dropdown-container')) {
+        setActiveDropdownId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const formatQuotationAmount = (item) => {
+    if (!item) return null;
+    if (typeof item.totalAmount === 'number' && item.totalAmount > 0) {
+      return '₹' + item.totalAmount.toLocaleString('en-IN');
+    }
+    const content = item.content || item.formData?.content;
+    if (!content || !Array.isArray(content)) return null;
+
+    let total = 0;
+    let foundAmount = false;
+
+    content.forEach(block => {
+      if (block && block.type === 'table' && Array.isArray(block.headers) && Array.isArray(block.rows)) {
+        const headers = block.headers.map(h => String(h || '').toLowerCase());
+        const amountIdx = headers.findIndex(h => h === 'amount' || h === 'total' || h.includes('amount') || h.includes('total'));
+        const rateIdx = headers.findIndex(h => h === 'rate' || h === 'mrp' || h === 'price');
+        const qtyIdx = headers.findIndex(h => h === 'qty' || h === 'quantity');
+
+        block.rows.forEach(row => {
+          if (!Array.isArray(row)) return;
+          let val = 0;
+          if (amountIdx !== -1 && row[amountIdx]) {
+            const rawVal = String(row[amountIdx]).replace(/[^0-9.]/g, '');
+            val = parseFloat(rawVal) || 0;
+          } else if (rateIdx !== -1 && row[rateIdx]) {
+            const rawRate = String(row[rateIdx]).replace(/[^0-9.]/g, '');
+            const rate = parseFloat(rawRate) || 0;
+            const rawQty = qtyIdx !== -1 ? String(row[qtyIdx]).replace(/[^0-9.]/g, '') : '1';
+            const qty = parseFloat(rawQty) || 1;
+            val = rate * qty;
+          }
+          if (val > 0) {
+            total += val;
+            foundAmount = true;
+          }
+        });
+      }
+    });
+
+    if (!foundAmount || total === 0) return null;
+
+    const gstStr = item.formData?.gst || item.gst || '0';
+    const gstMatch = String(gstStr).match(/\d+(\.\d+)?/);
+    const gstPercent = gstMatch ? parseFloat(gstMatch[0]) : 0;
+    if (gstPercent > 0) {
+      total += total * (gstPercent / 100);
+    }
+
+    return '₹' + Math.round(total).toLocaleString('en-IN');
+  };
 
   const showAlert = (title, message, type = 'success') => {
     setAlertModal({ type, title, message });
@@ -1004,10 +1072,52 @@ Website: srrorthoplus.com`;
     setView('drafting');
   };
 
-  const editHistoryItem = (item) => {
-    setFormData(JSON.parse(JSON.stringify(item.formData)));
-    setDraftContent(JSON.parse(JSON.stringify(item.content)));
+  const handleEditQuotation = (item) => {
+    if (!item) return;
+
+    // Generate brand new reference number for the edited quotation
+    const newRef = getNextRefNumber(quotationHistory);
+
+    // Calculate revision metadata
+    const parentRefNum = item.ref || item.formData?.referenceNumber || '';
+    const origRefNum = item.originalRef || item.formData?.originalRef || parentRefNum;
+    const currentRevCount = item.revisionCount ?? item.formData?.revisionCount ?? 0;
+    const newRevisionCount = currentRevCount + 1;
+
+    // Construct modification history log
+    const prevHistoryLog = item.modificationHistory || item.formData?.modificationHistory || [];
+    const newLog = [
+      ...prevHistoryLog,
+      {
+        ref: parentRefNum,
+        date: item.date || item.formData?.date || getTodayFormatted(),
+        hospital: item.hospital || item.formData?.hospitalName || '',
+        modifiedAt: `${getTodayFormatted()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        revision: currentRevCount
+      }
+    ];
+
+    // Deep clone formData and update with new ref & revision properties
+    const clonedFormData = JSON.parse(JSON.stringify(item.formData || {}));
+    const updatedFormData = {
+      ...clonedFormData,
+      referenceNumber: newRef,
+      date: getTodayFormatted(),
+      parentRef: parentRefNum,
+      originalRef: origRefNum,
+      revisionCount: newRevisionCount,
+      modificationHistory: newLog
+    };
+
+    setFormData(updatedFormData);
+    setDraftContent(JSON.parse(JSON.stringify(item.content || [])));
     setView('drafting');
+
+    showAlert(
+      'Quotation Loaded for Editing',
+      `Loaded details from ${parentRefNum}. Saved changes will create a NEW quotation (${newRef}) as Revision #${newRevisionCount}.`,
+      'info'
+    );
   };
 
   const handleDuplicateTemplate = async (template) => {
@@ -1223,7 +1333,11 @@ Website: srrorthoplus.com`;
         ref: formData.referenceNumber,
         templateName: templates.find(t => t.id === formData.selectedTemplateId)?.name || 'Custom',
         formData: JSON.parse(JSON.stringify(formData)),
-        content: JSON.parse(JSON.stringify(draftContent))
+        content: JSON.parse(JSON.stringify(draftContent)),
+        parentRef: formData.parentRef || null,
+        originalRef: formData.originalRef || null,
+        revisionCount: formData.revisionCount || 0,
+        modificationHistory: formData.modificationHistory || []
       };
 
       if (existingHistoryItem) {
@@ -1241,7 +1355,7 @@ Website: srrorthoplus.com`;
         .replace(/[/\\?%*:|"<>]/g, '')
         .trim();
       const pdfFileName = `${cleanSubject || 'Quotation'}.pdf`;
-      return { blob, blobUrl: url, fileName: pdfFileName };
+      return { blob, blobUrl: url, fileName: pdfFileName, historyItem };
     } catch (e) { 
       console.error(e); 
       showAlert('PDF Error', 'Error generating PDF: ' + e.message, 'error');
@@ -1262,53 +1376,11 @@ Website: srrorthoplus.com`;
 
     const result = await generatePDF();
     if (result) {
-      const { blobUrl, fileName } = result;
-
-      // 1. Download PDF
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = fileName;
-      link.click();
-
-      // 2. Switch to history view
       setView('history');
-
-      // 3. Prompt user with option to email quotation
-      setTimeout(() => {
-        showConfirm(
-          'Quotation Saved & Downloaded',
-          `Quotation ${formData.referenceNumber} archived to History. Would you like to email this Quotation now?`,
-          () => {
-            const itemHosp = (formData.hospitalName || '').trim();
-            const itemDoc = (formData.doctorName || '').trim();
-            const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
-            const dynSubject = `Quotation #${formData.referenceNumber} for ${itemRecipient}`;
-
-            const attachedFiles = [
-              {
-                id: 'quotation-' + Date.now(),
-                fileName: fileName,
-                data: blobUrl,
-                isGenerated: true
-              }
-            ];
-
-            let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official Quotation (#${formData.referenceNumber}) for ${itemRecipient}.\n\nAttached Documents:\n• Quotation: ${fileName}\n\nWe look forward to your acknowledgment.\n\nFrom\nSri Raja Rajeshwari Ortho Plus,\nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
-
-            setEmailForm(prev => ({
-              ...prev,
-              subject: dynSubject,
-              body: dynBody,
-              selectedDriveFiles: attachedFiles
-            }));
-            setShowEmailComposer(true);
-          },
-          null,
-          'confirm',
-          'Yes, Email Quotation',
-          'Close'
-        );
-      }, 300);
+      setPostSaveModal({
+        item: result.historyItem,
+        result: result
+      });
     }
   };
 
@@ -2042,6 +2114,23 @@ Website: srrorthoplus.com`;
                 </div>
                 <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight mb-4">Draft Quotation</h2>
 
+                {formData.parentRef && (
+                  <div className="mb-5 p-3.5 bg-amber-50/90 border border-amber-200/90 rounded-2xl text-amber-900 text-xs flex items-start gap-3 shadow-2xs">
+                    <div className="w-8 h-8 rounded-xl bg-amber-200/60 flex items-center justify-center shrink-0 text-amber-800 font-bold">
+                      <Edit2 size={16} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-extrabold text-[13px] text-amber-950">Editing Revision #{formData.revisionCount || 1}</span>
+                        <span className="px-2 py-0.5 bg-amber-200/80 text-amber-900 font-extrabold text-[10px] rounded-full uppercase tracking-wider">New Ref</span>
+                      </div>
+                      <p className="text-amber-800 leading-snug">
+                        Copied details from <strong>{formData.parentRef}</strong>. Saving this will generate a brand new Quotation: <strong className="font-extrabold underline text-amber-950">{formData.referenceNumber}</strong>.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-6">
                   {/* Client & Header Details */}
                   <div className="space-y-4">
@@ -2545,107 +2634,172 @@ Website: srrorthoplus.com`;
                           <thead>
                             <tr className="bg-[var(--apple-gray-1)] border-b border-[var(--apple-gray-2)]">
                               <th className="text-left py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[var(--apple-gray-5)]">Ref No.</th>
-                              <th className="text-left py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[var(--apple-gray-5)]">Hospital</th>
+                              <th className="text-left py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[var(--apple-gray-5)]">Hospital / Client</th>
                               <th className="text-left py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[var(--apple-gray-5)]">Template</th>
+                              <th className="text-left py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[var(--apple-gray-5)]">Amount</th>
                               <th className="text-left py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[var(--apple-gray-5)]">Date</th>
                               <th className="text-right py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[var(--apple-gray-5)]">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {filtered.map((item) => (
-                              <tr key={item.id} className="border-b border-[var(--apple-gray-2)] last:border-0 hover:bg-[var(--apple-gray-1)] transition-colors">
-                                <td className="py-4 px-5">
-                                  <span className="text-[13px] font-bold text-[var(--emerald)] bg-[var(--emerald-light)] px-2.5 py-1 rounded-md whitespace-nowrap">{(item.ref || '').replace('SRR/QUOT/', '')}</span>
-                                </td>
-                                <td className="py-4 px-5">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[15px] font-semibold text-[var(--apple-black)]">{item.hospital}</span>
-                                    {item.isEmailed && (
-                                      <div 
-                                        title={`Sent to: ${item.lastEmailedTo || 'Unknown'}\nOn: ${item.lastEmailedAt ? new Date(item.lastEmailedAt).toLocaleString() : 'Recently'}`}
-                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-md text-[10px] font-bold uppercase tracking-wider border border-blue-100 cursor-help"
-                                      >
-                                        <Mail size={10} /> SENT
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-4 px-5">
-                                  <span className="text-[13px] text-[var(--apple-gray-5)] font-medium">{item.templateName}</span>
-                                </td>
-                                <td className="py-4 px-5">
-                                  <span className="text-[13px] text-[var(--apple-gray-5)] font-medium">{item.date}</span>
-                                </td>
-                                <td className="py-4 px-5">
-                                  <div className="flex items-center justify-end gap-2">
-                                    {item.formData && (
-                                      <>
-                                        <button
-                                          onClick={() => setPreviewingItem(item)}
-                                          className="w-9 h-9 flex items-center justify-center bg-white border border-[var(--apple-gray-2)] rounded-full text-[var(--apple-gray-6)] hover:border-[var(--apple-gray-4)] hover:bg-[var(--apple-gray-1)] transition-all shadow-sm"
-                                          title="View Entire Quotation"
-                                        >
-                                          <Eye size={16} />
-                                        </button>
-                                        <button
-                                          onClick={() => setRegeneratingItem(item)}
-                                          disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
-                                          className="w-9 h-9 flex items-center justify-center bg-white border border-[var(--apple-gray-2)] rounded-full text-[var(--emerald)] hover:border-[var(--emerald)] hover:bg-[var(--emerald-light)] transition-all disabled:opacity-50 shadow-sm"
-                                          title="Download PDF"
-                                        >
-                                          <Download size={16} />
-                                        </button>
-
-                                        <button 
-                                          onClick={() => setRegeneratingItem({ ...item, _emailMode: true })}
-                                          disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
-                                          className="flex items-center gap-1 px-3 py-1.5 bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 font-bold text-[11.5px] transition-all disabled:opacity-50 shadow-2xs cursor-pointer"
-                                          title="Resend email for this quotation"
-                                        >
-                                          <RotateCcw size={13} />
-                                          <span>Resend</span>
-                                        </button>
-
-                                        <button 
-                                          onClick={() => handleWhatsAppShare(item)}
-                                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-full text-emerald-700 hover:bg-emerald-100 font-bold text-[11.5px] transition-all shadow-2xs cursor-pointer"
-                                          title="Send Quotation over WhatsApp"
-                                        >
-                                          <MessageCircle size={13} />
-                                          <span>WhatsApp</span>
-                                        </button>
-                                        
-                                        {isManagementActive && (
-                                          <>
-                                            <button
-                                              onClick={() => {
-                                                setFormData(item.formData);
-                                                setDraftContent(item.content || []);
-                                                setView('drafting');
-                                              }}
-                                              className="w-9 h-9 flex items-center justify-center bg-white border border-[var(--apple-gray-2)] rounded-full text-[var(--apple-black)] hover:border-[var(--apple-gray-4)] hover:bg-[var(--apple-gray-1)] transition-all shadow-sm"
-                                              title="Edit as Draft"
-                                            >
-                                              <Edit2 size={16} />
-                                            </button>
-                                            <button
-                                              onClick={() => confirmDelete(async () => {
-                                                setQuotationHistory(prev => prev.filter(h => h.id !== item.id));
-                                                await syncItem('history', item, true);
-                                              })}
-                                              className="w-9 h-9 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                                              title="Delete History Item"
-                                            >
-                                              <Trash2 size={18} />
-                                            </button>
-                                          </>
+                            {filtered.map((item) => {
+                              const childCount = quotationHistory.filter(h => h.parentRef === item.ref).length;
+                              const amountFormatted = formatQuotationAmount(item);
+                              const isDropdownOpen = activeDropdownId === item.id;
+                              return (
+                                <tr key={item.id} className="border-b border-[var(--apple-gray-2)] last:border-0 hover:bg-[var(--apple-gray-1)] transition-colors">
+                                  <td className="py-4 px-5">
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-[13px] font-bold text-[var(--emerald)] bg-[var(--emerald-light)] px-2.5 py-1 rounded-md whitespace-nowrap">
+                                          {(item.ref || '').replace('SRR/QUOT/', '')}
+                                        </span>
+                                        {item.parentRef && (
+                                          <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                            Rev #{item.revisionCount || 1}
+                                          </span>
                                         )}
-                                      </>
+                                        {childCount > 0 && (
+                                          <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                            Modified {childCount}x
+                                          </span>
+                                        )}
+                                      </div>
+                                      {item.parentRef && (
+                                        <span className="text-[10.5px] text-slate-500 font-medium">From: {item.parentRef}</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[14.5px] font-semibold text-[var(--apple-black)]">{item.hospital}</span>
+                                      {item.isEmailed && (
+                                        <div 
+                                          title={`Sent to: ${item.lastEmailedTo || 'Unknown'}\nOn: ${item.lastEmailedAt ? new Date(item.lastEmailedAt).toLocaleString() : 'Recently'}`}
+                                          className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-md text-[10px] font-bold uppercase tracking-wider border border-blue-100 cursor-help"
+                                        >
+                                          <Mail size={10} /> SENT
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-5">
+                                    <span className="text-[13px] text-[var(--apple-gray-5)] font-medium">{item.templateName}</span>
+                                  </td>
+                                  <td className="py-4 px-5">
+                                    {amountFormatted ? (
+                                      <span className="text-[13.5px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-lg inline-block whitespace-nowrap shadow-2xs">
+                                        {amountFormatted}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[13px] text-slate-400 font-medium">—</span>
                                     )}
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                                  </td>
+                                  <td className="py-4 px-5">
+                                    <span className="text-[13px] text-[var(--apple-gray-5)] font-medium">{item.date}</span>
+                                  </td>
+                                  <td className="py-4 px-5">
+                                    <div className="flex items-center justify-end gap-1.5 relative history-dropdown-container">
+                                      {item.formData && (
+                                        <>
+                                          <button
+                                            onClick={() => setPreviewingItem(item)}
+                                            className="w-8 h-8 flex items-center justify-center bg-white border border-[var(--apple-gray-2)] rounded-lg text-[var(--apple-gray-6)] hover:border-teal-500 hover:text-teal-600 hover:bg-teal-50 transition-all shadow-2xs"
+                                            title="View Quotation"
+                                          >
+                                            <Eye size={15} />
+                                          </button>
+
+                                          <button 
+                                            onClick={() => handleEditQuotation(item)}
+                                            className="w-8 h-8 flex items-center justify-center bg-white border border-[var(--apple-gray-2)] rounded-lg text-blue-600 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-2xs"
+                                            title="Edit details (creates new quotation number)"
+                                          >
+                                            <Edit2 size={15} />
+                                          </button>
+
+                                          <button
+                                            onClick={() => setRegeneratingItem(item)}
+                                            disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
+                                            className="w-8 h-8 flex items-center justify-center bg-white border border-[var(--apple-gray-2)] rounded-lg text-emerald-600 hover:border-emerald-500 hover:bg-emerald-50 transition-all disabled:opacity-50 shadow-2xs"
+                                            title="Download PDF"
+                                          >
+                                            <Download size={15} />
+                                          </button>
+
+                                          {/* Concise Options Dropdown */}
+                                          <div className="relative">
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveDropdownId(isDropdownOpen ? null : item.id);
+                                              }}
+                                              className={`w-8 h-8 flex items-center justify-center rounded-lg border transition-all shadow-2xs ${isDropdownOpen ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-[var(--apple-gray-2)] text-slate-600 hover:bg-slate-100'}`}
+                                              title="More Options"
+                                            >
+                                              <MoreVertical size={15} />
+                                            </button>
+
+                                            {isDropdownOpen && (
+                                              <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                                                <button
+                                                  onClick={() => {
+                                                    setActiveDropdownId(null);
+                                                    setSelectedRevisionItem(item);
+                                                  }}
+                                                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors"
+                                                >
+                                                  <History size={14} className="text-amber-600" />
+                                                  <span>Revision History</span>
+                                                </button>
+
+                                                <button
+                                                  onClick={() => {
+                                                    setActiveDropdownId(null);
+                                                    setRegeneratingItem({ ...item, _emailMode: true });
+                                                  }}
+                                                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors"
+                                                >
+                                                  <RotateCcw size={14} className="text-teal-600" />
+                                                  <span>Resend Email</span>
+                                                </button>
+
+                                                <button
+                                                  onClick={() => {
+                                                    setActiveDropdownId(null);
+                                                    handleWhatsAppShare(item);
+                                                  }}
+                                                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors"
+                                                >
+                                                  <MessageCircle size={14} className="text-emerald-600" />
+                                                  <span>Share WhatsApp</span>
+                                                </button>
+
+                                                {isManagementActive && (
+                                                  <button
+                                                    onClick={() => {
+                                                      setActiveDropdownId(null);
+                                                      confirmDelete(async () => {
+                                                        setQuotationHistory(prev => prev.filter(h => h.id !== item.id));
+                                                        await syncItem('history', item, true);
+                                                      });
+                                                    }}
+                                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-slate-100 mt-1 pt-2 transition-colors"
+                                                  >
+                                                    <Trash2 size={14} className="text-red-500" />
+                                                    <span>Delete Item</span>
+                                                  </button>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -2653,63 +2807,87 @@ Website: srrorthoplus.com`;
 
                     {/* Mobile Card View */}
                     <div className="lg:hidden space-y-4">
-                      {filtered.map((item) => (
-                        <div key={item.id} className="apple-card p-5 space-y-4">
-                          <div className="flex justify-between items-start">
-                            <div className="space-y-1">
-                              <p className="text-[16px] font-bold text-[var(--apple-black)] leading-tight">{item.hospital}</p>
-                              <p className="text-[12px] text-[var(--apple-gray-5)] font-medium">{item.templateName}</p>
+                      {filtered.map((item) => {
+                        const childCount = quotationHistory.filter(h => h.parentRef === item.ref).length;
+                        const amountFormatted = formatQuotationAmount(item);
+                        return (
+                          <div key={item.id} className="apple-card p-5 space-y-4">
+                            <div className="flex justify-between items-start">
+                              <div className="space-y-1">
+                                <p className="text-[16px] font-bold text-[var(--apple-black)] leading-tight">{item.hospital}</p>
+                                <p className="text-[12px] text-[var(--apple-gray-5)] font-medium">{item.templateName}</p>
+                              </div>
+                              <div className="flex flex-col items-end gap-1.5">
+                                {amountFormatted ? (
+                                  <span className="text-[13px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg shadow-2xs">
+                                    {amountFormatted}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] font-bold text-[var(--emerald)] bg-[var(--emerald-light)] px-2 py-0.5 rounded uppercase tracking-wider">
+                                    {(item.ref || '').replace('SRR/QUOT/', '')}
+                                  </span>
+                                )}
+                                {item.parentRef && (
+                                  <span className="text-[9px] font-extrabold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                    Rev #{item.revisionCount || 1}
+                                  </span>
+                                )}
+                                {childCount > 0 && (
+                                  <span className="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                    Modified {childCount}x
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <span className="text-[11px] font-bold text-[var(--emerald)] bg-[var(--emerald-light)] px-2 py-0.5 rounded uppercase tracking-wider">{(item.ref || '').replace('SRR/QUOT/', '')}</span>
-                              {item.isEmailed && (
-                                <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-md text-[9px] font-bold uppercase tracking-wider border border-blue-100">
-                                  <Mail size={9} /> SENT
-                                </div>
+                            <div className="flex items-center justify-between text-[13px] text-[var(--apple-gray-5)] font-medium">
+                              <div className="flex items-center gap-2">
+                                <span>{item.date}</span>
+                                {amountFormatted && (
+                                  <span className="text-[11px] text-slate-400 font-semibold">• Ref: {(item.ref || '').replace('SRR/QUOT/', '')}</span>
+                                )}
+                              </div>
+                              {item.parentRef && (
+                                <span className="text-[11px] text-slate-500 font-medium">From: {item.parentRef}</span>
                               )}
                             </div>
-                          </div>
-                          <div className="flex items-center justify-between text-[13px] text-[var(--apple-gray-5)] font-medium">
-                            <span>{item.date}</span>
-                          </div>
-                          <div className="flex gap-2 pt-4 border-t border-[var(--apple-gray-2)]">
-                            <button 
-                              onClick={() => setPreviewingItem(item)}
-                              className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--apple-gray-6)] active:scale-[0.95] transition-all"
-                            >
-                              <Eye size={18} />
-                            </button>
-                            <button 
-                              onClick={() => setRegeneratingItem(item)}
-                              disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
-                              className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--emerald)] active:scale-[0.95] transition-all disabled:opacity-50"
-                            >
-                              <Download size={18} />
-                            </button>
-                            <button 
-                              onClick={() => setRegeneratingItem({ ...item, _emailMode: true })}
-                              disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
-                              className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-teal-50 border border-teal-200 rounded-xl text-teal-700 font-bold text-[12px] active:scale-[0.95] transition-all disabled:opacity-50 cursor-pointer"
-                              title="Resend Email"
-                            >
-                              <RotateCcw size={16} />
-                              <span>Resend</span>
-                            </button>
-                            {isManagementActive && (
+                            <div className="grid grid-cols-4 gap-2 pt-3 border-t border-[var(--apple-gray-2)]">
                               <button 
-                                onClick={() => {
-                                  setFormData(item.formData);
-                                  setDraftContent(item.content || []);
-                                  setView('drafting');
-                                }}
-                                className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--apple-black)] active:scale-[0.95] transition-all"
+                                onClick={() => setPreviewingItem(item)}
+                                className="flex flex-col sm:flex-row items-center justify-center gap-1 py-2 bg-[var(--apple-gray-1)] rounded-xl text-[var(--apple-gray-6)] font-bold text-[11px] active:scale-[0.95] transition-all"
+                                title="View PDF"
                               >
-                                <Edit2 size={18} />
+                                <Eye size={15} />
+                                <span>View</span>
                               </button>
-                            )}
+                              <button 
+                                onClick={() => handleEditQuotation(item)}
+                                className="flex flex-col sm:flex-row items-center justify-center gap-1 py-2 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 font-bold text-[11px] active:scale-[0.95] transition-all cursor-pointer"
+                                title="Edit Quotation"
+                              >
+                                <Edit2 size={15} />
+                                <span>Edit</span>
+                              </button>
+                              <button 
+                                onClick={() => setSelectedRevisionItem(item)}
+                                className="flex flex-col sm:flex-row items-center justify-center gap-1 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-700 font-bold text-[11px] active:scale-[0.95] transition-all cursor-pointer"
+                                title="View Revision History"
+                              >
+                                <History size={15} />
+                                <span>History</span>
+                              </button>
+                              <button 
+                                onClick={() => setRegeneratingItem(item)}
+                                disabled={isGenerating || (regeneratingItem && regeneratingItem.id === item.id)}
+                                className="flex flex-col sm:flex-row items-center justify-center gap-1 py-2 bg-[var(--apple-gray-1)] rounded-xl text-[var(--emerald)] font-bold text-[11px] active:scale-[0.95] transition-all disabled:opacity-50"
+                                title="Download PDF"
+                              >
+                                <Download size={15} />
+                                <span>Download</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </>
                 );
@@ -3715,6 +3893,13 @@ Website: srrorthoplus.com`;
                 <Download size={20} />
               </button>
               <button 
+                onClick={() => setRegeneratingItem({ ...previewingItem, _printMode: true })}
+                className="w-10 h-10 flex items-center justify-center bg-white border border-[var(--apple-gray-3)] rounded-full text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-all shadow-xs"
+                title="Print Quotation"
+              >
+                <Printer size={20} />
+              </button>
+              <button 
                 onClick={() => {
                   setPreviewingItem(null);
                   setPreviewScale(1);
@@ -4037,6 +4222,326 @@ Website: srrorthoplus.com`;
               )}
             </div>
           </main>
+        </div>
+      )}
+
+      {selectedRevisionItem && (
+        <div className="fixed inset-0 z-[7500] flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setSelectedRevisionItem(null)}
+          />
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200 z-10 flex flex-col max-h-[85vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-5 bg-gradient-to-r from-slate-900 via-slate-800 to-teal-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-teal-300">
+                  <History size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white tracking-tight">Quotation Revision History</h3>
+                  <p className="text-xs text-teal-200/80 font-medium">Ref No: {selectedRevisionItem.ref} • {selectedRevisionItem.hospital}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedRevisionItem(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {/* Current Quotation Info Card */}
+              <div className="p-4 bg-teal-50/70 border border-teal-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-extrabold text-teal-900">{selectedRevisionItem.ref}</span>
+                    <span className="px-2 py-0.5 bg-teal-600 text-white font-bold text-[10px] rounded-full uppercase">Current Version</span>
+                    {selectedRevisionItem.revisionCount > 0 && (
+                      <span className="px-2 py-0.5 bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-[10px] rounded-full uppercase">
+                        Rev #{selectedRevisionItem.revisionCount}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-teal-800 font-medium mt-1">Created Date: {selectedRevisionItem.date}</p>
+                  {selectedRevisionItem.parentRef && (
+                    <p className="text-xs text-teal-700 mt-0.5">Derived from: <strong>{selectedRevisionItem.parentRef}</strong></p>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    const itemToEdit = selectedRevisionItem;
+                    setSelectedRevisionItem(null);
+                    handleEditQuotation(itemToEdit);
+                  }}
+                  className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center gap-1.5 shrink-0"
+                >
+                  <Edit2 size={14} />
+                  <span>Create New Revision</span>
+                </button>
+              </div>
+
+              {/* Timeline Log */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-1.5">
+                  <Clock size={14} />
+                  <span>Modification History & Chain</span>
+                </h4>
+
+                {(() => {
+                  const relatedItems = quotationHistory.filter(h => 
+                    h.ref === selectedRevisionItem.ref ||
+                    h.ref === selectedRevisionItem.parentRef ||
+                    h.parentRef === selectedRevisionItem.ref ||
+                    (selectedRevisionItem.originalRef && (h.originalRef === selectedRevisionItem.originalRef || h.ref === selectedRevisionItem.originalRef))
+                  );
+
+                  const logs = selectedRevisionItem.modificationHistory || [];
+
+                  return (
+                    <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                      {/* Current Item Node */}
+                      <div className="relative flex items-center justify-between bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs">
+                        <div className="absolute -left-[23px] top-4 w-3.5 h-3.5 rounded-full bg-teal-600 ring-4 ring-white" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">{selectedRevisionItem.ref}</span>
+                            <span className="text-xs text-slate-500">({selectedRevisionItem.date})</span>
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-extrabold text-[10px] rounded-md">
+                              {selectedRevisionItem.revisionCount ? `Rev #${selectedRevisionItem.revisionCount}` : 'Original / Base'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-1 font-medium">{selectedRevisionItem.hospital}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setPreviewingItem(selectedRevisionItem)}
+                            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="View PDF"
+                          >
+                            <Eye size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Logged Past Revisions */}
+                      {logs.length > 0 ? (
+                        logs.map((log, idx) => (
+                          <div key={idx} className="relative flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                            <div className="absolute -left-[23px] top-4 w-3.5 h-3.5 rounded-full bg-slate-400 ring-4 ring-white" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-800 text-xs">{log.ref}</span>
+                                <span className="text-[11px] text-slate-500">({log.date || log.modifiedAt})</span>
+                                <span className="px-2 py-0.5 bg-slate-200 text-slate-700 font-bold text-[9px] rounded-md">
+                                  Rev #{log.revision || 0}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600 mt-0.5">{log.hospital || 'Quotation Source'}</p>
+                            </div>
+                            {(() => {
+                              const targetHist = quotationHistory.find(h => h.ref === log.ref);
+                              if (targetHist) {
+                                return (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedRevisionItem(null);
+                                      handleEditQuotation(targetHist);
+                                    }}
+                                    className="px-2.5 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                                  >
+                                    Edit Version
+                                  </button>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
+                        ))
+                      ) : (
+                        !selectedRevisionItem.parentRef && relatedItems.length <= 1 && (
+                          <p className="text-xs text-slate-400 italic">No previous modifications recorded for this quotation yet.</p>
+                        )
+                      )}
+
+                      {/* Child Revisions created from this item */}
+                      {relatedItems.filter(h => h.parentRef === selectedRevisionItem.ref).map((child, idx) => (
+                        <div key={'child-' + idx} className="relative flex items-center justify-between bg-amber-50/60 border border-amber-200 rounded-xl p-3.5">
+                          <div className="absolute -left-[23px] top-4 w-3.5 h-3.5 rounded-full bg-amber-500 ring-4 ring-white" />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-amber-900 text-xs">{child.ref}</span>
+                              <span className="text-[11px] text-amber-700">({child.date})</span>
+                              <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-bold text-[9px] rounded-md">
+                                Child Rev #{child.revisionCount || 1}
+                              </span>
+                            </div>
+                            <p className="text-xs text-amber-800 mt-0.5">Modified from {selectedRevisionItem.ref}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedRevisionItem(null);
+                              handleEditQuotation(child);
+                            }}
+                            className="px-2.5 py-1 text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300 rounded-lg hover:bg-amber-200 transition-colors"
+                          >
+                            Edit Child
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={() => setSelectedRevisionItem(null)}
+                className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POST-SAVE ACTION MODAL */}
+      {postSaveModal && (
+        <div className="fixed inset-0 z-[7000] flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-md animate-in fade-in duration-300"
+            onClick={() => {
+              setPostSaveModal(null);
+              setView('history');
+            }}
+          ></div>
+          <div className="apple-card relative w-full max-w-[440px] !bg-[var(--apple-surface)]/95 backdrop-blur-2xl rounded-[32px] shadow-2xl border border-[var(--apple-gray-3)]/60 overflow-hidden animate-in zoom-in-95 fade-in duration-300 z-10 p-6 md:p-8 flex flex-col items-center text-center">
+            
+            <div className="w-14 h-14 bg-[var(--emerald-light)] text-[var(--emerald)] rounded-2xl flex items-center justify-center mb-4 border border-[var(--emerald)]/20 shadow-xs">
+              <CheckSquare size={30} strokeWidth={2} />
+            </div>
+
+            <h3 className="text-[22px] font-extrabold text-[var(--apple-black)] tracking-tight mb-1.5">
+              Quotation Saved!
+            </h3>
+
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[12px] font-extrabold text-[var(--emerald)] bg-[var(--emerald-light)] px-3 py-1 rounded-full uppercase tracking-wider border border-[var(--emerald)]/20">
+                {postSaveModal.item?.ref}
+              </span>
+            </div>
+
+            <p className="text-[13px] text-[var(--apple-gray-5)] font-medium mb-6 max-w-xs leading-relaxed">
+              {postSaveModal.item?.hospital} • Saved to History. What would you like to do next?
+            </p>
+
+            <div className="w-full space-y-2.5 mb-6">
+              <button
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = postSaveModal.result.blobUrl;
+                  link.download = postSaveModal.result.fileName;
+                  link.click();
+                }}
+                className="w-full py-3 px-4 bg-[var(--emerald)] hover:opacity-90 text-white font-bold text-[13.5px] rounded-2xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] cursor-pointer"
+              >
+                <Download size={18} />
+                <span>Download PDF</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const item = postSaveModal.item;
+                  const itemHosp = (formData.hospitalName || '').trim();
+                  const itemDoc = (formData.doctorName || '').trim();
+                  const itemRecipient = itemHosp ? (itemDoc ? `${itemHosp} (Dr. ${itemDoc})` : itemHosp) : (itemDoc ? `Dr. ${itemDoc}` : 'Client');
+                  const dynSubject = `Quotation #${formData.referenceNumber} for ${itemRecipient}`;
+
+                  const attachedFiles = [
+                    {
+                      id: 'quotation-' + Date.now(),
+                      fileName: postSaveModal.result.fileName,
+                      data: postSaveModal.result.blobUrl,
+                      isGenerated: true
+                    }
+                  ];
+
+                  let dynBody = `Dear Sir/Madam,\n\nPlease find attached the official Quotation (#${formData.referenceNumber}) for ${itemRecipient}.\n\nAttached Documents:\n• Quotation: ${postSaveModal.result.fileName}\n\nWe look forward to your acknowledgment.\n\nFrom\nSri Raja Rajeshwari Ortho Plus,\nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
+
+                  setEmailForm(prev => ({
+                    ...prev,
+                    subject: dynSubject,
+                    body: dynBody,
+                    selectedDriveFiles: attachedFiles
+                  }));
+                  setPostSaveModal(null);
+                  setView('history');
+                  setShowEmailComposer(true);
+                }}
+                className="w-full py-3 px-4 bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200/80 rounded-2xl font-bold text-[13.5px] flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
+              >
+                <Mail size={18} />
+                <span>Send via Email</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const item = postSaveModal.item;
+                  setPostSaveModal(null);
+                  setView('history');
+                  handleWhatsAppShare(item);
+                }}
+                className="w-full py-3 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 rounded-2xl font-bold text-[13.5px] flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
+              >
+                <MessageCircle size={18} />
+                <span>Share on WhatsApp</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const item = postSaveModal.item;
+                  setPostSaveModal(null);
+                  setView('history');
+                  setRegeneratingItem({ ...item, _printMode: true });
+                }}
+                className="w-full py-3 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-2xl font-bold text-[13.5px] flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
+              >
+                <Printer size={18} />
+                <span>Print Quotation</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between w-full pt-4 border-t border-[var(--apple-gray-2)] gap-3">
+              <button
+                onClick={() => {
+                  const item = postSaveModal.item;
+                  setPostSaveModal(null);
+                  setView('history');
+                  setPreviewingItem(item);
+                }}
+                className="flex-1 py-2.5 px-3 bg-[var(--apple-gray-1)] hover:bg-[var(--apple-gray-2)] text-[var(--apple-gray-6)] font-bold text-[12px] rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Eye size={15} />
+                <span>Preview</span>
+              </button>
+              <button
+                onClick={() => {
+                  setPostSaveModal(null);
+                  setView('history');
+                }}
+                className="flex-1 py-2.5 px-3 bg-[var(--apple-black)] hover:opacity-90 text-white font-bold text-[12px] rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <CheckSquare size={15} />
+                <span>Done (History)</span>
+              </button>
+            </div>
+
+          </div>
         </div>
       )}
 
