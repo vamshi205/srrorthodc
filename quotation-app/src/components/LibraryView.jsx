@@ -2,7 +2,7 @@ import React from 'react';
 import { Plus, Database } from 'lucide-react';
 import LibraryCard from './LibraryCard';
 
-const LibraryView = ({ templates, useTemplate, setEditingTemplate, setView, setTemplates, isManagementActive = true }) => {
+const LibraryView = ({ templates, priceLists = [], useTemplate, setEditingTemplate, setView, setTemplates, isManagementActive = true }) => {
   return (
     <div className="h-full overflow-y-auto px-8 py-12 md:px-16 md:py-16">
       <div className="max-w-6xl mx-auto">
@@ -19,6 +19,7 @@ const LibraryView = ({ templates, useTemplate, setEditingTemplate, setView, setT
                   name: 'New Template',
                   description: '',
                   requiresPriceList: false,
+                  defaultPriceListId: '',
                   subject: '',
                   defaultMake: '',
                   defaultDelivery: '',
@@ -42,6 +43,7 @@ const LibraryView = ({ templates, useTemplate, setEditingTemplate, setView, setT
             <LibraryCard 
               key={t.id} 
               template={t} 
+              priceLists={priceLists}
               onUse={useTemplate} 
               onEdit={(template) => { setEditingTemplate(JSON.parse(JSON.stringify(template))); setView('builder'); }} 
               onDelete={(id) => {

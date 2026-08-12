@@ -1,7 +1,11 @@
 import React from 'react';
-import { Edit2, Trash2, ArrowRight, Copy, Pin } from 'lucide-react';
+import { Edit2, Trash2, ArrowRight, Copy, Pin, FileText } from 'lucide-react';
 
-export default function LibraryCard({ template, onEdit, onDelete, onUse, onDuplicate, onTogglePin, showAdminTools }) {
+export default function LibraryCard({ template, priceLists = [], onEdit, onDelete, onUse, onDuplicate, onTogglePin, showAdminTools }) {
+  const configuredPriceList = template.defaultPriceListId 
+    ? priceLists.find(pl => pl.id === template.defaultPriceListId) 
+    : null;
+
   return (
     <div className="bg-white border border-slate-200 hover:border-teal-500 rounded-2xl p-5 flex flex-col justify-between group relative transition-all duration-200 shadow-2xs hover:shadow-lg">
       <div>
@@ -28,9 +32,24 @@ export default function LibraryCard({ template, onEdit, onDelete, onUse, onDupli
         </div>
 
         {template.description && (
-          <p className="text-[13px] text-slate-600 leading-relaxed line-clamp-2 mt-1">
+          <p className="text-[13px] text-slate-600 leading-relaxed line-clamp-2 mt-1 mb-2">
             {template.description}
           </p>
+        )}
+
+        {/* Configured Price List Badge */}
+        {configuredPriceList ? (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 text-[11px] font-semibold mt-1">
+            <FileText size={12} className="text-teal-600 shrink-0" />
+            <span className="truncate max-w-[200px]" title={configuredPriceList.label}>
+              Price List: {configuredPriceList.label}
+            </span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 text-slate-500 border border-slate-200 text-[11px] font-medium mt-1">
+            <FileText size={12} className="text-slate-400 shrink-0" />
+            <span>No default price list</span>
+          </div>
         )}
       </div>
 

@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Search, LayoutDashboard, Download, Mail, Eye, Printer, Edit2, History } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Search, LayoutDashboard, Download, Mail, Eye, Printer, Edit2, History, Clock } from 'lucide-react';
 
 const formatQuotationAmount = (item) => {
   if (!item) return null;
@@ -52,7 +52,108 @@ const formatQuotationAmount = (item) => {
   return '₹' + Math.round(total).toLocaleString('en-IN');
 };
 
-const HistoryView = ({ quotationHistory = [], searchQuery, setSearchQuery, isGenerating, regeneratingItem, setRegeneratingItem, onEdit, onHistory }) => {
+export const EmailSentTooltip = ({ item, emailHistory = [] }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  const itemRef = item?.ref || item?.formData?.referenceNumber || '';
+  const itemHospital = item?.hospital || item?.formData?.hospitalName || '';
+
+  const matchingLogs = useMemo(() => {
+    if (!emailHistory || !Array.isArray(emailHistory)) return [];
+    return emailHistory.filter(e => {
+      if (!e) return false;
+      const logRef = e.ref || e.quotationRef || e.referenceNumber || '';
+      const logHospital = e.hospital || e.hospitalName || '';
+      if (itemRef && logRef && (logRef === itemRef || itemRef.includes(logRef) || logRef.includes(itemRef))) return true;
+      if (itemHospital && logHospital && logHospital.toLowerCase() === itemHospital.toLowerCase()) return true;
+      return false;
+    });
+  }, [emailHistory, itemRef, itemHospital]);
+
+  const isEmailed = Boolean(item?.isEmailed || item?.lastEmailedTo || matchingLogs.length > 0);
+
+  if (!isEmailed) return null;
+
+  const primaryRecipient = item?.lastEmailedTo || (matchingLogs.length > 0 ? (matchingLogs[0].sentTo || matchingLogs[0].to) : 'Recipient');
+  const rawTime = item?.lastEmailedAt || (matchingLogs.length > 0 ? (matchingLogs[0].sentAt || matchingLogs[0].sentDate) : null);
+  const formattedTime = rawTime 
+    ? (isNaN(new Date(rawTime).getTime()) ? rawTime : new Date(rawTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }))
+    : 'Recently';
+
+  const nativeTitleText = matchingLogs.length > 0
+    ? matchingLogs.map(l => `To: ${l.sentTo || l.to || 'Recipient'} (${l.sentDate || l.sentAt || 'Recently'})`).join('\n')
+    : `Sent to: ${primaryRecipient}\nTime: ${formattedTime}`;
+
+  return (
+    <div 
+      className="relative inline-flex items-center ml-1.5 shrink-0 z-30"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      <div 
+        className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center cursor-pointer shadow-2xs border border-emerald-300"
+        title={nativeTitleText}
+      >
+        <Mail size={11} />
+      </div>
+
+      {/* Popover on Hover (React State Controlled) */}
+      {showTooltip && (
+        <div className="absolute left-0 top-full mt-1.5 w-64 md:w-72 bg-slate-900 text-white rounded-xl p-3 text-xs shadow-2xl z-50 pointer-events-none transition-all animate-in fade-in zoom-in-95">
+          <div className="flex items-center justify-between border-b border-slate-700 pb-1.5 mb-2">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-400">
+              <Mail size={13} />
+              <span>Email Dispatch Details</span>
+            </div>
+            <span className="text-[9.5px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">
+              {matchingLogs.length > 0 ? `${matchingLogs.length} ${matchingLogs.length === 1 ? 'Sent' : 'Times'}` : 'Emailed'}
+            </span>
+          </div>
+
+          {matchingLogs.length > 0 ? (
+            <div className="space-y-2 max-h-44 overflow-y-auto pr-1 text-[11.5px]">
+              {matchingLogs.map((log, idx) => (
+                <div key={idx} className="border-b border-slate-800 last:border-0 pb-1.5 last:pb-0">
+                  <div className="flex items-center justify-between text-slate-200 mb-0.5">
+                    <span className="font-bold text-slate-100 truncate max-w-[190px]" title={log.sentTo || log.to}>
+                      To: {log.sentTo || log.to || 'Recipient'}
+                    </span>
+                  </div>
+                  {log.subject && (
+                    <p className="text-[10.5px] text-slate-400 truncate mb-0.5" title={log.subject}>
+                      Subject: {log.subject}
+                    </p>
+                  )}
+                  <div className="text-[10px] text-teal-400 font-medium flex items-center gap-1">
+                    <Clock size={10} className="shrink-0" />
+                    <span>
+                      {log.sentAt 
+                        ? (isNaN(new Date(log.sentAt).getTime()) ? log.sentAt : new Date(log.sentAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }))
+                        : (log.sentDate ? `${log.sentDate} ${log.sentTime || ''}` : 'Recently')}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-1.5 text-[11.5px]">
+              <div className="flex items-start gap-1">
+                <span className="font-bold text-slate-400 shrink-0">To:</span>
+                <span className="font-semibold text-slate-100 break-all">{primaryRecipient}</span>
+              </div>
+              <div className="flex items-center gap-1 text-[10.5px] text-teal-400 pt-1.5 border-t border-slate-800 font-medium">
+                <Clock size={10} className="shrink-0" />
+                <span>{formattedTime}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const HistoryView = ({ quotationHistory = [], emailHistory = [], searchQuery, setSearchQuery, isGenerating, regeneratingItem, setRegeneratingItem, onEdit, onHistory }) => {
   const filteredHistory = useMemo(() => {
     return quotationHistory.filter(item => 
       (item.hospital || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -129,7 +230,12 @@ const HistoryView = ({ quotationHistory = [], searchQuery, setSearchQuery, isGen
                           </div>
                         </td>
                         <td className="py-4 px-5">
-                          <span className="text-[15px] font-semibold text-[var(--apple-black)]">{item.hospital}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[15px] font-semibold text-[var(--apple-black)]">{item.hospital}</span>
+                            {(item.isEmailed || item.lastEmailedTo) && (
+                              <EmailSentTooltip item={item} emailHistory={emailHistory} />
+                            )}
+                          </div>
                         </td>
                         <td className="py-4 px-5">
                           <span className="text-[13px] text-[var(--apple-gray-5)] font-medium">{item.templateName}</span>
@@ -199,7 +305,12 @@ const HistoryView = ({ quotationHistory = [], searchQuery, setSearchQuery, isGen
                   <div key={item.id} className="apple-card p-5 space-y-4">
                     <div className="flex justify-between items-start">
                       <div className="space-y-1">
-                        <p className="text-[16px] font-bold text-[var(--apple-black)] leading-tight">{item.hospital}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-[16px] font-bold text-[var(--apple-black)] leading-tight">{item.hospital}</p>
+                          {(item.isEmailed || item.lastEmailedTo) && (
+                            <EmailSentTooltip item={item} emailHistory={emailHistory} />
+                          )}
+                        </div>
                         <p className="text-[12px] text-[var(--apple-gray-5)] font-medium">{item.templateName}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
@@ -217,46 +328,47 @@ const HistoryView = ({ quotationHistory = [], searchQuery, setSearchQuery, isGen
                         )}
                       </div>
                     </div>
-                  <div className="flex items-center justify-between text-[13px] text-[var(--apple-gray-5)] font-medium">
-                    <span>{item.date}</span>
-                  </div>
-                  <div className="flex gap-2 pt-2 border-t border-[var(--apple-gray-2)]">
-                    <button 
-                      onClick={() => setRegeneratingItem({ ...item, _viewMode: true })}
-                      disabled={isGenerating || regeneratingItem}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--apple-gray-6)] active:scale-[0.98] transition-all"
-                      title="View"
-                    >
-                      <Eye size={18} />
-                    </button>
-                    {onEdit && (
+                    <div className="flex items-center justify-between text-[13px] text-[var(--apple-gray-5)] font-medium">
+                      <span>{item.date}</span>
+                    </div>
+                    <div className="flex gap-2 pt-2 border-t border-[var(--apple-gray-2)]">
                       <button 
-                        onClick={() => onEdit(item)}
-                        className="flex-1 flex items-center justify-center gap-1 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 font-bold text-[12px] active:scale-[0.98] transition-all"
-                        title="Edit"
+                        onClick={() => setRegeneratingItem({ ...item, _viewMode: true })}
+                        disabled={isGenerating || regeneratingItem}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--apple-gray-6)] active:scale-[0.98] transition-all"
+                        title="View"
                       >
-                        <Edit2 size={16} />
+                        <Eye size={18} />
                       </button>
-                    )}
-                    <button 
-                      onClick={() => setRegeneratingItem(item)}
-                      disabled={isGenerating || regeneratingItem}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--emerald)] active:scale-[0.98] transition-all"
-                      title="Download"
-                    >
-                      <Download size={18} />
-                    </button>
-                    <button 
-                      onClick={() => setRegeneratingItem({ ...item, _printMode: true })}
-                      disabled={isGenerating || regeneratingItem}
-                      className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-indigo-600 active:scale-[0.98] transition-all"
-                      title="Print"
-                    >
-                      <Printer size={18} />
-                    </button>
+                      {onEdit && (
+                        <button 
+                          onClick={() => onEdit(item)}
+                          className="flex-1 flex items-center justify-center gap-1 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 font-bold text-[12px] active:scale-[0.98] transition-all"
+                          title="Edit"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => setRegeneratingItem(item)}
+                        disabled={isGenerating || regeneratingItem}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-[var(--emerald)] active:scale-[0.98] transition-all"
+                        title="Download"
+                      >
+                        <Download size={18} />
+                      </button>
+                      <button 
+                        onClick={() => setRegeneratingItem({ ...item, _printMode: true })}
+                        disabled={isGenerating || regeneratingItem}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--apple-gray-1)] rounded-xl text-indigo-600 active:scale-[0.98] transition-all"
+                        title="Print"
+                      >
+                        <Printer size={18} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

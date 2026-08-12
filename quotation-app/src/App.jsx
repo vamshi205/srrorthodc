@@ -8,6 +8,7 @@ import JSZip from 'jszip';
 import Login from './components/Login';
 import EmailerView from './components/EmailerView';
 import EmailHistoryView from './components/EmailHistoryView';
+import { EmailSentTooltip } from './components/HistoryView';
 import LoadingSpinner from './components/LoadingSpinner';
 import { sendEmailWithResend } from './utils/emailService';
 import { saveDatabase, loadDatabase, saveTemplate, deleteTemplate, saveHistoryItem, saveCompanyData, saveEmailHistoryItem, syncItem } from './utils/databaseService';
@@ -1432,7 +1433,9 @@ Website: srrorthoplus.com`;
             <NavItem id="history" label="History" icon={<Database size={14} />} />
             <NavItem id="drive" label="Drive" icon={<HardDrive size={14} />} />
             <NavItem id="emailer" label="Emailer" icon={<Mail size={14} />} />
-            <NavItem id="emailHistory" label="Email History" icon={<RefreshCw size={14} />} />
+            {isManagementActive && (
+              <NavItem id="emailHistory" label="Email History" icon={<RefreshCw size={14} />} />
+            )}
             <NavItem id="pricelists" label="Price List" icon={<FileText size={14} />} />
           </div>
 
@@ -1522,7 +1525,9 @@ Website: srrorthoplus.com`;
             <button onClick={() => setIsMobileMenuOpen(false)}><Plus className="rotate-45" size={32} /></button>
           </div>
           <div className="flex flex-col gap-2">
-            {['library', 'history', 'drive', 'emailer', 'emailHistory', 'pricelists', 'settings'].map(id => (
+            {['library', 'history', 'drive', 'emailer', isManagementActive ? 'emailHistory' : null, 'pricelists', 'settings']
+              .filter(Boolean)
+              .map(id => (
               <button
                 key={id}
                 onClick={() => { setView(id); setIsMobileMenuOpen(false); }}
@@ -1649,6 +1654,7 @@ Website: srrorthoplus.com`;
                         <LibraryCard
                           key={t.id}
                           template={t}
+                          priceLists={priceLists}
                           showAdminTools={isManagementActive}
                           onUse={useTemplate}
                           onEdit={(t) => { setEditingTemplate(JSON.parse(JSON.stringify(t))); setView('builder'); }}
@@ -1737,40 +1743,31 @@ Website: srrorthoplus.com`;
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-4 bg-[var(--apple-gray-1)] rounded-2xl border border-[var(--apple-gray-2)]">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${editingTemplate?.requiresPriceList ? 'bg-emerald-100 text-emerald-600' : 'bg-white text-[var(--apple-gray-4)]'}`}>
-                        <FileText size={20} />
+                  <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/90 space-y-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${editingTemplate?.defaultPriceListId ? 'bg-teal-100 text-teal-700' : 'bg-slate-200/60 text-slate-500'}`}>
+                        <FileText size={18} />
                       </div>
                       <div>
-                        <p className="text-[14px] font-bold text-[var(--apple-black)]">Price List Needed</p>
-                        <p className="text-[11px] text-[var(--apple-gray-5)] font-medium">Require selecting a price list when drafting</p>
+                        <p className="text-[13.5px] font-bold text-slate-900 leading-tight">Default Price List Attachment</p>
+                        <p className="text-[11px] text-slate-500 font-medium leading-tight">Select which price list auto-attaches to this template</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => {
-                        const nextVal = !editingTemplate?.requiresPriceList;
-                        setEditingTemplate({
-                          ...editingTemplate,
-                          requiresPriceList: nextVal,
-                          defaultPriceListId: nextVal ? (editingTemplate?.defaultPriceListId || '') : ''
-                        });
-                      }}
-                      className={`w-12 h-6 rounded-full transition-all duration-300 relative ${editingTemplate?.requiresPriceList ? 'bg-emerald-500' : 'bg-[var(--apple-gray-3)]'}`}
-                    >
-                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 ${editingTemplate?.requiresPriceList ? 'left-7' : 'left-1'}`} />
-                    </button>
-                  </div>
 
-                  {editingTemplate?.requiresPriceList && (
-                    <div className="p-4 bg-[var(--apple-gray-1)] rounded-2xl border border-[var(--apple-gray-2)]">
-                      <label className="text-[11px] font-semibold text-[var(--apple-gray-5)] uppercase block mb-1">Default Price List</label>
+                    <div>
                       <select
                         value={editingTemplate?.defaultPriceListId || ''}
-                        onChange={e => setEditingTemplate({ ...editingTemplate, defaultPriceListId: e.target.value })}
-                        className="apple-input cursor-pointer bg-white"
+                        onChange={e => {
+                          const newPlId = e.target.value;
+                          setEditingTemplate({ 
+                            ...editingTemplate, 
+                            defaultPriceListId: newPlId,
+                            requiresPriceList: Boolean(newPlId)
+                          });
+                        }}
+                        className="apple-input cursor-pointer bg-white font-medium text-xs border-slate-300 focus:border-teal-500"
                       >
-                        <option value="">-- No Default Price List --</option>
+                        <option value="">-- No Default Price List (Optional Attachment) --</option>
                         {priceLists
                           .filter(pl => !pl.hidden || pl.id === editingTemplate?.defaultPriceListId)
                           .map(pl => (
@@ -1780,7 +1777,23 @@ Website: srrorthoplus.com`;
                           ))}
                       </select>
                     </div>
-                  )}
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200/60">
+                      <span className="text-[11.5px] font-semibold text-slate-600">Require Price List Selection when Drafting</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingTemplate({
+                            ...editingTemplate,
+                            requiresPriceList: !editingTemplate?.requiresPriceList
+                          });
+                        }}
+                        className={`w-10 h-5 rounded-full transition-all duration-300 relative ${editingTemplate?.requiresPriceList ? 'bg-teal-600' : 'bg-slate-300'}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all duration-300 ${editingTemplate?.requiresPriceList ? 'left-5.5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
 
                   <div className="pt-6 border-t border-[var(--apple-gray-2)]">
                     <label className="apple-label mb-4">Default Terms</label>
@@ -2671,16 +2684,9 @@ Website: srrorthoplus.com`;
                                     </div>
                                   </td>
                                   <td className="py-4 px-5">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1.5">
                                       <span className="text-[14.5px] font-semibold text-[var(--apple-black)]">{item.hospital}</span>
-                                      {item.isEmailed && (
-                                        <div 
-                                          title={`Sent to: ${item.lastEmailedTo || 'Unknown'}\nOn: ${item.lastEmailedAt ? new Date(item.lastEmailedAt).toLocaleString() : 'Recently'}`}
-                                          className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-md text-[10px] font-bold uppercase tracking-wider border border-blue-100 cursor-help"
-                                        >
-                                          <Mail size={10} /> SENT
-                                        </div>
-                                      )}
+                                      <EmailSentTooltip item={item} emailHistory={emailHistory} />
                                     </div>
                                   </td>
                                   <td className="py-4 px-5">
@@ -2814,7 +2820,10 @@ Website: srrorthoplus.com`;
                           <div key={item.id} className="apple-card p-5 space-y-4">
                             <div className="flex justify-between items-start">
                               <div className="space-y-1">
-                                <p className="text-[16px] font-bold text-[var(--apple-black)] leading-tight">{item.hospital}</p>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-[16px] font-bold text-[var(--apple-black)] leading-tight">{item.hospital}</p>
+                                  <EmailSentTooltip item={item} emailHistory={emailHistory} />
+                                </div>
                                 <p className="text-[12px] text-[var(--apple-gray-5)] font-medium">{item.templateName}</p>
                               </div>
                               <div className="flex flex-col items-end gap-1.5">
