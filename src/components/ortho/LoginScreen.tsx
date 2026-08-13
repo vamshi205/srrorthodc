@@ -9,7 +9,7 @@ interface LoginScreenProps {
 }
 
 const VALID_EMAIL = 'srrorthoplus999@gmail.com';
-const VALID_PASSWORD = 'srrOrthOSat';
+const VALID_PASSWORD = 'srrPadma123$a';
 
 const LOGO_URL = '/srr-logo.png';
 
