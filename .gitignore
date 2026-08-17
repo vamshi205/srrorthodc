@@ -23,3 +23,14 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# job-apply-copilot: personal data, never commit
+job-apply-copilot/.env
+job-apply-copilot/config/profile.yaml
+job-apply-copilot/data/*.db
+job-apply-copilot/data/master_resume.*
+job-apply-copilot/data/generated/
+job-apply-copilot/.venv
+job-apply-copilot/__pycache__/
+job-apply-copilot/**/__pycache__/
+job-apply-copilot/playwright-profile/

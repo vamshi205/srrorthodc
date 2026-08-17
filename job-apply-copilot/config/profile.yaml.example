@@ -1,0 +1,46 @@
+# Copy this file to profile.yaml and fill in your real details.
+# profile.yaml is gitignored - it holds personal info and should never be committed.
+
+personal:
+  full_name: "Your Full Name"
+  email: "you@example.com"
+  phone: "+1-555-555-5555"
+  location: "City, State, Country"
+  linkedin_url: "https://www.linkedin.com/in/your-handle"
+  portfolio_url: ""
+  work_authorization: "e.g. US Citizen / H1B / Requires sponsorship"
+  willing_to_relocate: false
+  notice_period: "e.g. 2 weeks / Immediate"
+
+# Free-text skills list. Don't try to be exhaustive/keyword-stuffed -
+# write it the way you'd describe yourself. The tailoring step decides
+# what's relevant per job, it does not need every skill mentioned every time.
+skills: |
+  Java, Spring Boot, Microservices, REST APIs, Kafka, SQL/PostgreSQL,
+  Docker, Kubernetes, AWS, CI/CD (Jenkins/GitHub Actions), JUnit,
+  system design, distributed systems, ...
+
+master_resume_path: "data/master_resume.pdf"   # or .docx - your base resume
+
+# Answers to the recurring screening questions most Workday/company
+# portals ask. Add more keys as new questions show up; the Workday
+# filler falls back to leaving a field blank + flagging it for review
+# if it can't find a matching answer here.
+screening_answers:
+  years_of_experience: "5"
+  authorized_to_work: "Yes"
+  require_sponsorship: "No"
+  willing_to_relocate: "No"
+  expected_salary: ""          # leave blank to have it flagged for manual review each time
+  how_did_you_hear: "Company careers page"
+  race_gender_veteran_disability: "Decline to answer"   # EEO questions, if asked
+
+# Workday login is per-company (each employer has its own Workday tenant
+# and its own account). Add one entry per company you apply to.
+# Keep this file out of git; consider using an OS keychain / secrets
+# manager instead of plaintext once you have more than a couple.
+workday_accounts:
+  example_company:
+    site_url: "https://example.wd5.myworkdayjobs.com/en-US/Careers"
+    email: "you@example.com"
+    password: "CHANGE_ME"

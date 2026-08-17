@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Job Apply Copilot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h1>Job Apply Copilot</h1>
+
+  <section>
+    <h2>Review Queue ({{ queue|length }})</h2>
+    <p class="hint">Staged from LinkedIn/Indeed. Tailored resume ready below each card &mdash;
+       open the job link, use Easy Apply / Apply yourself, then click Approve here to log it
+       (or Reject with a reason to skip it for good).</p>
+    {% if not queue %}
+      <p class="empty">Nothing waiting on you right now.</p>
+    {% endif %}
+    {% for job in queue %}
+      <div class="card">
+        <h3><a href="{{ job['url'] }}" target="_blank">{{ job['title'] }}</a> &mdash; {{ job['company'] }}</h3>
+        <p class="meta">{{ job['source'] }} &middot; {{ job['location'] }} &middot; first seen {{ job['first_seen_at'] }}</p>
+        {% if job['tailored_resume_path'] %}
+          <p><a href="file://{{ job['tailored_resume_path'] }}">Tailored resume</a></p>
+        {% endif %}
+        <form method="post" action="{{ url_for('do_approve', job_id=job['id']) }}" style="display:inline">
+          <button type="submit">Approve (I applied)</button>
+        </form>
+        <form method="post" action="{{ url_for('do_reject', job_id=job['id']) }}" style="display:inline">
+          <input type="text" name="reason" placeholder="reason (optional)">
+          <button type="submit">Reject</button>
+        </form>
+      </div>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>Applied Log ({{ applied|length }})</h2>
+    <table>
+      <tr><th>Title</th><th>Company</th><th>Source</th><th>Applied</th></tr>
+      {% for job in applied %}
+        <tr>
+          <td>{{ job['title'] }}</td>
+          <td>{{ job['company'] }}</td>
+          <td>{{ job['source'] }}</td>
+          <td>{{ job['applied_at'] }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  </section>
+</body>
+</html>
