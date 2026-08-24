@@ -9,6 +9,17 @@
   <h1>Job Apply Copilot</h1>
 
   <section>
+    <h2>Apply from a link</h2>
+    <p class="hint">Paste a job posting URL. A real browser window will open on this machine -
+       watch it alongside this page. Nothing gets submitted without you confirming here first.</p>
+    <form id="apply-form">
+      <input type="url" id="job-url" placeholder="https://company.wd5.myworkdayjobs.com/..." required>
+      <button type="submit">Apply</button>
+    </form>
+    <div id="live-jobs"></div>
+  </section>
+
+  <section>
     <h2>Review Queue ({{ queue|length }})</h2>
     <p class="hint">Staged from LinkedIn/Indeed. Tailored resume ready below each card &mdash;
        open the job link, use Easy Apply / Apply yourself, then click Approve here to log it
@@ -48,5 +59,84 @@
       {% endfor %}
     </table>
   </section>
+
+  <script>
+    const form = document.getElementById('apply-form');
+    const liveJobs = document.getElementById('live-jobs');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const urlInput = document.getElementById('job-url');
+      const url = urlInput.value.trim();
+      if (!url) return;
+
+      const res = await fetch('/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) {
+        alert('Could not start: ' + (await res.text()));
+        return;
+      }
+      const { job_id } = await res.json();
+      urlInput.value = '';
+      startJobCard(job_id, url);
+    });
+
+    function startJobCard(jobId, url) {
+      const card = document.createElement('div');
+      card.className = 'card live-job';
+      card.innerHTML = `
+        <h3>${url}</h3>
+        <p class="meta">status: <span class="status">running</span></p>
+        <pre class="log"></pre>
+        <div class="confirm-box" style="display:none">
+          <p class="confirm-prompt"></p>
+          <button class="confirm-yes">Confirm</button>
+          <button class="confirm-no">Abort</button>
+        </div>
+      `;
+      liveJobs.prepend(card);
+
+      const statusEl = card.querySelector('.status');
+      const logEl = card.querySelector('.log');
+      const confirmBox = card.querySelector('.confirm-box');
+      const confirmPrompt = card.querySelector('.confirm-prompt');
+
+      card.querySelector('.confirm-yes').addEventListener('click', () => sendConfirm(jobId, true));
+      card.querySelector('.confirm-no').addEventListener('click', () => sendConfirm(jobId, false));
+
+      const poll = setInterval(async () => {
+        const res = await fetch(`/job/${jobId}`);
+        if (!res.ok) { clearInterval(poll); return; }
+        const data = await res.json();
+
+        statusEl.textContent = data.status + (data.final_status ? ` (${data.final_status})` : '');
+        logEl.textContent = data.log_lines.join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+
+        if (data.status === 'needs_confirmation') {
+          confirmPrompt.textContent = data.confirm_prompt || '';
+          confirmBox.style.display = 'block';
+        } else {
+          confirmBox.style.display = 'none';
+        }
+
+        if (data.status === 'done' || data.status === 'error') {
+          clearInterval(poll);
+          setTimeout(() => window.location.reload(), 2000);  // refresh queue/applied-log sections below
+        }
+      }, 1500);
+    }
+
+    async function sendConfirm(jobId, proceed) {
+      await fetch(`/job/${jobId}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proceed }),
+      });
+    }
+  </script>
 </body>
 </html>

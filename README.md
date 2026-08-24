@@ -78,19 +78,28 @@ the first thing to check.
    exclude terms, which sources are on, LinkedIn/Indeed pacing and daily
    cap.
 
-5. **First run** (does one full cycle - search, tailor, stage/apply):
+5. **Dashboard** (review queue, applied log, and the "apply from a link" box):
+   ```bash
+   python scripts/run_dashboard.py
+   ```
+   Open http://localhost:8787 - paste a job URL into the box at the top and
+   click Apply. A real browser window opens alongside the page; the
+   dashboard streams progress and pauses with a Confirm/Abort button right
+   before anything gets submitted. This is the easiest way to use the
+   manual link-sharing workflow day to day.
+
+   Prefer a terminal? `python scripts/apply_from_link.py <job_url>` does
+   the exact same thing (same underlying `src/apply/pipeline.py`), pausing
+   on `input()` instead of a button.
+
+6. **Background multi-source search** (Adzuna/Jooble/LinkedIn/Indeed every
+   2-4h, optional - see "Scheduling" below):
    ```bash
    python scripts/run_once.py
    ```
    The first time you enable LinkedIn/Indeed, a real Chrome window opens
    via the persistent profile - log in manually that once, and the
    session is remembered for future runs.
-
-6. **Dashboard** (review queue + applied log):
-   ```bash
-   python scripts/run_dashboard.py
-   ```
-   Open http://localhost:8787
 
 ## Scheduling every 2-4 hours
 
@@ -132,7 +141,9 @@ src/db.py         sqlite schema, dedup, status transitions
 src/job_sources/  adzuna, jooble, linkedin_watch, indeed_watch
 src/resume_tailor.py   Claude-powered tailoring, humanized tone
 src/apply/workday.py   generic Workday form filler with a review fallback
-src/dashboard/    Flask app - review queue + applied log
-src/scheduler.py  ties one full cycle together
-scripts/          run_once.py, run_forever.py, run_dashboard.py
+src/apply/pipeline.py  link -> tailor -> fill -> confirm -> submit, shared by CLI + web
+src/dashboard/    Flask app - review queue, applied log, "apply from a link" box
+src/dashboard/live_jobs.py  in-memory registry backing the web apply flow
+src/scheduler.py  ties one full background-search cycle together
+scripts/          run_once.py, run_forever.py, run_dashboard.py, apply_from_link.py
 ```
