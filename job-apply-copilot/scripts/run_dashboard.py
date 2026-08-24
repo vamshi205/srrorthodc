@@ -13,4 +13,4 @@ import os  # noqa: E402
 from src.dashboard.app import app  # noqa: E402
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=int(os.environ.get("DASHBOARD_PORT", 8787)), debug=True)
+    app.run(host="127.0.0.1", port=int(os.environ.get("DASHBOARD_PORT", 8787)), debug=True, threaded=True)
