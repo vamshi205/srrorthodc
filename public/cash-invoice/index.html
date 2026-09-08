@@ -60,6 +60,11 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> Print / PDF
                     </button>
 
+                    <!-- Saved Invoices Action (Exposed directly in top menu) -->
+                    <button type="button" class="btn btn-secondary" id="header-saved-invoices-btn" title="View Saved Invoices" style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border-color); background: var(--bg-card);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg> Saved Invoices
+                    </button>
+
                     <!-- New + Dropdown Button -->
                     <div class="dropdown-container">
                         <button type="button" class="btn btn-secondary" id="add-menu-btn" title="Add New..." style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border-color); background: var(--bg-card);">
@@ -121,11 +126,11 @@
                                 </tr>
                                 <tr>
                                     <td>DC No:</td>
-                                    <td><span class="editable-text" id="preview-dc-number" contenteditable="true"></span></td>
+                                    <td><span class="editable-text" id="preview-dc-number" contenteditable="true" data-placeholder="Enter DC No..."></span></td>
                                 </tr>
                                 <tr>
                                     <td>Date:</td>
-                                    <td><span class="editable-text" id="preview-inv-date" contenteditable="true">15-Jun-2026</span></td>
+                                    <td><span class="editable-text" id="preview-inv-date" contenteditable="true"></span></td>
                                 </tr>
                             </table>
                         </div>
@@ -136,16 +141,28 @@
                     <!-- BILL TO / SHIP TO SECTION -->
                     <div class="inv-bill-details">
                         <div class="bill-to" style="position: relative;">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                                <h3 style="margin: 0;">Bill To:</h3>
+                            <div class="bill-to-header" style="margin-bottom: 8px;">
+                                <h3 style="margin: 0; font-size: 13px; font-weight: 700; color: var(--paper-accent, #0f766e); text-transform: uppercase; letter-spacing: 0.5px;">Bill To:</h3>
                             </div>
-                            <div class="autocomplete-container" style="position: relative; margin-bottom: 6px; z-index: 100000;">
-                                <p style="margin-bottom: 2px;">Customer Name: <span class="editable-text client-name" id="preview-client-name" contenteditable="true" data-placeholder="Type customer name to search..."></span></p>
-                                <div class="recommendation-list" id="paper-cust-rec-list" style="width: 100%; max-width: 400px; left: 0; top: calc(100% + 4px); z-index: 10000000 !important; background: white; border: 1px solid #d1d5db; border-radius: 6px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15); max-height: 220px; overflow-y: auto;"></div>
+                            <div class="bill-to-form" style="display: flex; flex-direction: column; gap: 6px;">
+                                <div class="bill-row autocomplete-container" style="position: relative; z-index: 100000; display: flex; align-items: center;">
+                                    <span class="bill-label" style="font-size: 12px; font-weight: 600; color: #475569; min-width: 115px; flex-shrink: 0;">Customer Name:</span>
+                                    <span class="editable-text client-name bill-field-input" id="preview-client-name" contenteditable="true" data-placeholder="e.g. Dr. Rajesh Sharma or Apollo Hospital"></span>
+                                    <div class="recommendation-list" id="paper-cust-rec-list" style="width: 100%; max-width: 440px; left: 115px; top: calc(100% + 4px); z-index: 10000000 !important; background: white; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15); max-height: 220px; overflow-y: auto;"></div>
+                                </div>
+                                <div class="bill-row" style="display: flex; align-items: center;">
+                                    <span class="bill-label" style="font-size: 12px; font-weight: 600; color: #475569; min-width: 115px; flex-shrink: 0;">Address:</span>
+                                    <span class="editable-text bill-field-input" id="preview-client-address" contenteditable="true" data-placeholder="e.g. Clinic / Hospital address details"></span>
+                                </div>
+                                <div class="bill-row" style="display: flex; align-items: center;">
+                                    <span class="bill-label" style="font-size: 12px; font-weight: 600; color: #475569; min-width: 115px; flex-shrink: 0;">Mobile Number:</span>
+                                    <span class="editable-text bill-field-input" id="preview-client-mobile" contenteditable="true" data-placeholder="e.g. +91 98765 43210"></span>
+                                </div>
+                                <div class="bill-row" style="display: flex; align-items: center;">
+                                    <span class="bill-label" style="font-size: 12px; font-weight: 600; color: #475569; min-width: 115px; flex-shrink: 0;">Email ID:</span>
+                                    <span class="editable-text bill-field-input" id="preview-client-email" contenteditable="true" data-placeholder="e.g. doctor@hospital.com"></span>
+                                </div>
                             </div>
-                            <p style="margin-bottom: 2px;">Address: <span class="editable-text" id="preview-client-address" contenteditable="true" data-placeholder=""></span></p>
-                            <p style="margin-bottom: 2px;">Mobile Number: <span class="editable-text" id="preview-client-mobile" contenteditable="true" data-placeholder=""></span></p>
-                            <p>Email ID: <span class="editable-text" id="preview-client-email" contenteditable="true" data-placeholder=""></span></p>
                         </div>
                     </div>
 
@@ -394,8 +411,97 @@
         </div>
     </div>
 
+    <!-- Record Payment Modal (Reliable in-dashboard payment dialog) -->
+    <div class="modal-backdrop" id="record-payment-modal" style="display:none; position:fixed; inset:0; z-index:1000000; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+        <div class="modal-card" style="max-width: 440px; width: 92%; background:#fff; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.25); overflow:hidden; border:1px solid #e2e8f0;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid #e2e8f0; background:#f8fafc;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:18px;">💳</span>
+                    <div>
+                        <h3 style="font-size:15px; font-weight:700; color:#0f172a; margin:0; font-family:'Outfit',sans-serif;">Record Payment</h3>
+                        <p id="pay-modal-inv-subtitle" style="font-size:11.5px; color:#64748b; margin:2px 0 0 0;">Invoice Details</p>
+                    </div>
+                </div>
+                <button type="button" class="close-modal-btn" id="close-pay-modal-btn" style="background:none; border:none; font-size:20px; color:#64748b; cursor:pointer; padding:2px 6px;">&times;</button>
+            </div>
+            
+            <div class="modal-body" style="padding:18px 20px; display:flex; flex-direction:column; gap:14px;">
+                <!-- Summary Card -->
+                <div style="background:#f1f5f9; border-radius:8px; padding:12px 16px; display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:12px;">
+                    <div>
+                        <span style="color:#64748b; display:block; font-size:11px;">Total Billed:</span>
+                        <strong id="pay-modal-total" style="font-size:14px; color:#0f172a;">₹0.00</strong>
+                    </div>
+                    <div>
+                        <span style="color:#64748b; display:block; font-size:11px;">Already Paid:</span>
+                        <strong id="pay-modal-received" style="font-size:14px; color:#10b981;">₹0.00</strong>
+                    </div>
+                    <div style="grid-column: span 2; border-top:1px dashed #cbd5e1; padding-top:8px;">
+                        <span style="color:#64748b; display:block; font-size:11px;">Outstanding Balance Due:</span>
+                        <strong id="pay-modal-balance" style="font-size:16px; color:#ef4444;">₹0.00</strong>
+                    </div>
+                </div>
+
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label style="font-size:12px; font-weight:600; color:#334155;">Payment Amount (₹) *</label>
+                        <button type="button" id="pay-modal-full-btn" style="padding:3px 8px; font-size:11px; font-weight:600; border-radius:4px; background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; cursor:pointer;">Pay Full Balance</button>
+                    </div>
+                    <input type="number" id="pay-modal-amount-input" step="0.01" min="0" style="width:100%; box-sizing:border-box; padding:8px 12px; font-size:14px; font-weight:700; border-radius:6px; border:1px solid #cbd5e1; outline:none; color:#0f172a;" placeholder="0.00">
+                </div>
+
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">Payment Method</label>
+                    <select id="pay-modal-mode-select" style="width:100%; box-sizing:border-box; padding:8px 12px; font-size:12.5px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; outline:none; color:#334155;">
+                        <option value="Cash">Cash</option>
+                        <option value="UPI / QR Code">UPI / QR Code</option>
+                        <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+                        <option value="Cheque">Cheque</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:600; color:#334155; margin-bottom:6px;">Payment Note (Optional)</label>
+                    <input type="text" id="pay-modal-notes-input" placeholder="e.g. Received via GPay, Cash collected at clinic" style="width:100%; box-sizing:border-box; padding:8px 12px; font-size:12px; border-radius:6px; border:1px solid #cbd5e1; outline:none; color:#334155;">
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:10px; background:#f8fafc;">
+                <button type="button" id="pay-modal-cancel-btn" style="padding:8px 16px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; color:#334155; font-size:12px; cursor:pointer; font-weight:600;">Cancel</button>
+                <button type="button" id="pay-modal-save-btn" style="padding:8px 20px; border-radius:6px; border:none; background:#0f766e; color:#fff; font-size:12px; cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:6px;">✓ Confirm Payment</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Password Verification Modal -->
+    <div class="modal-backdrop" id="admin-password-modal" style="display:none; position:fixed; inset:0; z-index:10000000; background:rgba(0,0,0,0.65); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+        <div class="modal-card" style="max-width: 400px; width: 90%; background:#fff; border-radius:14px; box-shadow:0 25px 60px rgba(0,0,0,0.3); overflow:hidden; border:1px solid #e2e8f0; font-family:'Outfit',sans-serif;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid #e2e8f0; background:#f8fafc;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:20px;">🔒</span>
+                    <h3 style="font-size:15px; font-weight:700; color:#0f172a; margin:0;" id="admin-modal-title">Admin Required</h3>
+                </div>
+                <button type="button" class="close-modal-btn" id="close-admin-password-btn" style="background:none; border:none; font-size:20px; color:#64748b; cursor:pointer; padding:2px 6px;">&times;</button>
+            </div>
+            
+            <div class="modal-body" style="padding:20px; display:flex; flex-direction:column; gap:12px;">
+                <p style="font-size:12.5px; color:#475569; margin:0; line-height:1.4;" id="admin-modal-msg">Enter admin password to perform this action:</p>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <label for="admin-modal-input" style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#64748b;">Verification Required</label>
+                    <input type="password" id="admin-modal-input" placeholder="Enter Admin Password" autocomplete="off" style="width:100%; text-align:center; padding:12px; font-size:16px; font-weight:700; letter-spacing:3px; border:1.5px solid #cbd5e1; border-radius:8px; outline:none; font-family:inherit; box-sizing:border-box;">
+                    <p id="admin-modal-error" style="color:#ef4444; font-size:11.5px; font-weight:600; margin:4px 0 0 0; display:none;">Access Denied: Incorrect admin password.</p>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding:12px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:10px;">
+                <button type="button" class="btn btn-secondary" id="cancel-admin-password-btn" style="padding:8px 16px; font-size:12px; border-radius:8px;">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirm-admin-password-btn" style="padding:8px 18px; font-size:12px; border-radius:8px; background:#ef4444; border-color:#ef4444; color:#fff;">Confirm Delete</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Email Invoice Modal -->
-    <div class="modal-backdrop" id="email-invoice-modal" style="display:none;">
+    <div class="modal-backdrop" id="email-invoice-modal" style="display:none; position:fixed; inset:0; z-index:1000000; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
         <div class="modal-card" style="max-width: 540px; width: 92%;">
             <div class="modal-header">
                 <h2>✉️ Email Cash Memo</h2>
@@ -414,38 +520,110 @@
                     <label for="email-body-input" style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px; display:block;">MESSAGE BODY</label>
                     <textarea id="email-body-input" rows="5" style="padding:8px 12px; font-size:12px; font-family:inherit; border-radius:6px; border:1px solid var(--border-color); width:100%; resize:vertical;" autocomplete="off"></textarea>
                 </div>
-                <div style="background: rgba(2, 132, 199, 0.08); border: 1px solid rgba(2, 132, 199, 0.3); border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #0369a1; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size:16px;">📄</span>
-                    <span id="email-attachment-label">Cash_Memo.pdf (Auto-Attached)</span>
+                <div style="background: rgba(2, 132, 199, 0.08); border: 1px solid rgba(2, 132, 199, 0.3); border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: #0369a1; font-weight: 600; display: flex; align-items: center; justify-content:space-between; gap: 8px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:16px;">📄</span>
+                        <span id="email-attachment-label">Cash_Memo.pdf (Auto-Attached)</span>
+                    </div>
+                    <button type="button" id="copy-email-text-btn" style="background:none; border:1px solid #bae6fd; border-radius:4px; padding:2px 8px; font-size:11px; color:#0284c7; cursor:pointer; font-weight:600;">📋 Copy Text</button>
                 </div>
+
+                <!-- Inline feedback notification area (replaces jarring alerts) -->
+                <div id="email-modal-status" style="display:none; padding:10px 14px; border-radius:8px; font-size:12px; font-weight:600;"></div>
             </div>
-            <div class="modal-footer" style="padding: 14px 18px; display:flex; justify-content:flex-end; gap:10px;">
+            <div class="modal-footer" style="padding: 14px 18px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
                 <button type="button" class="btn btn-secondary" id="cancel-email-modal-btn">Cancel</button>
-                <button type="button" class="btn btn-primary" id="send-email-submit-btn" style="background:#0284c7; border-color:#0284c7; padding:8px 20px; font-weight:700;">✉️ Send Email</button>
+                <div style="display:flex; gap:8px;">
+                    <button type="button" class="btn btn-secondary" id="mailto-fallback-btn" style="padding:8px 14px; font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:4px;" title="Open in default Email application">📬 Open in Mail App</button>
+                    <button type="button" class="btn btn-primary" id="send-email-submit-btn" style="background:#0284c7; border-color:#0284c7; padding:8px 18px; font-weight:700; display:inline-flex; align-items:center; gap:6px;">✉️ Send Email</button>
+                </div>
             </div>
         </div>
     </div>
 
 
 
-    <!-- Standalone Full-Screen Dashboard Overlay -->
-    <div id="invoices-dashboard-container" style="display:none; position:fixed; inset:0; z-index:99999; background:#f1f5f9; overflow-y:auto;">
-        <div style="max-width:1100px; margin:0 auto; padding:32px 24px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; gap:12px; flex-wrap:wrap;">
+    <!-- Standalone Full-Screen Dashboard Overlay (Full Screen & KPI Overview) -->
+    <div id="invoices-dashboard-container" style="display:none; position:fixed; inset:0; z-index:99999; background:#f8fafc; overflow-y:auto;">
+        <div class="dash-fullscreen-wrap" style="width:100%; min-height:100vh; padding:20px 32px 48px 32px; box-sizing:border-box;">
+            
+            <!-- Dashboard Top Header Bar -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; gap:16px; flex-wrap:wrap; border-bottom:1px solid #e2e8f0; padding-bottom:16px;">
                 <div style="display:flex; align-items:center; gap:14px;">
-                    <button type="button" id="back-to-editor-btn" style="padding:8px 16px; border-radius:8px; border:1px solid #d1d5db; background:#fff; color:#374151; font-size:13px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-weight:600;">&#8592; Back to Editor</button>
-                    <h1 id="dashboard-title" style="font-size:22px; font-weight:800; color:#111827; margin:0;">Saved Invoices &amp; Payments</h1>
+                    <button type="button" id="back-to-editor-btn" class="btn btn-secondary" style="padding:8px 16px; border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:#334155; font-size:12.5px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-weight:600;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                        Back to Cash Memo
+                    </button>
+                    <div>
+                        <h1 id="dashboard-title" style="font-size:20px; font-weight:800; color:#0f172a; margin:0; font-family:'Outfit', sans-serif;">Cash Invoices &amp; Revenue Dashboard</h1>
+                        <p style="font-size:11.5px; color:#64748b; margin:2px 0 0 0;">Overview of all billed cash memos, collections, and outstanding receivables</p>
+                    </div>
                 </div>
+                
                 <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                    <input type="text" id="dashboard-inv-search" placeholder="Search invoice # or customer..." autocomplete="off" style="padding:9px 14px; font-size:13px; width:280px; border-radius:8px; border:1px solid #d1d5db; background:#fff; color:#111827; outline:none;">
-                    <button type="button" id="download-report-btn" style="display:none; padding:9px 14px; font-size:13px; border-radius:8px; background:#2a9d8f; color:#fff; border:none; cursor:pointer; font-weight:600;">Export Excel</button>
+                    <div style="position:relative;">
+                        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:13px; pointer-events:none;">🔍</span>
+                        <input type="text" id="dashboard-inv-search" placeholder="Search invoice #, DC #, customer..." autocomplete="off" style="padding:8px 14px 8px 34px; font-size:12.5px; width:280px; border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:#0f172a; outline:none;">
+                    </div>
+                    <button type="button" id="download-report-btn" style="display:none; padding:8px 14px; font-size:12.5px; border-radius:8px; background:#0f766e; color:#fff; border:none; cursor:pointer; font-weight:600;">Export Excel</button>
                 </div>
             </div>
-            <div style="display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap;">
-                <button type="button" id="tab-invoices-btn" onclick="switchDashboardTab('invoices')" style="padding:8px 20px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:2px solid #2a9d8f; background:#2a9d8f; color:#fff;">Invoices</button>
-                <button type="button" id="tab-customers-btn" onclick="switchDashboardTab('customers')" style="padding:8px 20px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:2px solid #d1d5db; background:#fff; color:#374151;">Customers</button>
-                <button type="button" id="tab-reports-btn" onclick="switchDashboardTab('reports')" style="padding:8px 20px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:2px solid #d1d5db; background:#fff; color:#374151;">Items Report</button>
+
+            <!-- Important Info KPI Summary Cards -->
+            <div class="dash-kpi-grid" id="dashboard-kpi-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:16px; margin-bottom:22px;">
+                <div class="dash-kpi-card" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Total Invoices</span>
+                        <div style="width:32px; height:32px; border-radius:8px; background:rgba(15,118,110,0.1); color:#0f766e; display:flex; align-items:center; justify-content:center; font-size:15px;">📄</div>
+                    </div>
+                    <div id="kpi-total-invoices" style="font-size:24px; font-weight:800; color:#0f172a; font-family:'Outfit', sans-serif;">0</div>
+                    <div id="kpi-invoices-sub" style="font-size:11px; color:#64748b; margin-top:2px;">0 Paid &bull; 0 Pending</div>
+                </div>
+
+                <div class="dash-kpi-card" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Total Billed</span>
+                        <div style="width:32px; height:32px; border-radius:8px; background:rgba(2,132,199,0.1); color:#0284c7; display:flex; align-items:center; justify-content:center; font-size:15px;">🏷️</div>
+                    </div>
+                    <div id="kpi-total-billed" style="font-size:24px; font-weight:800; color:#0f172a; font-family:'Outfit', sans-serif;">₹0.00</div>
+                    <div style="font-size:11px; color:#64748b; margin-top:2px;">Gross invoice value</div>
+                </div>
+
+                <div class="dash-kpi-card" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Total Received</span>
+                        <div style="width:32px; height:32px; border-radius:8px; background:rgba(16,185,129,0.1); color:#10b981; display:flex; align-items:center; justify-content:center; font-size:15px;">✅</div>
+                    </div>
+                    <div id="kpi-total-paid" style="font-size:24px; font-weight:800; color:#10b981; font-family:'Outfit', sans-serif;">₹0.00</div>
+                    <div id="kpi-collected-sub" style="font-size:11px; color:#64748b; margin-top:2px;">0% collection rate</div>
+                </div>
+
+                <div class="dash-kpi-card" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Outstanding Dues</span>
+                        <div style="width:32px; height:32px; border-radius:8px; background:rgba(239,68,68,0.1); color:#ef4444; display:flex; align-items:center; justify-content:center; font-size:15px;">⏳</div>
+                    </div>
+                    <div id="kpi-total-balance" style="font-size:24px; font-weight:800; color:#ef4444; font-family:'Outfit', sans-serif;">₹0.00</div>
+                    <div style="font-size:11px; color:#64748b; margin-top:2px;">Pending customer collections</div>
+                </div>
             </div>
+
+            <!-- Tab Switcher & Status Filter Pills -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:12px;">
+                <div style="display:flex; gap:6px;">
+                    <button type="button" id="tab-invoices-btn" onclick="switchDashboardTab('invoices')" style="padding:7px 18px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer; border:1px solid #0f766e; background:#0f766e; color:#fff;">📋 Invoices</button>
+                    <button type="button" id="tab-customers-btn" onclick="switchDashboardTab('customers')" style="padding:7px 18px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer; border:1px solid #cbd5e1; background:#fff; color:#334155;">👥 Customers</button>
+                    <button type="button" id="tab-reports-btn" onclick="switchDashboardTab('reports')" style="padding:7px 18px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer; border:1px solid #cbd5e1; background:#fff; color:#334155;">📊 Items Report</button>
+                </div>
+                
+                <div id="invoices-filter-pills" style="display:flex; gap:6px; align-items:center;">
+                    <span style="font-size:11.5px; color:#64748b; font-weight:600; margin-right:4px;">Filter Status:</span>
+                    <button type="button" class="dash-filter-pill active" data-filter="all" style="padding:4px 12px; border-radius:20px; font-size:11.5px; font-weight:600; cursor:pointer; border:1px solid #0f766e; background:#0f766e; color:#fff;">All (<span id="filter-all-count">0</span>)</button>
+                    <button type="button" class="dash-filter-pill" data-filter="pending" style="padding:4px 12px; border-radius:20px; font-size:11.5px; font-weight:600; cursor:pointer; border:1px solid #cbd5e1; background:#fff; color:#334155;">Pending (<span id="filter-pending-count">0</span>)</button>
+                    <button type="button" class="dash-filter-pill" data-filter="paid" style="padding:4px 12px; border-radius:20px; font-size:11.5px; font-weight:600; cursor:pointer; border:1px solid #cbd5e1; background:#fff; color:#334155;">Paid (<span id="filter-paid-count">0</span>)</button>
+                </div>
+            </div>
+
             <div id="dashboard-invoices-container">
                 <div style="background:#fff; border-radius:12px; border:1px solid #e5e7eb; overflow-x:auto; -webkit-overflow-scrolling:touch; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
                     <table style="width:100%; min-width:620px; border-collapse:collapse; font-size:13px;">
@@ -457,7 +635,7 @@
                                 <th style="padding:12px 16px; text-align:right; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase;">Total</th>
                                 <th style="padding:12px 16px; text-align:right; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase;">Paid</th>
                                 <th style="padding:12px 16px; text-align:right; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase;">Balance</th>
-                                <th style="padding:12px 16px; text-align:center; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase;">Actions</th>
+                                <th style="padding:12px 20px; text-align:right; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase; white-space:nowrap;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="dashboard-invoices-tbody"></tbody>
@@ -506,7 +684,7 @@
                                 <th style="padding:12px 16px; text-align:left; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase;">Contact Info</th>
                                 <th style="padding:12px 16px; text-align:left; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase;">Address</th>
                                 <th style="padding:12px 16px; text-align:right; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase;">Outstanding</th>
-                                <th style="padding:12px 16px; text-align:center; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase;">Actions</th>
+                                <th style="padding:12px 20px; text-align:right; color:#6b7280; font-size:11px; font-weight:700; text-transform:uppercase; white-space:nowrap;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="dashboard-customers-tbody"></tbody>

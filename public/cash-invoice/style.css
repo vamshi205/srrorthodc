@@ -411,7 +411,7 @@ body {
 }
 
 .workspace-header {
-    height: 56px;
+    height: 46px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
@@ -605,13 +605,13 @@ body {
 /* Invoice Container */
 .invoice-container {
     flex-grow: 1;
-    padding: 40px;
+    padding: 12px 16px 20px 16px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    gap: 24px;
+    gap: 12px;
 }
 
 /* A4 Paper Dimensions: ~210mm x 297mm */
@@ -620,16 +620,16 @@ body {
     background: var(--paper-bg);
     color: var(--paper-text);
     width: 210mm;
-    min-height: 297mm;
-    padding: 20mm;
+    min-height: auto;
+    padding: 8mm 12mm 6mm 12mm;
     box-shadow: var(--shadow-paper);
-    border-radius: 4px;
+    border-radius: 6px;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
     position: relative;
     transition: background-color var(--transition-fast), color var(--transition-fast);
-    zoom: 1.15;
+    zoom: 1.12;
 }
 
 .divider {
@@ -661,10 +661,10 @@ body {
 }
 
 .company-info h2 {
-    font-size: 20px;
+    font-size: 17px;
     font-weight: 800;
-    margin-bottom: 6px;
-    color: var(--paper-accent, #4f46e5);
+    margin-bottom: 3px;
+    color: var(--paper-accent, #0f766e);
 }
 
 .company-info p {
@@ -707,14 +707,18 @@ body {
 
 .meta-table .editable-text {
     display: inline-block;
-    min-width: 120px;
+    min-width: 135px;
+    height: 28px;
+    line-height: 20px;
     background: var(--paper-input-bg, #f8fafc);
     border: 1px solid var(--paper-input-border, #cbd5e1);
-    padding: 4px 8px;
+    padding: 3px 8px;
     border-radius: 6px;
-    font-size: 11px;
+    font-size: 12px;
+    font-weight: 600;
     text-align: left;
     color: var(--paper-text);
+    box-sizing: border-box;
     transition: var(--transition-fast);
 }
 
@@ -823,20 +827,21 @@ body {
 }
 
 .invoice-table th {
-    background: #f3f4f6;
-    border-bottom: 2px solid var(--paper-border);
-    padding: 4px 6px;
+    background: #f8fafc;
+    border-bottom: 2px solid var(--paper-accent, #0f766e);
+    padding: 6px 8px;
     font-weight: 700;
-    color: #4b5563;
+    color: var(--paper-accent, #0f766e);
     text-transform: uppercase;
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.5px;
 }
 
 .invoice-table td {
-    padding: 3px 6px;
+    padding: 4px 6px;
     border-bottom: 1px solid var(--paper-border);
     vertical-align: middle;
+    font-size: 12px;
 }
 
 .invoice-paper .invoice-table tbody tr:hover {
@@ -1502,6 +1507,16 @@ select.table-input {
 }
 .editable-text:empty::before {
     content: attr(data-placeholder);
+    color: #94a3b8 !important;
+    font-weight: 400 !important;
+    font-style: normal !important;
+    opacity: 0.85 !important;
+    pointer-events: none !important;
+}
+
+[data-theme="dark"] .editable-text:empty::before {
+    color: #64748b !important;
+    opacity: 0.75 !important;
 }
 
 /* Print-only static text spans (hidden on screen) */
@@ -1513,6 +1528,15 @@ select.table-input {
    PRINT MEDIA QUERY STYLES
    ========================================== */
 @media print {
+    .bill-field-input {
+        border: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        font-size: 11px !important;
+        color: #000000 !important;
+    }
+
     @page {
         size: A4 portrait;
         margin: 6mm 8mm 6mm 8mm;
@@ -2696,3 +2720,83 @@ select.table-input {
     }
 }
 
+
+/* ==========================================
+   MINIMAL BILL TO FIELD INPUT STYLES
+   ========================================== */
+.bill-to-form {
+    margin-top: 4px;
+}
+
+.bill-row {
+    margin-bottom: 6px;
+}
+
+.bill-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    min-width: 115px;
+    flex-shrink: 0;
+}
+
+[data-theme="dark"] .bill-label {
+    color: #94a3b8;
+}
+
+.bill-field-input {
+    display: inline-block;
+    flex: 1;
+    max-width: 480px;
+    min-width: 260px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #0f172a;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+    min-height: 28px;
+    line-height: 18px;
+    box-sizing: border-box;
+}
+
+[data-theme="dark"] .bill-field-input {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #f8fafc;
+}
+
+.bill-field-input:hover {
+    border-color: #94a3b8;
+    background: #ffffff;
+}
+
+[data-theme="dark"] .bill-field-input:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.bill-field-input:focus {
+    outline: none !important;
+    border-color: var(--paper-accent, #0f766e) !important;
+    background: #ffffff !important;
+    box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.15) !important;
+}
+
+[data-theme="dark"] .bill-field-input:focus {
+    background: #0f172a !important;
+    border-color: #2dd4bf !important;
+    box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.2) !important;
+}
+
+.recommendation-item:hover {
+    background: rgba(15, 118, 110, 0.08) !important;
+}
+
+#record-payment-modal,
+#email-invoice-modal,
+#view-invoice-modal {
+    z-index: 1000000 !important;
+}

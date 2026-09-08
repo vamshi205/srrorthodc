@@ -17,6 +17,7 @@ const state = {
     savedInvoices: []       // Saved invoices list
 };
 let activeDashboardTab = "invoices";
+let activeInvoiceStatusFilter = "all";
 
 // Default Company Data
 const DEFAULT_COMPANY = {
@@ -212,6 +213,9 @@ function loadPersistedData() {
         state.clientInfo.name = prefillClient;
         sessionStorage.removeItem('prefill_cash_client_name');
     }
+    if (window.history && window.history.replaceState && (urlParams.has('dcNo') || urlParams.has('client'))) {
+        window.history.replaceState(null, "", window.location.pathname);
+    }
 
     if (viewInv) {
         const authOverlay = document.getElementById("auth-gate-overlay");
@@ -280,17 +284,11 @@ function loadPersistedData() {
     // 4. Price List Catalog
     loadProjectCatalogIfPresent();
 
-    // 5. Invoice Draft Items
-    const savedItems = localStorage.getItem("im_invoice_items");
-    if (savedItems && !prefillDc) {
-        state.invoiceItems = JSON.parse(savedItems);
-    } else {
-        // Initial empty row
-        state.invoiceItems = [{ description: "", sku: "", size: "", qty: 1, rate: 0 }];
-        localStorage.removeItem("im_invoice_items");
-        const discountInput = document.getElementById("discount-flat-input");
-        if (discountInput) discountInput.value = 0;
-    }
+    // 5. Invoice Items — always start fresh with a clean empty row on page open
+    localStorage.removeItem("im_invoice_items");
+    state.invoiceItems = [{ description: "", sku: "", size: "", qty: 1, rate: 0 }];
+    const discountInput = document.getElementById("discount-flat-input");
+    if (discountInput) discountInput.value = 0;
 
     // 6. Customer Directory
     const savedCustomers = localStorage.getItem("im_saved_customers") || localStorage.getItem("im_customers");
@@ -500,8 +498,39 @@ function setupEventListeners() {
     const invoicesDashboardContainer = document.getElementById("invoices-dashboard-container");
     const invoiceEditorContainer = document.querySelector(".invoice-container");
     const backToEditorBtn = document.getElementById("back-to-editor-btn");
+    
+    // Status Filter Pills in Dashboard
+    const filterPills = document.querySelectorAll(".dash-filter-pill");
+    filterPills.forEach(pill => {
+        pill.addEventListener("click", () => {
+            filterPills.forEach(p => {
+                p.style.background = "#fff";
+                p.style.color = "#334155";
+                p.style.borderColor = "#cbd5e1";
+                p.classList.remove("active");
+            });
+            pill.style.background = "#0f766e";
+            pill.style.color = "#fff";
+            pill.style.borderColor = "#0f766e";
+            pill.classList.add("active");
+            activeInvoiceStatusFilter = pill.dataset.filter || "all";
+            const searchInput = document.getElementById("dashboard-inv-search");
+            renderDashboardInvoicesList(searchInput ? searchInput.value : "");
+        });
+    });
+
     const dashboardInvSearch = document.getElementById("dashboard-inv-search");
 
+
+    // Direct Saved Invoices button in header
+    const headerSavedInvoicesBtn = document.getElementById("header-saved-invoices-btn");
+    if (headerSavedInvoicesBtn) {
+        headerSavedInvoicesBtn.addEventListener("click", () => {
+            if (viewDropdownMenu) viewDropdownMenu.classList.remove("show");
+            switchDashboardTab("invoices");
+            openInvoicesDashboard();
+        });
+    }
 
     if (viewInvoicesOpt) {
         viewInvoicesOpt.addEventListener("click", () => {
@@ -877,19 +906,12 @@ function setupEventListeners() {
             return false;
         }
 
-        // 3. Validate Invoice Date
-        const invDate = (state.clientInfo.invDate || "").trim();
+        // 3. Validate Invoice Date (graceful fallback)
+        let invDate = (state.clientInfo.invDate || "").trim();
         if (!invDate) {
-            alert("Mandatory Error: Please select an Invoice Date.");
-            const invDateEl = document.getElementById("inv-date");
-            if (invDateEl) {
-                const sidebar = document.getElementById("sidebar");
-                if (sidebar && sidebar.classList.contains("collapsed")) {
-                    document.getElementById("settings-toggle-btn").click();
-                }
-                invDateEl.focus();
-            }
-            return false;
+            const previewDate = (document.getElementById("preview-inv-date")?.innerText || "").trim();
+            invDate = previewDate || new Date().toLocaleDateString('en-GB');
+            state.clientInfo.invDate = invDate;
         }
 
         // 4. Validate Invoice Items Presence
@@ -1253,8 +1275,8 @@ function setupEventListeners() {
         
         renderInvoiceRows();
         updateCalculations();
-        saveItemsToDraft();
-        localStorage.setItem("im_client_info", JSON.stringify(state.clientInfo));
+        localStorage.removeItem("im_invoice_items");
+        localStorage.removeItem("im_client_info");
         showStatus("Invoice reset completed.");
     };
 
@@ -1273,11 +1295,9 @@ function setupEventListeners() {
     const addInvoiceOpt = document.getElementById("add-invoice-menu-opt");
     if (addInvoiceOpt) {
         addInvoiceOpt.addEventListener("click", () => {
-            if (confirm("Are you sure you want to create a new invoice? This will clear the active sheet.")) {
-                clearActiveInvoiceData();
-                closeInvoicesDashboard();
-                alert("New invoice loaded successfully!");
-            }
+            clearActiveInvoiceData();
+            closeInvoicesDashboard();
+            showStatus("New invoice ready.");
         });
     }
 
@@ -1330,7 +1350,60 @@ function setupEventListeners() {
     const emailInvoiceBtn = document.getElementById("email-invoice-btn");
     if (emailInvoiceBtn) {
         emailInvoiceBtn.addEventListener("click", () => {
-            if (!validateInvoice()) return;
+            // 1. Check if Customer Name is filled
+            const clientName = (document.getElementById("preview-client-name")?.innerText || "").trim();
+            if (!clientName || clientName === "Customer Name" || clientName === "Hospital / Customer Name") {
+                showStatus("Please enter Customer Name before emailing.", "error");
+                const previewEl = document.getElementById("preview-client-name");
+                if (previewEl) {
+                    previewEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                    previewEl.focus();
+                    previewEl.style.borderColor = "#ef4444";
+                    previewEl.style.boxShadow = "0 0 0 2px rgba(239, 68, 68, 0.25)";
+                    setTimeout(() => {
+                        previewEl.style.borderColor = "";
+                        previewEl.style.boxShadow = "";
+                    }, 3000);
+                }
+                return;
+            }
+
+            // 2. Check if at least one item description is entered
+            const validItems = state.invoiceItems && state.invoiceItems.filter(item => (item.description || "").trim() !== "");
+            if (!validItems || validItems.length === 0) {
+                showStatus("Please add at least 1 item before emailing.", "error");
+                const firstDesc = document.querySelector("#invoice-tbody .desc-input");
+                if (firstDesc) {
+                    firstDesc.scrollIntoView({ behavior: "smooth", block: "center" });
+                    firstDesc.focus();
+                    firstDesc.style.borderColor = "#ef4444";
+                    firstDesc.style.boxShadow = "0 0 0 2px rgba(239, 68, 68, 0.25)";
+                    setTimeout(() => {
+                        firstDesc.style.borderColor = "";
+                        firstDesc.style.boxShadow = "";
+                    }, 3000);
+                }
+                return;
+            }
+
+            // 3. Check if Total Amount is greater than zero
+            const grandTotal = parseFloat(state.totals?.grandTotal || 0);
+            if (grandTotal <= 0) {
+                showStatus("Total amount cannot be ₹0.00. Please enter rate and quantity.", "error");
+                const firstRate = document.querySelector("#invoice-tbody .rate-input");
+                if (firstRate) {
+                    firstRate.scrollIntoView({ behavior: "smooth", block: "center" });
+                    firstRate.focus();
+                    firstRate.style.borderColor = "#ef4444";
+                    firstRate.style.boxShadow = "0 0 0 2px rgba(239, 68, 68, 0.25)";
+                    setTimeout(() => {
+                        firstRate.style.borderColor = "";
+                        firstRate.style.boxShadow = "";
+                    }, 3000);
+                }
+                return;
+            }
+
             const activeObj = getActiveInvoiceObj();
             openEmailInvoiceModal(activeObj);
         });
@@ -1725,8 +1798,13 @@ function renderInvoiceRows() {
         const descVal = item.description || '';
         const sizeVal = item.size || '-';
         const qtyVal = item.qty || 1;
+        const hasRate = item.rate !== undefined && item.rate !== null && item.rate !== "" && parseFloat(item.rate) > 0;
         const rateVal = parseFloat(item.rate || 0).toFixed(2);
         const amountVal = ((item.qty || 0) * (item.rate || 0)).toFixed(2);
+        const rateInputVal = hasRate ? item.rate : '';
+        const amountInputVal = hasRate ? amountVal : '';
+        const printRateText = hasRate ? `₹${rateVal}` : '';
+        const printAmountText = hasRate ? `₹${amountVal}` : '';
 
         let sizeCellHtml = `
             <div class="size-autocomplete">
@@ -1753,12 +1831,12 @@ function renderInvoiceRows() {
                 <span class="print-text print-qty" style="text-align:center;">${qtyVal}</span>
             </td>
             <td>
-                <input type="number" class="table-input num-input rate-input" value="${item.rate || 0}" min="0" step="any" autocomplete="off">
-                <span class="print-text print-rate" style="text-align:right;">₹${rateVal}</span>
+                <input type="number" class="table-input num-input rate-input" value="${rateInputVal}" placeholder="0.00" min="0" step="any" autocomplete="off">
+                <span class="print-text print-rate" style="text-align:right;">${printRateText}</span>
             </td>
             <td>
-                <input type="number" class="table-input num-input amount-input" value="${amountVal}" min="0" step="any" style="font-weight: 600;" autocomplete="off">
-                <span class="print-text print-amount" style="text-align:right; font-weight:600;">₹${amountVal}</span>
+                <input type="number" class="table-input num-input amount-input" value="${amountInputVal}" placeholder="0.00" min="0" step="any" style="font-weight: 600;" autocomplete="off">
+                <span class="print-text print-amount" style="text-align:right; font-weight:600;">${printAmountText}</span>
             </td>
             <td class="actions-col" style="text-align: center;">
                 <button type="button" class="btn-delete-row" title="Delete Row">×</button>
@@ -2265,15 +2343,103 @@ function updateCatalogBadge(count, filename) {
 }
 
 let statusTimeout = null;
-function showStatus(msg) {
+function showStatus(msg, type = "info") {
     const statusText = document.getElementById("workspace-status");
     if (statusText) {
         statusText.innerText = msg;
+        if (type === "error") {
+            statusText.style.color = "#ef4444";
+            statusText.style.fontWeight = "700";
+        } else {
+            statusText.style.color = "";
+            statusText.style.fontWeight = "";
+        }
         if (statusTimeout) clearTimeout(statusTimeout);
         statusTimeout = setTimeout(() => {
             statusText.innerText = "Ready";
-        }, 3000);
+            statusText.style.color = "";
+            statusText.style.fontWeight = "";
+        }, 3500);
     }
+}
+
+// Admin Password Verification (Accepts 'srrortho' and '2025' like Quotation)
+function promptAdminPassword(onSuccess, options = {}) {
+    const modal = document.getElementById("admin-password-modal");
+    const input = document.getElementById("admin-modal-input");
+    const errorEl = document.getElementById("admin-modal-error");
+    const titleEl = document.getElementById("admin-modal-title");
+    const msgEl = document.getElementById("admin-modal-msg");
+    const confirmBtn = document.getElementById("confirm-admin-password-btn");
+    const cancelBtn = document.getElementById("cancel-admin-password-btn");
+    const closeBtn = document.getElementById("close-admin-password-btn");
+
+    if (!modal || !input) {
+        const entered = prompt(options.message || "Enter admin password to perform this action:");
+        if (entered === "srrortho" || entered === "2025") {
+            if (onSuccess) onSuccess();
+        } else if (entered !== null) {
+            alert("Access Denied: Incorrect admin password.");
+        }
+        return;
+    }
+
+    if (titleEl && options.title) titleEl.innerText = options.title;
+    else if (titleEl) titleEl.innerText = "Admin Required";
+
+    if (msgEl && options.message) msgEl.innerText = options.message;
+    else if (msgEl) msgEl.innerText = "Enter admin password to perform this action:";
+
+    if (confirmBtn && options.confirmText) confirmBtn.innerText = options.confirmText;
+    else if (confirmBtn) confirmBtn.innerText = "Confirm Delete";
+
+    input.value = "";
+    if (errorEl) errorEl.style.display = "none";
+    modal.style.display = "flex";
+    setTimeout(() => input.focus(), 60);
+
+    const cleanup = () => {
+        confirmBtn?.removeEventListener("click", handleConfirm);
+        cancelBtn?.removeEventListener("click", closeModal);
+        closeBtn?.removeEventListener("click", closeModal);
+        input?.removeEventListener("keydown", handleKeyDown);
+    };
+
+    const closeModal = () => {
+        modal.style.display = "none";
+        input.value = "";
+        if (errorEl) errorEl.style.display = "none";
+        cleanup();
+    };
+
+    const handleConfirm = () => {
+        const pass = (input.value || "").trim();
+        if (pass === "srrortho" || pass === "2025") {
+            closeModal();
+            if (onSuccess) onSuccess();
+        } else {
+            if (errorEl) {
+                errorEl.style.display = "block";
+            } else {
+                alert("Access Denied: Incorrect admin password.");
+            }
+            input.select();
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            handleConfirm();
+        } else if (e.key === "Escape") {
+            closeModal();
+        }
+    };
+
+    confirmBtn?.addEventListener("click", handleConfirm);
+    cancelBtn?.addEventListener("click", closeModal);
+    closeBtn?.addEventListener("click", closeModal);
+    input?.addEventListener("keydown", handleKeyDown);
 }
 
 // Format dates nicely e.g., 2026-06-15 -> 15-Jun-2026
@@ -2436,7 +2602,7 @@ function renderCustomerList() {
         
         item.querySelector(".btn-delete-saved").addEventListener("click", (e) => {
             e.stopPropagation();
-            if (confirm(`Are you sure you want to delete customer ${cust.name}?`)) {
+            promptAdminPassword(() => {
                 state.customers.splice(idx, 1);
                 renderCustomerList();
                 populateCustomerSelector();
@@ -2446,7 +2612,10 @@ function renderCustomerList() {
                 if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
                     syncCustomersWithGDrive(true);
                 }
-            }
+            }, {
+                title: "Delete Customer",
+                message: `Are you sure you want to delete customer ${cust.name}? Enter admin password to confirm:`
+            });
         });
         
         listEl.appendChild(item);
@@ -2607,11 +2776,19 @@ function renderSavedInvoicesList() {
         
         item.querySelector(".btn-delete-saved").addEventListener("click", (e) => {
             e.stopPropagation();
-            if (confirm(`Are you sure you want to delete invoice ${inv.invNumber || 'Draft'}?`)) {
+            const invNum = inv.invNumber || 'Draft';
+            promptAdminPassword(() => {
                 state.savedInvoices.splice(idx, 1);
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({ action: 'DELETE_CASH_INVOICE', payload: inv.invNumber }, '*');
+                }
                 renderSavedInvoicesList();
-                showStatus(`Deleted invoice ${inv.invNumber || 'Draft'}`);
-            }
+                renderDashboardInvoicesList();
+                showStatus(`Deleted invoice ${invNum}`);
+            }, {
+                title: "Delete Invoice",
+                message: `Are you sure you want to delete invoice ${invNum}? Enter admin password to confirm:`
+            });
         });
         
         listEl.appendChild(item);
@@ -2713,7 +2890,6 @@ function showCustomerRecommendations(query, container) {
             div.style.padding = "8px 12px";
             div.style.cursor = "pointer";
             div.style.borderBottom = "1px solid var(--border-color, #f1f5f9)";
-            div.style.background = "#ffffff";
             div.innerHTML = `
                 <div style="font-weight: 600; font-size: 12px; color: #0f172a; display: flex; justify-content: space-between; align-items: center;">
                     <span>${cust.name}</span>
@@ -2801,7 +2977,7 @@ function renderModalCustomerList(filterText = "") {
         // Delete handler
         item.querySelector(".btn-delete-saved").addEventListener("click", (e) => {
             e.stopPropagation();
-            if (confirm(`Are you sure you want to delete customer ${cust.name}?`)) {
+            promptAdminPassword(() => {
                 state.customers.splice(originalIdx, 1);
                 renderModalCustomerList(filterText);
                 populateCustomerSelector();
@@ -2811,37 +2987,89 @@ function renderModalCustomerList(filterText = "") {
                 if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
                     syncCustomersWithGDrive(true);
                 }
-            }
+            }, {
+                title: "Delete Customer",
+                message: `Are you sure you want to delete customer ${cust.name}? Enter admin password to confirm:`
+            });
         });
         
         listEl.appendChild(item);
     });
 }
 
-// Render the Invoices list inside the Invoices Dashboard Page (with search & payment edit support)
+// Render the Invoices list inside the Invoices Dashboard Page (with KPI cards, search & status filter)
 function renderDashboardInvoicesList(filterText = "") {
     const tbody = document.getElementById("dashboard-invoices-tbody");
-    if (!tbody) {
-        console.warn("[CashInvoice] dashboard-invoices-tbody not found in DOM");
-        return;
-    }
+    if (!tbody) return;
 
-    console.log("[CashInvoice] renderDashboardInvoicesList called, state.savedInvoices count:", state.savedInvoices.length);
+    // 1. Compute & Update Overview KPI Metrics
+    const allInvs = state.savedInvoices || [];
+    const totalCount = allInvs.length;
+    let totalBilled = 0;
+    let totalPaid = 0;
+    let paidCount = 0;
+    let pendingCount = 0;
 
+    allInvs.forEach(inv => {
+        const gt = parseFloat(inv.grandTotal) || 0;
+        const pr = parseFloat(inv.paymentReceived) || 0;
+        totalBilled += gt;
+        totalPaid += pr;
+        if (gt - pr <= 0.01) {
+            paidCount++;
+        } else {
+            pendingCount++;
+        }
+    });
+
+    const totalBalance = Math.max(0, totalBilled - totalPaid);
+    const collectedPercent = totalBilled > 0 ? Math.round((totalPaid / totalBilled) * 100) : 100;
+
+    const fmt = (num) => "₹" + num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const kpiTotalInvs = document.getElementById("kpi-total-invoices");
+    if (kpiTotalInvs) kpiTotalInvs.innerText = totalCount;
+    const kpiInvsSub = document.getElementById("kpi-invoices-sub");
+    if (kpiInvsSub) kpiInvsSub.innerText = `${paidCount} Paid • ${pendingCount} Pending`;
+    const kpiTotalBilled = document.getElementById("kpi-total-billed");
+    if (kpiTotalBilled) kpiTotalBilled.innerText = fmt(totalBilled);
+    const kpiTotalPaid = document.getElementById("kpi-total-paid");
+    if (kpiTotalPaid) kpiTotalPaid.innerText = fmt(totalPaid);
+    const kpiCollectedSub = document.getElementById("kpi-collected-sub");
+    if (kpiCollectedSub) kpiCollectedSub.innerText = `${collectedPercent}% collection rate`;
+    const kpiTotalBalance = document.getElementById("kpi-total-balance");
+    if (kpiTotalBalance) kpiTotalBalance.innerText = fmt(totalBalance);
+
+    const fAll = document.getElementById("filter-all-count");
+    if (fAll) fAll.innerText = totalCount;
+    const fPending = document.getElementById("filter-pending-count");
+    if (fPending) fPending.innerText = pendingCount;
+    const fPaid = document.getElementById("filter-paid-count");
+    if (fPaid) fPaid.innerText = paidCount;
+
+    // 2. Filter list by text and status filter
     const filter = filterText.toLowerCase().trim();
-    const sortedInvoices = sortInvoicesDesc(state.savedInvoices);
+    const sortedInvoices = sortInvoicesDesc(allInvs);
     
-    // When filter is empty, show ALL invoices sorted descending by invoice number
-    const filtered = filter === "" ? sortedInvoices : sortedInvoices.filter(inv =>
-        (inv.invNumber && inv.invNumber.toLowerCase().includes(filter)) ||
-        (inv.dcNumber && inv.dcNumber.toLowerCase().includes(filter)) ||
-        (inv.clientName && inv.clientName.toLowerCase().includes(filter))
-    );
+    const filtered = sortedInvoices.filter(inv => {
+        const matchesText = filter === "" ||
+            (inv.invNumber && inv.invNumber.toLowerCase().includes(filter)) ||
+            (inv.dcNumber && inv.dcNumber.toLowerCase().includes(filter)) ||
+            (inv.clientName && inv.clientName.toLowerCase().includes(filter));
+        
+        if (!matchesText) return false;
 
-    console.log("[CashInvoice] filtered invoices count:", filtered.length);
+        const gt = parseFloat(inv.grandTotal) || 0;
+        const pr = parseFloat(inv.paymentReceived) || 0;
+        const isPaid = (gt - pr) <= 0.01;
+
+        if (activeInvoiceStatusFilter === "paid") return isPaid;
+        if (activeInvoiceStatusFilter === "pending") return !isPaid;
+        return true;
+    });
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="empty-msg" style="text-align:center; padding: 25px 0;">${state.savedInvoices.length === 0 ? 'No saved invoices found.' : 'No matching invoices found.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-msg" style="text-align:center; padding: 40px 0; color:#64748b; font-size:13px;">${totalCount === 0 ? 'No saved invoices found in database.' : 'No matching invoices found for the selected filter.'}</td></tr>`;
         return;
     }
     
@@ -2851,32 +3079,64 @@ function renderDashboardInvoicesList(filterText = "") {
         const grandTotal = parseFloat(inv.grandTotal) || 0;
         const paymentReceived = parseFloat(inv.paymentReceived) || 0;
         const balanceDue = grandTotal - paymentReceived;
-        const balanceHtml = balanceDue <= 0
-            ? '<span style="color:#10b981;font-weight:700;">Paid</span>'
-            : '<span style="color:#ef4444;font-weight:700;">₹' + balanceDue.toFixed(2) + '</span>';
+        const isPaid = balanceDue <= 0.01;
+
+        const statusBadge = isPaid
+            ? '<span style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:700; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0;">✓ Paid</span>'
+            : '<span style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:700; background:#fee2e2; color:#b91c1c; border:1px solid #fecaca;">Due: ₹' + balanceDue.toFixed(2) + '</span>';
+
         const tr = document.createElement('tr');
-        tr.style.borderBottom = '1px solid #f3f4f6';
-        tr.onmouseenter = () => tr.style.background = '#f0fdf4';
+        tr.style.borderBottom = '1px solid #f1f5f9';
+        tr.style.transition = 'background-color 0.15s ease';
+        tr.onmouseenter = () => tr.style.background = '#f8fafc';
         tr.onmouseleave = () => tr.style.background = '';
-        tr.innerHTML = '<td style="padding:12px 16px;"><a href="#" class="inv-num-link" style="font-weight:700;color:#2a9d8f;font-size:13px;text-decoration:underline;cursor:pointer;">' + (inv.invNumber||'-') + '</a>' + (inv.dcNumber ? '<span style="display:block;font-size:11px;color:#9ca3af;margin-top:2px;">DC: ' + inv.dcNumber + '</span>' : '') + '</td><td style="padding:12px 16px;color:#6b7280;font-size:12px;">' + (formatDateString(inv.invDate)||'-') + '</td><td style="padding:12px 16px;font-weight:600;color:#111827;font-size:13px;">' + (inv.clientName||'Walk-in') + '</td><td style="padding:12px 16px;text-align:right;font-weight:700;color:#111827;">₹' + grandTotal.toFixed(2) + '</td><td style="padding:12px 16px;text-align:right;color:#6b7280;">₹' + paymentReceived.toFixed(2) + '</td><td style="padding:12px 16px;text-align:right;">' + balanceHtml + '</td><td style="padding:12px 16px;text-align:center;"><div style="display:flex;gap:6px;justify-content:center;align-items:center;"><button type="button" class="view-inv-btn" style="padding:5px 10px;border-radius:6px;border:1px solid #3b82f6;background:#eff6ff;color:#2563eb;font-size:11px;cursor:pointer;font-weight:600;">&#128065; View</button><button type="button" class="load-inv-btn" style="padding:5px 10px;border-radius:6px;border:1px solid #2a9d8f;background:#2a9d8f;color:#fff;font-size:11px;cursor:pointer;font-weight:600;">&#9998; Edit</button><button type="button" class="pay-quick-btn" style="padding:5px 10px;border-radius:6px;border:1px solid #d1d5db;background:#f9fafb;color:#374151;font-size:11px;cursor:pointer;font-weight:600;">&#128179; Pay</button><button type="button" class="delete-inv-btn" style="padding:5px 8px;border-radius:6px;border:1px solid #fca5a5;background:#fff;color:#ef4444;font-size:13px;cursor:pointer;">X</button></div></td>';
+        tr.innerHTML = `
+            <td style="padding:12px 16px;">
+                <a href="#" class="inv-num-link" style="font-weight:700; color:#0f766e; font-size:13px; text-decoration:none;">${inv.invNumber || 'Draft'}</a>
+                ${inv.dcNumber ? `<span style="display:inline-block; font-size:10.5px; padding:1px 6px; border-radius:4px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; margin-left:6px; font-family:monospace;">DC: ${inv.dcNumber}</span>` : ''}
+            </td>
+            <td style="padding:12px 16px; color:#64748b; font-size:12px;">${formatDateString(inv.invDate) || '-'}</td>
+            <td style="padding:12px 16px; font-weight:600; color:#0f172a; font-size:13px;">
+                ${inv.clientName || 'Walk-in Customer'}
+                ${inv.clientMobile ? `<span style="display:block; font-size:11px; color:#64748b; font-weight:400;">📞 ${inv.clientMobile}</span>` : ''}
+            </td>
+            <td style="padding:12px 16px; text-align:right; font-weight:700; color:#0f172a; font-size:13px;">₹${grandTotal.toFixed(2)}</td>
+            <td style="padding:12px 16px; text-align:right; color:#10b981; font-weight:600; font-size:12.5px;">₹${paymentReceived.toFixed(2)}</td>
+            <td style="padding:12px 16px; text-align:right;">${statusBadge}</td>
+            <td style="padding:12px 20px; text-align:right; white-space:nowrap;">
+                <div style="display:inline-flex; gap:6px; justify-content:flex-end; align-items:center;">
+                    <button type="button" class="view-inv-btn" style="padding:5px 9px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; color:#334155; font-size:11.5px; cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:3px;">👁 View</button>
+                    <button type="button" class="load-inv-btn" style="padding:5px 9px; border-radius:6px; border:1px solid #0f766e; background:#f0fdfa; color:#0f766e; font-size:11.5px; cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:3px;">✏️ Edit</button>
+                    <button type="button" class="pay-quick-btn" style="padding:5px 9px; border-radius:6px; border:1px solid #10b981; background:#f0fdf4; color:#15803d; font-size:11.5px; cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:3px;">💳 Pay</button>
+                    <button type="button" class="email-inv-btn" style="padding:5px 9px; border-radius:6px; border:1px solid #0284c7; background:#f0f9ff; color:#0369a1; font-size:11.5px; cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:3px;">✉️ Email</button>
+                    <button type="button" class="delete-inv-btn" title="Delete Invoice" style="padding:5px 7px; border-radius:6px; border:1px solid #fecaca; background:#fff; color:#ef4444; font-size:12px; cursor:pointer;">🗑</button>
+                </div>
+            </td>
+        `;
+
         const quickPayBtn = tr.querySelector('.pay-quick-btn');
         const loadBtn = tr.querySelector('.load-inv-btn');
         const deleteBtn = tr.querySelector('.delete-inv-btn');
         const viewBtn = tr.querySelector('.view-inv-btn');
+        const emailBtn = tr.querySelector('.email-inv-btn');
         if (viewBtn) viewBtn.addEventListener('click', () => openViewInvoiceModal(inv));
+        if (emailBtn) emailBtn.addEventListener('click', () => openEmailInvoiceModal(inv));
         const invNumLink = tr.querySelector('.inv-num-link');
         if (invNumLink) invNumLink.addEventListener('click', (e) => { e.preventDefault(); openViewInvoiceModal(inv); });
-        if (quickPayBtn) quickPayBtn.addEventListener('click', () => quickPayInvoice(inv, originalIdx));
+        if (quickPayBtn) quickPayBtn.addEventListener('click', () => openRecordPaymentModal(inv, originalIdx));
         if (loadBtn) loadBtn.addEventListener('click', () => { loadSavedInvoice(inv); closeInvoicesDashboard(); });
         if (deleteBtn) deleteBtn.addEventListener('click', () => {
-            if (confirm('Delete invoice ' + inv.invNumber + '?')) {
+            promptAdminPassword(() => {
                 state.savedInvoices.splice(originalIdx, 1);
                 if (window.parent && window.parent !== window) window.parent.postMessage({ action: 'DELETE_CASH_INVOICE', payload: inv.invNumber }, '*');
                 renderDashboardInvoicesList(filterText);
                 renderSavedInvoicesList();
                 showStatus('Deleted invoice ' + inv.invNumber);
                 if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) syncInvoicesWithGDrive(true);
-            }
+            }, {
+                title: "Delete Invoice",
+                message: `Are you sure you want to delete invoice ${inv.invNumber}? Enter admin password to confirm:`
+            });
         });
         tbody.appendChild(tr);
     });
@@ -3144,9 +3404,13 @@ function openEmailInvoiceModal(inv) {
     currentEmailInvoice = inv || getActiveInvoiceObj();
     const invNum = currentEmailInvoice.invNumber || 'Draft';
     const clientName = currentEmailInvoice.clientName || 'Walk-in Customer';
-    const clientEmail = currentEmailInvoice.clientEmail || state.clientInfo.email || '';
+    const domEmail = (document.getElementById('preview-client-email')?.innerText || '').trim();
+    const clientEmail = currentEmailInvoice.clientEmail || state.clientInfo.email || domEmail || '';
     const grandTotal = parseFloat(currentEmailInvoice.grandTotal || 0).toFixed(2);
     const invDate = formatDateString(currentEmailInvoice.invDate) || new Date().toLocaleDateString();
+
+    const statusEl = document.getElementById('email-modal-status');
+    if (statusEl) statusEl.style.display = 'none';
 
     const toInput = document.getElementById('email-to-input');
     const subjectInput = document.getElementById('email-subject-input');
@@ -3182,7 +3446,29 @@ function closeEmailInvoiceModal() {
     if (modal) modal.style.display = 'none';
 }
 
-// Generate PDF & Send Email via Vercel serverless / Resend endpoint
+
+// Inline status helper for email modal (replaces window.alert)
+function showEmailModalStatus(msg, type = "info") {
+    const el = document.getElementById("email-modal-status");
+    if (!el) return;
+    el.innerText = msg;
+    el.style.display = "block";
+    if (type === "error") {
+        el.style.background = "#fee2e2";
+        el.style.color = "#991b1b";
+        el.style.border = "1px solid #fecaca";
+    } else if (type === "success") {
+        el.style.background = "#dcfce7";
+        el.style.color = "#166534";
+        el.style.border = "1px solid #bbf7d0";
+    } else {
+        el.style.background = "#e0f2fe";
+        el.style.color = "#0369a1";
+        el.style.border = "1px solid #bae6fd";
+    }
+}
+
+// Generate PDF & Send Email or Fallback gracefully without disruptive alerts
 async function sendCashInvoiceEmail() {
     const toInput = document.getElementById('email-to-input');
     const subjectInput = document.getElementById('email-subject-input');
@@ -3194,19 +3480,19 @@ async function sendCashInvoiceEmail() {
     const bodyText = bodyInput ? bodyInput.value.trim() : '';
 
     if (!toEmail) {
-        showStatus('Please enter recipient email address', 'error');
-        alert('Please enter a recipient email address.');
+        showEmailModalStatus('Please enter a recipient email address.', 'error');
         if (toInput) toInput.focus();
         return;
     }
 
     const activeObj = currentEmailInvoice && currentEmailInvoice.invNumber ? currentEmailInvoice : getActiveInvoiceObj();
-    const invNum = (activeObj.invNumber || 'Draft').replace(/[/\\?%*:|"<>]/g, '_');
+    const invNum = (activeObj.invNumber || 'Draft').replace(/[/\?%*:|"<>]/g, '_');
 
     if (sendBtn) {
         sendBtn.disabled = true;
         sendBtn.innerText = '⏳ Generating PDF & Sending...';
     }
+    showEmailModalStatus('Preparing invoice PDF and connecting to email service...', 'info');
 
     try {
         // Generate temporary offscreen printable invoice container
@@ -3218,81 +3504,133 @@ async function sendCashInvoiceEmail() {
         tempContainer.style.background = '#ffffff';
         tempContainer.style.zIndex = '-9999';
 
-        // Get print HTML string
         const htmlContent = getPrintableInvoiceHTML(activeObj);
         tempContainer.innerHTML = htmlContent;
         document.body.appendChild(tempContainer);
 
-        // Convert DOM element to Canvas
-        const targetElement = tempContainer.querySelector('#printable-inv-area') || tempContainer;
-        const canvas = await window.html2canvas(targetElement, { scale: 2, useCORS: true, logging: false });
-        document.body.removeChild(tempContainer);
+        let base64Content = null;
+        let pdf = null;
+        try {
+            const targetElement = tempContainer.querySelector('#printable-inv-area') || tempContainer;
+            if (window.html2canvas && window.jspdf) {
+                const canvas = await window.html2canvas(targetElement, { scale: 2, useCORS: true, logging: false });
+                const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                const { jsPDF } = window.jspdf;
+                pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const imgProps = pdf.getImageProperties(imgData);
+                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                const pdfDataUri = pdf.output('datauristring');
+                base64Content = pdfDataUri.split(',')[1];
+            }
+        } catch (pdfErr) {
+            console.warn('[CashInvoice] PDF generation note:', pdfErr);
+        } finally {
+            document.body.removeChild(tempContainer);
+        }
 
-        // Convert Canvas to PDF
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const imgProps = pdf.getImageProperties(imgData);
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-
-        const pdfDataUri = pdf.output('datauristring');
-        const base64Content = pdfDataUri.split(',')[1];
         const fileName = `Cash_Memo_${invNum}.pdf`;
 
-        // Send request to /api/send-email
-        const res = await fetch('/api/send-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                to: toEmail,
-                subject: subject,
-                body: bodyText,
-                text: bodyText,
-                attachments: [
-                    {
-                        filename: fileName,
-                        content: base64Content
-                    }
-                ]
-            })
-        });
-
-        const resText = await res.text();
-        let data = {};
+        // Attempt serverless dispatch
+        let sentDirectly = false;
         try {
-            data = JSON.parse(resText);
-        } catch (e) {
-            console.warn('[CashInvoice] /api/send-email non-JSON response:', resText);
+            const res = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: toEmail,
+                    subject: subject,
+                    body: bodyText,
+                    text: bodyText,
+                    attachments: base64Content ? [{ filename: fileName, content: base64Content }] : []
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                if (data.success || data.id) {
+                    sentDirectly = true;
+                }
+            }
+        } catch (netErr) {
+            console.warn('[CashInvoice] /api/send-email direct dispatch unavailable:', netErr);
         }
 
-        if (res.ok && data.success) {
-            showStatus(`Email sent successfully to ${toEmail}`);
-            alert(`Email sent successfully to ${toEmail}`);
-            closeEmailInvoiceModal();
-        } else if (res.status === 404) {
-            const devNotice = `The serverless endpoint (/api/send-email) runs when deployed on Vercel.\n\nIn local Vite dev mode, /api/send-email is not hosted on localhost.\n\nWould you like to open your default email app with prefilled details?`;
-            if (confirm(devNotice)) {
-                const mailtoUrl = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
-                window.open(mailtoUrl, '_blank');
+        if (sentDirectly) {
+            showEmailModalStatus(`✓ Email successfully sent to ${toEmail}!`, 'success');
+            showStatus(`Email dispatched to ${toEmail}`);
+            setTimeout(() => {
                 closeEmailInvoiceModal();
-            } else {
-                throw new Error('Local dev serverless endpoint (/api/send-email) returned 404.');
-            }
+            }, 1500);
         } else {
-            const errDetail = data.message || (resText && resText.length < 200 ? resText : `Server returned error (${res.status})`);
-            throw new Error(errDetail);
+            // Smooth Fallback: Open default mail app and download the PDF
+            if (pdf) {
+                pdf.save(fileName);
+            }
+            const mailtoUrl = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+            window.open(mailtoUrl, '_blank');
+            showEmailModalStatus(`✓ Mail client opened & ${fileName} downloaded ready to attach!`, 'success');
+            showStatus(`Email client opened`);
         }
     } catch (err) {
-        console.error('[CashInvoice] Email dispatch error:', err);
-        showStatus(`Email Error: ${err.message}`, 'error');
-        alert(`Failed to send email: ${err.message}`);
+        console.error('[CashInvoice] Email error:', err);
+        showEmailModalStatus(`Notice: ${err.message || 'Could not send directly'}. Please use "Open in Mail App".`, 'error');
     } finally {
         if (sendBtn) {
             sendBtn.disabled = false;
             sendBtn.innerText = '✉️ Send Email';
         }
+    }
+}
+
+// Wire extra email modal helpers (Copy text & Mailto button)
+function setupEmailModalHelpers() {
+    const copyBtn = document.getElementById("copy-email-text-btn");
+    if (copyBtn) {
+        copyBtn.addEventListener("click", () => {
+            const bodyInput = document.getElementById("email-body-input");
+            if (bodyInput && bodyInput.value) {
+                navigator.clipboard.writeText(bodyInput.value).then(() => {
+                    showEmailModalStatus("✓ Message body copied to clipboard!", "success");
+                }).catch(() => {
+                    bodyInput.select();
+                    document.execCommand("copy");
+                    showEmailModalStatus("✓ Copied to clipboard!", "success");
+                });
+            }
+        });
+    }
+
+    const mailtoBtn = document.getElementById("mailto-fallback-btn");
+    if (mailtoBtn) {
+        mailtoBtn.addEventListener("click", () => {
+            const toInput = document.getElementById("email-to-input");
+            const subjectInput = document.getElementById("email-subject-input");
+            const bodyInput = document.getElementById("email-body-input");
+
+            const toEmail = toInput ? toInput.value.trim() : "";
+            const subject = subjectInput ? subjectInput.value.trim() : "";
+            const bodyText = bodyInput ? bodyInput.value.trim() : "";
+
+            const mailtoUrl = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+            
+            // Robust mailto trigger across embedded iframes & browsers
+            const link = document.createElement("a");
+            link.href = mailtoUrl;
+            link.style.display = "none";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            try {
+                if (window.top && window.top !== window) {
+                    window.top.location.href = mailtoUrl;
+                }
+            } catch (_) {}
+
+            showEmailModalStatus("✓ Launched default mail application with prefilled memo details.", "success");
+        });
     }
 }
 
@@ -3322,6 +3660,9 @@ function showEmbedInvoiceView(inv) {
                     📄 Cash Memo Details — ${inv.invNumber || ''}
                 </span>
                 <div style="display: flex; gap: 8px;">
+                    <button id="embed-email-btn" type="button" style="padding: 6px 14px; background: #0284c7; color: white; font-weight: 700; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                        ✉️ Email
+                    </button>
                     <button id="embed-whatsapp-btn" type="button" style="padding: 6px 14px; background: #16a34a; color: white; font-weight: 700; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px;">
                         📲 Share WhatsApp
                     </button>
@@ -3338,6 +3679,11 @@ function showEmbedInvoiceView(inv) {
 
     document.body.style.background = "#0f172a";
     document.body.style.overflow = "auto";
+
+    const embedEmailBtn = document.getElementById("embed-email-btn");
+    if (embedEmailBtn) {
+        embedEmailBtn.onclick = () => openEmailInvoiceModal(inv);
+    }
 
     const whatsappBtn = document.getElementById("embed-whatsapp-btn");
     if (whatsappBtn) {
@@ -3514,7 +3860,7 @@ function renderDashboardCustomersList(filterText = "") {
 
         if (deleteBtn) {
             deleteBtn.addEventListener("click", () => {
-                if (confirm(`Delete customer "${cust.name}"?`)) {
+                promptAdminPassword(() => {
                     const idx = state.customers.findIndex(c => c.name === cust.name && c.mobile === cust.mobile);
                     if (idx !== -1) {
                         state.customers.splice(idx, 1);
@@ -3524,7 +3870,10 @@ function renderDashboardCustomersList(filterText = "") {
                         populateCustomerSelector();
                         showStatus(`Deleted customer ${cust.name}`);
                     }
-                }
+                }, {
+                    title: "Delete Customer",
+                    message: `Are you sure you want to delete customer "${cust.name}"? Enter admin password to confirm:`
+                });
             });
         }
 
@@ -3545,8 +3894,13 @@ function switchDashboardTab(tab) {
     const tabCustBtn = document.getElementById("tab-customers-btn");
     const tabRepBtn = document.getElementById("tab-reports-btn");
 
+    const kpiGrid = document.getElementById("dashboard-kpi-grid");
+    const filterPills = document.getElementById("invoices-filter-pills");
+    if (kpiGrid) kpiGrid.style.display = tab === "invoices" ? "grid" : "none";
+    if (filterPills) filterPills.style.display = tab === "invoices" ? "flex" : "none";
+
     if (dashboardTitle) {
-        if (tab === "invoices") dashboardTitle.innerText = "Saved Invoices & Payments";
+        if (tab === "invoices") dashboardTitle.innerText = "Cash Invoices & Revenue Dashboard";
         else if (tab === "customers") dashboardTitle.innerText = "Saved Customers Directory";
         else dashboardTitle.innerText = "Used Items Report";
     }
@@ -4316,3 +4670,132 @@ async function syncCatalogWithGDrive(silent = false) {
 
 
 
+
+
+// Global state for active payment recording
+let activePaymentInvoice = null;
+let activePaymentIdx = -1;
+
+function openRecordPaymentModal(inv, originalIdx) {
+    activePaymentInvoice = inv;
+    activePaymentIdx = originalIdx >= 0 ? originalIdx : state.savedInvoices.findIndex(i => i.invNumber === inv.invNumber);
+
+    const modal = document.getElementById("record-payment-modal");
+    if (!modal) return;
+
+    const gt = parseFloat(inv.grandTotal) || 0;
+    const pr = parseFloat(inv.paymentReceived) || 0;
+    const bal = Math.max(0, gt - pr);
+
+    const sub = document.getElementById("pay-modal-inv-subtitle");
+    if (sub) sub.innerText = `${inv.invNumber || 'Draft'} • ${inv.clientName || 'Customer'}`;
+
+    const tEl = document.getElementById("pay-modal-total");
+    if (tEl) tEl.innerText = "₹" + gt.toFixed(2);
+
+    const rEl = document.getElementById("pay-modal-received");
+    if (rEl) rEl.innerText = "₹" + pr.toFixed(2);
+
+    const bEl = document.getElementById("pay-modal-balance");
+    if (bEl) bEl.innerText = "₹" + bal.toFixed(2);
+
+    const amountInput = document.getElementById("pay-modal-amount-input");
+    if (amountInput) {
+        amountInput.value = bal > 0 ? bal.toFixed(2) : "0.00";
+        amountInput.max = gt.toFixed(2);
+    }
+
+    const notesInput = document.getElementById("pay-modal-notes-input");
+    if (notesInput) notesInput.value = "";
+
+    modal.style.display = "flex";
+    if (amountInput) amountInput.focus();
+}
+
+function closeRecordPaymentModal() {
+    const modal = document.getElementById("record-payment-modal");
+    if (modal) modal.style.display = "none";
+    activePaymentInvoice = null;
+    activePaymentIdx = -1;
+}
+
+// Wire Record Payment Modal Buttons once DOM is ready
+function setupRecordPaymentModal() {
+    const closeBtn = document.getElementById("close-pay-modal-btn");
+    const cancelBtn = document.getElementById("pay-modal-cancel-btn");
+    const fullBtn = document.getElementById("pay-modal-full-btn");
+    const saveBtn = document.getElementById("pay-modal-save-btn");
+
+    if (closeBtn) closeBtn.addEventListener("click", closeRecordPaymentModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeRecordPaymentModal);
+
+    if (fullBtn) {
+        fullBtn.addEventListener("click", () => {
+            if (!activePaymentInvoice) return;
+            const gt = parseFloat(activePaymentInvoice.grandTotal) || 0;
+            const pr = parseFloat(activePaymentInvoice.paymentReceived) || 0;
+            const bal = Math.max(0, gt - pr);
+            const amountInput = document.getElementById("pay-modal-amount-input");
+            if (amountInput) amountInput.value = bal.toFixed(2);
+        });
+    }
+
+    if (saveBtn) {
+        saveBtn.addEventListener("click", () => {
+            if (!activePaymentInvoice) return;
+            const amountInput = document.getElementById("pay-modal-amount-input");
+            const modeSelect = document.getElementById("pay-modal-mode-select");
+            const notesInput = document.getElementById("pay-modal-notes-input");
+
+            const payAmount = parseFloat(amountInput ? amountInput.value : 0);
+            if (isNaN(payAmount) || payAmount <= 0) {
+                alert("Please enter a valid positive payment amount.");
+                if (amountInput) amountInput.focus();
+                return;
+            }
+
+            const currentPr = parseFloat(activePaymentInvoice.paymentReceived) || 0;
+            const gt = parseFloat(activePaymentInvoice.grandTotal) || 0;
+            const newPr = Math.min(gt, currentPr + payAmount);
+
+            // Update in state.savedInvoices
+            const targetIdx = activePaymentIdx >= 0 ? activePaymentIdx : state.savedInvoices.findIndex(i => i.invNumber === activePaymentInvoice.invNumber);
+            if (targetIdx !== -1) {
+                state.savedInvoices[targetIdx].paymentReceived = newPr;
+                if (notesInput && notesInput.value.trim()) {
+                    const existingNotes = state.savedInvoices[targetIdx].notes || "";
+                    const newNote = `[Payment of ₹${payAmount.toFixed(2)} via ${modeSelect ? modeSelect.value : 'Cash'}: ${notesInput.value.trim()}]`;
+                    state.savedInvoices[targetIdx].notes = existingNotes ? existingNotes + " " + newNote : newNote;
+                }
+            }
+
+            // Persist to local storage
+            localStorage.setItem("im_saved_invoices", JSON.stringify(state.savedInvoices));
+
+            // Sync with host React app and Firestore
+            if (window.parent && window.parent !== window) {
+                const updatedObj = targetIdx !== -1 ? state.savedInvoices[targetIdx] : activePaymentInvoice;
+                window.parent.postMessage({ action: "SAVE_CASH_INVOICE", payload: updatedObj }, "*");
+            }
+
+            // Re-render
+            const searchInput = document.getElementById("dashboard-inv-search");
+            renderDashboardInvoicesList(searchInput ? searchInput.value : "");
+            renderSavedInvoicesList();
+
+            showStatus(`Recorded payment of ₹${payAmount.toFixed(2)} for ${activePaymentInvoice.invNumber || 'Invoice'}`);
+            closeRecordPaymentModal();
+
+            // Background Google Drive sync
+            if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
+                syncInvoicesWithGDrive(true);
+            }
+        });
+    }
+}
+
+// Initialize payment modal
+setupRecordPaymentModal();
+
+// Initialize email helpers
+setupEmailModalHelpers();

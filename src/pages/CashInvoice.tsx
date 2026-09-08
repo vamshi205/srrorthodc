@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
 import { auth } from "@/firebase";
 import {
@@ -14,6 +14,7 @@ import { loadSavedDcs, transitionSavedDc } from "@/lib/savedDcStorage";
 
 export default function CashInvoice() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'light';
   });
@@ -32,8 +33,15 @@ export default function CashInvoice() {
   const [iframeSrc, setIframeSrc] = useState(() => {
     const search = window.location.search;
     const sep = search ? '&' : '?';
-    return `/cash-invoice/index.html${search}${sep}t=${Date.now()}`;
+    return `/cash-invoice/index.html${search}${sep}v=3&t=${Date.now()}`;
   });
+
+  useEffect(() => {
+    // When navigating or route search changes, ensure iframe reflects current query or fresh state
+    const search = location.search;
+    const sep = search ? '&' : '?';
+    setIframeSrc(`/cash-invoice/index.html${search}${sep}v=3&t=${Date.now()}`);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     // Skip the inner auth overlay screen in Cash Invoice Maker
@@ -43,7 +51,7 @@ export default function CashInvoice() {
     const parentHash = window.location.hash;
     if (parentHash && parentHash.includes("access_token")) {
       const search = window.location.search;
-      setIframeSrc(`/cash-invoice/index.html${search}${search ? '&' : '?'}t=${Date.now()}${parentHash}`);
+      setIframeSrc(`/cash-invoice/index.html${search}${search ? '&' : '?'}v=3&t=${Date.now()}${parentHash}`);
       // Clean parent URL hash so it doesn't linger in the address bar
       setTimeout(() => {
         window.history.replaceState(null, "", window.location.pathname + window.location.search);
@@ -146,7 +154,7 @@ export default function CashInvoice() {
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
-      <main className="flex-grow flex flex-col px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
+      <main className="flex-grow flex flex-col px-2 sm:px-4 lg:px-6 pt-2 pb-4 overflow-x-hidden">
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}
