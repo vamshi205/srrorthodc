@@ -54,6 +54,8 @@ export type SavedDc = {
   returnedRemarks?: string;
   invoiceRef?: string;
   invoiceRemarks?: string;
+  invoiceUrl?: string;
+  isTaxInvoice?: boolean;
   cashAt?: string;
   cashAmount?: number;
   cashRemarks?: string;

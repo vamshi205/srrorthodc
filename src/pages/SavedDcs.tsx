@@ -9,9 +9,11 @@ import {
   CheckCircle2,
   Download,
   Edit,
+  ExternalLink,
   Eye,
   FileText,
   Filter,
+  Link2,
   IndianRupee,
   Images,
   List,
@@ -178,6 +180,7 @@ const SavedDcs = () => {
   }>({ type: null, dc: null });
   const [returnedByInput, setReturnedByInput] = useState("");
   const [invoiceRefInput, setInvoiceRefInput] = useState("");
+  const [invoiceUrlInput, setInvoiceUrlInput] = useState("");
   const [returnedRemarksInput, setReturnedRemarksInput] = useState("");
   const [invoiceRemarksInput, setInvoiceRemarksInput] = useState("");
   const [cashRemarksInput, setCashRemarksInput] = useState("");
@@ -391,6 +394,19 @@ const SavedDcs = () => {
     if (!selectedDcId) return null;
     return normalizedDcs.find((dc) => dc.id === selectedDcId) ?? null;
   }, [normalizedDcs, selectedDcId]);
+
+  const selectedIsTaxInvoice = useMemo(() => {
+    if (!selectedDc?.invoiceRef) return false;
+    return Boolean(
+      selectedDc.isTaxInvoice ||
+      (!selectedDc.cashAmount && !selectedDc.invoiceRef.startsWith("SRR-"))
+    );
+  }, [selectedDc]);
+
+  const selectedIsCashMemo = useMemo(() => {
+    if (!selectedDc?.invoiceRef) return false;
+    return !selectedIsTaxInvoice;
+  }, [selectedDc, selectedIsTaxInvoice]);
 
   const getDisplayDate = (dc: SavedDc) => {
     if (dc.status === "pending") return dc.savedAt;
@@ -784,6 +800,7 @@ const SavedDcs = () => {
     setActionDialog({ type, dc });
     setReturnedByInput(dc.returnedBy || "");
     setInvoiceRefInput(dc.invoiceRef || "");
+    setInvoiceUrlInput(dc.invoiceUrl || "");
     setReturnedRemarksInput(dc.returnedRemarks || "");
     setInvoiceRemarksInput(dc.invoiceRemarks || "");
     setCashRemarksInput(dc.cashRemarks || "");
@@ -794,6 +811,7 @@ const SavedDcs = () => {
     setActionDialog({ type: null, dc: null });
     setReturnedByInput("");
     setInvoiceRefInput("");
+    setInvoiceUrlInput("");
     setReturnedRemarksInput("");
     setInvoiceRemarksInput("");
     setCashRemarksInput("");
@@ -838,6 +856,7 @@ const SavedDcs = () => {
 
   const handleConfirmInvoice = async (dc: SavedDc) => {
     const invoiceRef = invoiceRefInput.trim();
+    const invoiceUrl = invoiceUrlInput.trim();
     if (!invoiceRef) {
       toast({ title: "Invoice number is required" });
       return;
@@ -851,6 +870,7 @@ const SavedDcs = () => {
         clear: dc.status === "cash" ? (["cashAt", "cashAmount", "cashRemarks"] as any) : [],
         updates: {
           invoiceRef,
+          invoiceUrl: invoiceUrl || undefined,
           invoiceRemarks: invoiceRemarksInput.trim() || "",
           isTaxInvoice: true,
         },
@@ -1003,7 +1023,7 @@ const SavedDcs = () => {
       await transitionSavedDc(dc.id, {
         toStatus: "returned",
         action: "MOVE_BACK_TO_RETURNED",
-        clear: ["invoiceRef", "invoiceRemarks"],
+        clear: ["invoiceRef", "invoiceRemarks", "invoiceUrl", "isTaxInvoice"],
       });
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
@@ -1479,27 +1499,63 @@ const SavedDcs = () => {
                           </Button>
                         )}
 
-                        {selectedDc.status === "returned" && (
+                        {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
                           <Button
                             size="sm"
-                            className="h-7 text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 gap-1 px-2.5"
+                            className="h-7 text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 gap-1 px-2.5 shadow-xs"
                             onClick={() => openActionDialog("invoice", selectedDc)}
                           >
-                            <Receipt className="h-3.5 w-3.5" /> Link Invoice
+                            <Receipt className="h-3.5 w-3.5" /> Link Invoice / GoGSTBill
                           </Button>
                         )}
 
                         {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
                           <Button
                             size="sm"
-                            className="h-7 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-1 px-2.5"
+                            className="h-7 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-1 px-2.5 shadow-xs"
                             onClick={() => handleCreateCashMemoForDc(selectedDc)}
                           >
                             <Receipt className="h-3.5 w-3.5" /> Create Cash Memo
                           </Button>
                         )}
 
-                        {selectedDc.invoiceRef && (
+                        {selectedDc.invoiceRef && selectedIsTaxInvoice && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border-purple-400/50 gap-1 px-2.5"
+                              onClick={() => openActionDialog("invoice", selectedDc)}
+                              title={`Tax Invoice: ${selectedDc.invoiceRef} - Click to update`}
+                            >
+                              <FileText className="h-3.5 w-3.5 text-purple-300" />
+                              <span>Tax Invoice: {selectedDc.invoiceRef}</span>
+                              <Edit className="h-3 w-3 ml-0.5 text-purple-300 opacity-70" />
+                            </Button>
+
+                            {selectedDc.invoiceUrl ? (
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white gap-1 px-2.5 shadow-xs"
+                                onClick={() => window.open(selectedDc.invoiceUrl, '_blank')}
+                                title={`Open GoGSTBill Invoice: ${selectedDc.invoiceUrl}`}
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" /> View GoGSTBill
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white gap-1 px-2.5 shadow-xs"
+                                onClick={() => openActionDialog("invoice", selectedDc)}
+                                title="Enter GoGSTBill URL for this invoice"
+                              >
+                                <Link2 className="h-3.5 w-3.5" /> Enter GoGSTBill URL
+                              </Button>
+                            )}
+                          </>
+                        )}
+
+                        {selectedDc.invoiceRef && selectedIsCashMemo && (
                           <Button
                             size="sm"
                             className="h-7 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-1 px-2.5"
@@ -1509,6 +1565,18 @@ const SavedDcs = () => {
                             }}
                           >
                             <Receipt className="h-3.5 w-3.5" /> View Cash Memo
+                          </Button>
+                        )}
+
+                        {selectedDc.status === "completed" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-slate-300 hover:text-white hover:bg-white/10 gap-1 px-2"
+                            onClick={() => moveBackToReturned(selectedDc)}
+                            title="Move back to Returned"
+                          >
+                            <Undo2 className="h-3.5 w-3.5" /> Move to Returned
                           </Button>
                         )}
 
@@ -1731,10 +1799,52 @@ const SavedDcs = () => {
                                           </>
                                         )}
                                         {dc.status === "completed" && (
-                                          <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
-                                            <Undo2 className="h-4 w-4" />
-                                            Move back to Returned
-                                          </DropdownMenuItem>
+                                          <>
+                                            {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                                              <>
+                                                <DropdownMenuItem
+                                                  onClick={() => openActionDialog("invoice", dc)}
+                                                  className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
+                                                >
+                                                  <FileText className="h-4 w-4 text-purple-600" />
+                                                  Tax Invoice: {dc.invoiceRef}
+                                                </DropdownMenuItem>
+                                                {dc.invoiceUrl ? (
+                                                  <DropdownMenuItem
+                                                    onClick={() => window.open(dc.invoiceUrl, '_blank')}
+                                                    className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                                  >
+                                                    <ExternalLink className="h-4 w-4 text-emerald-600" />
+                                                    Open GoGSTBill
+                                                  </DropdownMenuItem>
+                                                ) : (
+                                                  <DropdownMenuItem
+                                                    onClick={() => openActionDialog("invoice", dc)}
+                                                    className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
+                                                  >
+                                                    <Link2 className="h-4 w-4 text-indigo-600" />
+                                                    Enter GoGSTBill URL
+                                                  </DropdownMenuItem>
+                                                )}
+                                              </>
+                                            )}
+                                            {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                                              <DropdownMenuItem
+                                                onClick={() => {
+                                                  setViewingCashMemoRef(dc.invoiceRef!);
+                                                  setCashMemoModalOpen(true);
+                                                }}
+                                                className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
+                                              >
+                                                <Receipt className="h-4 w-4 text-blue-600" />
+                                                View Cash Memo ({dc.invoiceRef})
+                                              </DropdownMenuItem>
+                                            )}
+                                            <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
+                                              <Undo2 className="h-4 w-4" />
+                                              Move back to Returned
+                                            </DropdownMenuItem>
+                                          </>
                                         )}
                                         {dc.status === "returned" && (
                                           <DropdownMenuItem onClick={() => cancelReturnToPending(dc)} className="gap-2">
@@ -1872,13 +1982,36 @@ const SavedDcs = () => {
                                         <td className="p-3 border-r-2 border-slate-200">
                                           {dc.invoiceRef ? (
                                             (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) ? (
-                                              <span
-                                                className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full shadow-2xs whitespace-nowrap"
-                                                title={`Tax Invoice Number: ${dc.invoiceRef}`}
-                                              >
-                                                <FileText className="w-3 h-3 text-purple-600 shrink-0" />
-                                                <span>{dc.invoiceRef}</span>
-                                              </span>
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                {dc.invoiceUrl ? (
+                                                  <a
+                                                    href={dc.invoiceUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-full shadow-2xs whitespace-nowrap transition-colors"
+                                                    title={`GoGSTBill Invoice: ${dc.invoiceUrl} (Click to open)`}
+                                                  >
+                                                    <FileText className="w-3 h-3 text-purple-600 shrink-0" />
+                                                    <span>{dc.invoiceRef}</span>
+                                                    <ExternalLink className="w-2.5 h-2.5 text-purple-600 ml-0.5" />
+                                                  </a>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      openActionDialog("invoice", dc);
+                                                    }}
+                                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full shadow-2xs whitespace-nowrap transition-colors cursor-pointer"
+                                                    title={`Tax Invoice: ${dc.invoiceRef} (Click to enter GoGSTBill link)`}
+                                                  >
+                                                    <FileText className="w-3 h-3 text-purple-600 shrink-0" />
+                                                    <span>{dc.invoiceRef}</span>
+                                                    <Link2 className="w-2.5 h-2.5 text-purple-500 ml-0.5 opacity-70" />
+                                                  </button>
+                                                )}
+                                              </div>
                                             ) : (
                                               <div className="flex flex-col gap-1 items-start">
                                                 <button
@@ -2087,10 +2220,32 @@ const SavedDcs = () => {
                                               </DropdownMenuItem>
                                             )}
                                             {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                              <DropdownMenuItem disabled className="gap-2 font-bold text-purple-800 bg-purple-50">
-                                                <FileText className="h-4 w-4 text-purple-600" />
-                                                Tax Invoice: {dc.invoiceRef}
-                                              </DropdownMenuItem>
+                                              <>
+                                                <DropdownMenuItem
+                                                  onClick={() => openActionDialog("invoice", dc)}
+                                                  className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
+                                                >
+                                                  <FileText className="h-4 w-4 text-purple-600" />
+                                                  Tax Invoice: {dc.invoiceRef}
+                                                </DropdownMenuItem>
+                                                {dc.invoiceUrl ? (
+                                                  <DropdownMenuItem
+                                                    onClick={() => window.open(dc.invoiceUrl, '_blank')}
+                                                    className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                                  >
+                                                    <ExternalLink className="h-4 w-4 text-emerald-600" />
+                                                    Open GoGSTBill
+                                                  </DropdownMenuItem>
+                                                ) : (
+                                                  <DropdownMenuItem
+                                                    onClick={() => openActionDialog("invoice", dc)}
+                                                    className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
+                                                  >
+                                                    <Link2 className="h-4 w-4 text-indigo-600" />
+                                                    Enter GoGSTBill URL
+                                                  </DropdownMenuItem>
+                                                )}
+                                              </>
                                             )}
                                             {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
                                               <>
@@ -2168,7 +2323,7 @@ const SavedDcs = () => {
           <DialogHeader>
             <DialogTitle>
               {actionDialog.type === "return" && "Mark as Returned"}
-              {actionDialog.type === "invoice" && "Link Invoice"}
+              {actionDialog.type === "invoice" && (actionDialog.dc?.invoiceRef ? "Update Linked Invoice" : "Link Invoice")}
               {actionDialog.type === "cash" && "Move to Cash Queue"}
             </DialogTitle>
             <DialogDescription className="sr-only">
@@ -2218,18 +2373,66 @@ const SavedDcs = () => {
                 <Input
                   value={invoiceRefInput}
                   onChange={(e) => setInvoiceRefInput(e.target.value)}
-                  placeholder="Enter invoice number"
+                  placeholder="Enter invoice number (e.g. 2026/001)"
                   className="mt-1"
                 />
+              </div>
+              <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
+                    <Link2 className="h-3.5 w-3.5 text-purple-600" />
+                    GoGSTBill Invoice Link / URL
+                  </Label>
+                  {typeof navigator !== "undefined" && navigator.clipboard && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text) setInvoiceUrlInput(text.trim());
+                        } catch {
+                          // ignore clipboard read failure
+                        }
+                      }}
+                      className="text-[11px] text-purple-700 hover:text-purple-900 font-semibold underline cursor-pointer"
+                    >
+                      Paste from Clipboard
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-1.5">
+                  <Input
+                    value={invoiceUrlInput}
+                    onChange={(e) => setInvoiceUrlInput(e.target.value)}
+                    placeholder="https://bill.gogstbill.com/wa/s/..."
+                    className="text-xs bg-white"
+                  />
+                  {invoiceUrlInput.trim() && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-9 px-2.5 text-xs border-purple-300 text-purple-800 bg-white hover:bg-purple-100 shrink-0 gap-1"
+                      onClick={() => window.open(invoiceUrlInput.trim(), '_blank')}
+                      title="Test open link in new tab"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 text-purple-600" />
+                      Test
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Direct link from GoGSTBill (WhatsApp/PDF share URL). Allows viewing this invoice directly in 1 click anytime.
+                </p>
               </div>
               <div>
                 <Label>Invoice Remarks</Label>
                 <Textarea
                   value={invoiceRemarksInput}
                   onChange={(e) => setInvoiceRemarksInput(e.target.value)}
-                  placeholder="Add invoice remarks"
+                  placeholder="Add invoice remarks (optional)"
                   className="mt-1 resize-none"
-                  rows={3}
+                  rows={2}
                 />
               </div>
               <div className="flex gap-2">
@@ -2239,7 +2442,7 @@ const SavedDcs = () => {
                   className="gap-2"
                 >
                   {isActionLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  {isActionLoading ? 'Saving...' : 'Link Invoice'}
+                  {isActionLoading ? 'Saving...' : (actionDialog.dc?.invoiceRef ? 'Update Invoice' : 'Link Invoice')}
                 </Button>
                 <Button variant="outline" onClick={closeActionDialog} disabled={isActionLoading}>
                   Cancel
@@ -2690,7 +2893,7 @@ const SavedDcs = () => {
                             <User className="h-3 w-3 sm:h-4 sm:w-4" /> Return
                           </Button>
                         )}
-                        {selectedDc.status === "returned" && (
+                        {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -2710,7 +2913,45 @@ const SavedDcs = () => {
                             <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> Create Cash Memo
                           </Button>
                         )}
-                        {selectedDc.invoiceRef && (
+                        {selectedDc.invoiceRef && selectedIsTaxInvoice && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50 hover:text-purple-800 font-bold"
+                              onClick={() => {
+                                setDetailsDialogOpen(false);
+                                openActionDialog("invoice", selectedDc);
+                              }}
+                            >
+                              <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-purple-600" /> Tax Invoice: {selectedDc.invoiceRef}
+                            </Button>
+                            {selectedDc.invoiceUrl ? (
+                              <Button
+                                size="sm"
+                                className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                                onClick={() => window.open(selectedDc.invoiceUrl, '_blank')}
+                                title="Open GoGSTBill invoice in new tab"
+                              >
+                                <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4" /> Open GoGSTBill
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold"
+                                onClick={() => {
+                                  setDetailsDialogOpen(false);
+                                  openActionDialog("invoice", selectedDc);
+                                }}
+                                title="Enter GoGSTBill URL for this DC"
+                              >
+                                <Link2 className="h-3 w-3 sm:h-4 sm:w-4 text-indigo-600" /> Enter GoGSTBill URL
+                              </Button>
+                            )}
+                          </>
+                        )}
+                        {selectedDc.invoiceRef && selectedIsCashMemo && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -2779,22 +3020,63 @@ const SavedDcs = () => {
 
                     <div className="rounded-md border border-slate-200 bg-white p-3">
                       <div className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                        <Receipt className="h-4 w-4 text-slate-600" />
-                        Invoice / Cash
+                        {selectedIsTaxInvoice ? (
+                          <>
+                            <FileText className="h-4 w-4 text-purple-600" />
+                            Tax Invoice
+                          </>
+                        ) : (
+                          <>
+                            <Receipt className="h-4 w-4 text-slate-600" />
+                            Invoice / Cash
+                          </>
+                        )}
                       </div>
                       <div className="space-y-2 text-sm">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-500">Invoice No</span>
+                          <span className="text-slate-500">
+                            {selectedIsTaxInvoice ? "Tax Invoice No" : "Invoice No"}
+                          </span>
                           <span className="font-medium text-slate-800">{selectedDc.invoiceRef || "-"}</span>
                         </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-500">Cash Amount</span>
-                          <span className="font-semibold text-green-700">
-                            {typeof (selectedDc as any).cashAmount === "number"
-                              ? `₹${(selectedDc as any).cashAmount.toFixed(2)}`
-                              : "-"}
-                          </span>
-                        </div>
+                        {selectedIsTaxInvoice && (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-500">GoGSTBill Link</span>
+                            {selectedDc.invoiceUrl ? (
+                              <a
+                                href={selectedDc.invoiceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs truncate max-w-[200px]"
+                                title={selectedDc.invoiceUrl}
+                              >
+                                <span>Open Invoice</span>
+                                <ExternalLink className="h-3 w-3 shrink-0" />
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDetailsDialogOpen(false);
+                                  openActionDialog("invoice", selectedDc);
+                                }}
+                                className="text-xs text-purple-700 hover:text-purple-900 font-semibold underline cursor-pointer"
+                              >
+                                + Attach Link
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {!selectedIsTaxInvoice && (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-500">Cash Amount</span>
+                            <span className="font-semibold text-green-700">
+                              {typeof (selectedDc as any).cashAmount === "number"
+                                ? `₹${(selectedDc as any).cashAmount.toFixed(2)}`
+                                : "-"}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
