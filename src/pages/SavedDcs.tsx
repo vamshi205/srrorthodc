@@ -1129,22 +1129,31 @@ const SavedDcs = () => {
             setCollapsedProcedures={() => {}}
           />
 
-          {/* DC Tracker Subheader with Live Reminders & Notifications */}
-          <div className="flex flex-wrap items-center justify-between gap-3 py-2 px-1">
-            <div className="flex items-center gap-2.5">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-600"></span>
-              </span>
-              <span className="font-display font-bold text-xs sm:text-sm tracking-tight text-slate-800 dark:text-slate-100">
-                DC Operations & Inventory Tracker
-              </span>
-              <Badge variant="outline" className="hidden sm:inline-flex text-[10px] h-5 border-teal-200 bg-teal-50 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300 font-semibold">
-                Live Status
-              </Badge>
+          {/* DC Tracker Operations & Reminders Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 py-2.5 px-3.5 sm:px-4.5 rounded-2xl bg-gradient-to-r from-white via-teal-50/40 to-white dark:from-slate-900 dark:via-teal-950/20 dark:to-slate-900 border border-teal-200/70 dark:border-slate-800 shadow-xs backdrop-blur-md transition-all">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="w-8 h-8 rounded-xl bg-teal-500/15 dark:bg-teal-500/20 border border-teal-500/30 flex items-center justify-center shrink-0">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-600 dark:bg-teal-400"></span>
+                </span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-display font-extrabold text-xs sm:text-sm tracking-tight text-slate-900 dark:text-slate-100">
+                    DC Operations & Inventory Tracker
+                  </span>
+                  <Badge variant="outline" className="hidden sm:inline-flex text-[10px] h-5 border-teal-300 dark:border-teal-700 bg-teal-100/80 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-bold px-1.5">
+                    Live Status
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden md:block">
+                  Automated cutoff alerts, collection follow-ups &amp; cash invoices
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <DcTrackerNotifications
                 savedDcs={savedDcs}
                 cashInvoices={cashInvoices}

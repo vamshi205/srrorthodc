@@ -515,25 +515,49 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     <>
       {/* 1. FIRST LOGIN / MORNING WELCOME REMINDER MODAL */}
       <Dialog open={loginPopupOpen} onOpenChange={setLoginPopupOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-lg p-0 overflow-hidden rounded-2xl sm:rounded-3xl border border-amber-300 dark:border-amber-900/60 shadow-2xl bg-white dark:bg-slate-950 z-[100] max-h-[90vh] flex flex-col">
+        <DialogContent className="w-[95vw] sm:max-w-lg p-0 overflow-hidden rounded-2xl sm:rounded-3xl border border-amber-300 dark:border-amber-900/60 shadow-2xl bg-white dark:bg-slate-950 z-[100] max-h-[90vh] flex flex-col [&>button]:hidden">
           {/* Modal Header */}
           <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-teal-800 p-4 sm:p-5 text-slate-950 relative overflow-hidden shrink-0">
             <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none" />
-            <div className="flex items-center gap-2.5 sm:gap-3 relative z-10">
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-slate-950 text-amber-400 flex items-center justify-center shadow-lg font-black shrink-0">
-                <BellRing className="w-6 h-6 animate-bounce" />
+            <div className="flex items-center justify-between gap-3 relative z-20">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-slate-950 text-amber-400 flex items-center justify-center shadow-lg font-black shrink-0">
+                  <BellRing className="w-6 h-6 animate-bounce" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-900/80 bg-white/20 px-2 py-0.5 rounded-full inline-block mb-1">
+                    First Login Reminder
+                  </span>
+                  <DialogTitle className="text-lg sm:text-xl font-display font-extrabold text-white tracking-tight leading-snug">
+                    Pending Collections &amp; Operations Alert
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-amber-100/90 leading-relaxed mt-0.5">
+                    Welcome back! Here are the parties and items requiring your follow-up today.
+                  </DialogDescription>
+                </div>
               </div>
-              <div className="min-w-0">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-900/80 bg-white/20 px-2 py-0.5 rounded-full inline-block mb-1">
-                  First Login Reminder
-                </span>
-                <DialogTitle className="text-lg sm:text-xl font-display font-extrabold text-white tracking-tight leading-snug">
-                  Pending Collections &amp; Operations Alert
-                </DialogTitle>
-                <DialogDescription className="text-xs text-amber-100/90 leading-relaxed mt-0.5">
-                  Welcome back! Here are the parties and items requiring your follow-up today.
-                </DialogDescription>
-              </div>
+
+              {/* Dedicated Mobile & Desktop Close Cross Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLoginPopupOpen(false);
+                  logReminderAction({
+                    action: "DISMISSED",
+                    label: "Popup Closed via Header Cross",
+                    details: "User clicked close button on first login reminder popup",
+                    pendingAmount: paymentReminders.totalAmount,
+                    partiesCount: paymentReminders.totalCount,
+                    returnCount: returnReminders.count,
+                  });
+                }}
+                className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl bg-black/30 hover:bg-black/50 active:scale-90 text-white flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/25 shrink-0 touch-manipulation z-30"
+                aria-label="Close popup"
+                title="Close"
+              >
+                <X className="w-5 h-5 stroke-[2.5]" />
+              </button>
             </div>
           </div>
 
@@ -728,18 +752,39 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
           </div>
 
           <DialogFooter className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-900/80 border-t border-slate-200 dark:border-slate-800 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
-            {/* Remind Later with explicit timing options */}
-            {!showSnoozeOptions ? (
+            {/* Dismiss & Remind Later options */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                onClick={() => setShowSnoozeOptions(true)}
-                className="text-xs text-slate-700 dark:text-slate-300 border-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 gap-1.5 w-full sm:w-auto"
+                onClick={() => {
+                  setLoginPopupOpen(false);
+                  logReminderAction({
+                    action: "DISMISSED",
+                    label: "Popup Dismissed via Footer",
+                    details: "User clicked Dismiss button on first login reminder popup",
+                    pendingAmount: paymentReminders.totalAmount,
+                    partiesCount: paymentReminders.totalCount,
+                    returnCount: returnReminders.count,
+                  });
+                }}
+                className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
               >
-                <Clock className="w-3.5 h-3.5 text-slate-500" />
-                Remind Later...
+                Dismiss
               </Button>
-            ) : (
+              {!showSnoozeOptions ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSnoozeOptions(true)}
+                  className="text-xs text-slate-700 dark:text-slate-300 border-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 gap-1.5 flex-1 sm:flex-initial"
+                >
+                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                  Remind Later...
+                </Button>
+              ) : null}
+            </div>
+            {showSnoozeOptions && (
               <div className="flex flex-wrap items-center gap-1.5 bg-slate-200/80 dark:bg-slate-800 p-1.5 rounded-xl animate-in fade-in duration-200 w-full sm:w-auto">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-400 px-1">
                   Remind in:
@@ -947,28 +992,32 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       <Popover open={isOpen} onOpenChange={setIsOpen}>
         <PopoverTrigger asChild>
           <Button
-            variant="ghost"
             size="sm"
-            className={`relative h-9 px-3 gap-2 rounded-xl transition-all border font-bold text-xs ${
+            className={`relative h-9 px-3.5 gap-2 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95 border ${
               totalActionCount > 0
-                ? "bg-amber-400/20 text-amber-200 border-amber-400/40 hover:bg-amber-400/30 hover:text-amber-100 shadow-sm"
-                : "text-white/80 hover:text-white hover:bg-white/15 border-white/10"
+                ? "bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold border-amber-300/40 shadow-amber-500/25"
+                : "bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100 dark:hover:bg-teal-900/50 text-teal-800 dark:text-teal-200 border-teal-300/70 dark:border-teal-800 font-bold"
             }`}
             title="DC Tracker Reminders & Notifications"
           >
-            <div className="relative">
-              <Bell
-                className={`w-4 h-4 ${
-                  totalActionCount > 0 ? "text-amber-300" : "text-slate-300"
-                }`}
-              />
+            <div className="relative flex items-center justify-center">
+              {totalActionCount > 0 ? (
+                <BellRing className="w-4 h-4 text-amber-100 fill-amber-300/40 animate-pulse" />
+              ) : (
+                <Bell className="w-4 h-4 text-teal-600 dark:text-teal-400 fill-teal-500/20" />
+              )}
               {totalActionCount > 0 && (
-                <span className="absolute -top-1.5 -right-2 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-600 text-[10px] font-black text-white shadow-sm ring-1 ring-white/30">
+                <span className="absolute -top-2 -right-2.5 flex h-4 min-w-[18px] px-1 items-center justify-center rounded-full bg-rose-600 text-[10px] font-black text-white shadow-md ring-2 ring-white dark:ring-slate-900 animate-bounce">
                   {totalActionCount}
                 </span>
               )}
             </div>
-            <span className="hidden sm:inline">Reminders</span>
+            <span className="tracking-tight">Reminders</span>
+            {totalActionCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-md bg-white/20 text-white text-[10px] font-black leading-tight">
+                {totalActionCount}
+              </span>
+            )}
           </Button>
         </PopoverTrigger>
 
