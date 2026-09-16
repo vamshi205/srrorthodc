@@ -64,7 +64,8 @@ import { deleteSavedDc, loadSavedDcs, SavedDc, SavedDcHistoryEvent, SavedDcStatu
 import { AppLoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { auth } from "@/firebase";
 import html2pdf from "html2pdf.js";
-import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore } from "@/services/cashInvoiceFirebaseService";
+import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore, type CashInvoiceData } from "@/services/cashInvoiceFirebaseService";
+import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotifications";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -198,6 +199,7 @@ const SavedDcs = () => {
   const [paymentDialog, setPaymentDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
   const [paymentRemarksInput, setPaymentRemarksInput] = useState("");
+  const [cashInvoices, setCashInvoices] = useState<CashInvoiceData[]>([]);
 
   useEffect(() => {
     const fetchDcs = async () => {
@@ -214,6 +216,12 @@ const SavedDcs = () => {
         });
       } finally {
         setIsLoading(false);
+      }
+      try {
+        const invoices = await fetchCashInvoicesFromFirestore();
+        setCashInvoices(invoices);
+      } catch (err) {
+        console.warn('Failed to load cash invoices for reminders:', err);
       }
     };
     fetchDcs();
@@ -1120,6 +1128,37 @@ const SavedDcs = () => {
             setActiveProcedures={() => {}}
             setCollapsedProcedures={() => {}}
           />
+
+          {/* DC Tracker Subheader with Live Reminders & Notifications */}
+          <div className="flex flex-wrap items-center justify-between gap-3 py-2 px-1">
+            <div className="flex items-center gap-2.5">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-600"></span>
+              </span>
+              <span className="font-display font-bold text-xs sm:text-sm tracking-tight text-slate-800 dark:text-slate-100">
+                DC Operations & Inventory Tracker
+              </span>
+              <Badge variant="outline" className="hidden sm:inline-flex text-[10px] h-5 border-teal-200 bg-teal-50 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300 font-semibold">
+                Live Status
+              </Badge>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <DcTrackerNotifications
+                savedDcs={savedDcs}
+                cashInvoices={cashInvoices}
+                onCollectPayment={openPaymentDialog}
+                onRecordReturn={(dc) => openActionDialog("return", dc)}
+                onViewDc={(dc, queue) => {
+                  setActiveQueue(queue);
+                  setSearchParams({ queue });
+                  setSelectedDcId(dc.id);
+                  setDetailsDialogOpen(true);
+                }}
+              />
+            </div>
+          </div>
 
           <div className="space-y-8">
             {/* Dashboard Metrics */}

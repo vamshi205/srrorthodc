@@ -286,7 +286,7 @@ function loadPersistedData() {
 
     // 5. Invoice Items — always start fresh with a clean empty row on page open
     localStorage.removeItem("im_invoice_items");
-    state.invoiceItems = [{ description: "", sku: "", size: "", qty: 1, rate: 0 }];
+    state.invoiceItems = [{ description: "", subDescription: "", sku: "", size: "", qty: 1, rate: 0 }];
     const discountInput = document.getElementById("discount-flat-input");
     if (discountInput) discountInput.value = 0;
 
@@ -1206,7 +1206,7 @@ function setupEventListeners() {
 
     // Add Row Click
     document.getElementById("add-row-btn").addEventListener("click", () => {
-        state.invoiceItems.push({ description: "", sku: "", size: "", qty: 1, rate: 0 });
+        state.invoiceItems.push({ description: "", subDescription: "", sku: "", size: "", qty: 1, rate: 0 });
         renderInvoiceRows();
         saveItemsToDraft();
         
@@ -1225,7 +1225,7 @@ function setupEventListeners() {
     });
 
     const clearActiveInvoiceData = () => {
-        state.invoiceItems = [{ description: "", sku: "", size: "", qty: 1, rate: 0 }];
+        state.invoiceItems = [{ description: "", subDescription: "", sku: "", size: "", qty: 1, rate: 0 }];
         const discountInput = document.getElementById("discount-flat-input");
         if (discountInput) discountInput.value = 0;
         
@@ -1796,6 +1796,7 @@ function renderInvoiceRows() {
         const hasCatalogSizes = matchedCatalogItems.some(p => p.size && p.size.trim() !== "");
 
         const descVal = item.description || '';
+        const subDescVal = item.subDescription || '';
         const sizeVal = item.size || '-';
         const qtyVal = item.qty || 1;
         const hasRate = item.rate !== undefined && item.rate !== null && item.rate !== "" && parseFloat(item.rate) > 0;
@@ -1818,9 +1819,13 @@ function renderInvoiceRows() {
             <td style="text-align: center; color: #9ca3af; font-weight: 500;">${index + 1}</td>
             <td>
                 <div class="autocomplete-container">
-                    <textarea class="table-input desc-input" rows="1" placeholder="Type item name..." autocomplete="off">${descVal}</textarea>
+                    <textarea class="table-input desc-input" rows="1" placeholder="Search catalog item..." autocomplete="off">${descVal}</textarea>
                     <span class="print-text print-desc">${descVal}</span>
                     <div class="recommendation-list" id="rec-list-${index}"></div>
+                </div>
+                <div class="sub-desc-container">
+                    <input type="text" class="table-input sub-desc-input" value="${subDescVal}" placeholder="+ Add notes / sub-description (optional)..." autocomplete="off">
+                    <span class="print-text print-sub-desc" style="${subDescVal ? 'display:block;' : 'display:none;'}">${subDescVal}</span>
                 </div>
             </td>
             <td>
@@ -1845,6 +1850,7 @@ function renderInvoiceRows() {
 
         // Attach event listeners for inputs in this row
         const descInput = tr.querySelector(".desc-input");
+        const subDescInput = tr.querySelector(".sub-desc-input");
         const sizeInput = tr.querySelector(".size-input");
         const qtyInput = tr.querySelector(".qty-input");
         const rateInput = tr.querySelector(".rate-input");
@@ -1858,6 +1864,19 @@ function renderInvoiceRows() {
             state.invoiceItems[index][field] = val;
             saveItemsToDraft();
         };
+
+        // Sub-description notes input listener
+        if (subDescInput) {
+            subDescInput.addEventListener("input", (e) => {
+                const val = e.target.value;
+                updateStateVal("subDescription", val);
+                const subSpan = tr.querySelector(".print-sub-desc");
+                if (subSpan) {
+                    subSpan.innerText = val;
+                    subSpan.style.display = val.trim() ? "block" : "none";
+                }
+            });
+        }
 
         if (sizeInput) {
             sizeInput.addEventListener("input", (e) => {
@@ -1928,7 +1947,7 @@ function renderInvoiceRows() {
         // Delete Row Click
         deleteBtn.addEventListener("click", () => {
             if (state.invoiceItems.length === 1) {
-                state.invoiceItems = [{ description: "", sku: "", size: "", qty: 1, rate: 0 }];
+                state.invoiceItems = [{ description: "", subDescription: "", sku: "", size: "", qty: 1, rate: 0 }];
             } else {
                 state.invoiceItems.splice(index, 1);
             }
@@ -1938,28 +1957,85 @@ function renderInvoiceRows() {
             showStatus("Line item removed.");
         });
 
-        // Recommendation Keyboard and Typing Navigation
+        // Recommendation Keyboard and Typing Navigation (STRICT Catalog Autocomplete)
         descInput.addEventListener("input", (e) => {
             const query = e.target.value;
-            updateStateVal("description", query);
             autoResizeTextarea(descInput);
-            
-            if (query.trim().length >= 2) {
-                showRecommendations(query, recList, index, descInput);
-            } else {
-                recList.style.display = "none";
-            }
+            showRecommendations(query, recList, index, descInput);
+        });
+
+        descInput.addEventListener("focus", (e) => {
+            closeAllRecommendationDropdowns();
+            closeAllSizeDropdowns();
+            state.activeRecInput = descInput;
+            autoResizeTextarea(descInput);
+            showRecommendations(descInput.value, recList, index, descInput);
+        });
+
+        // Blur event: Enforce strict catalog item selection (cannot write whatever they want)
+        descInput.addEventListener("blur", () => {
+            setTimeout(() => {
+                const currentVal = (descInput.value || "").trim();
+                if (!currentVal) {
+                    state.invoiceItems[index].description = "";
+                    state.invoiceItems[index].sku = "";
+                    state.invoiceItems[index].size = "";
+                    state.invoiceItems[index].rate = 0;
+                    descInput.classList.remove("input-error");
+                    recalculateRowAmount(tr, state.invoiceItems[index].qty || 1, 0);
+                    updateCalculations();
+                    saveItemsToDraft();
+                    closeAllRecommendationDropdowns();
+                    return;
+                }
+
+                // Verify against catalog price list
+                const matchedItem = state.priceList.find(p => 
+                    String(p.description || "").trim().toLowerCase() === currentVal.toLowerCase()
+                );
+
+                if (matchedItem) {
+                    // Valid item from catalog: normalize to exact description
+                    descInput.value = matchedItem.description;
+                    state.invoiceItems[index].description = matchedItem.description;
+                    descInput.classList.remove("input-error");
+                    saveItemsToDraft();
+                } else {
+                    // Strictly reject arbitrary freeform text!
+                    const fallbackVal = state.invoiceItems[index].description || "";
+                    descInput.value = fallbackVal;
+                    if (!fallbackVal) {
+                        state.invoiceItems[index].description = "";
+                        state.invoiceItems[index].sku = "";
+                        state.invoiceItems[index].size = "";
+                        state.invoiceItems[index].rate = 0;
+                        recalculateRowAmount(tr, state.invoiceItems[index].qty || 1, 0);
+                        updateCalculations();
+                    }
+                    descInput.classList.add("input-error");
+                    descInput.placeholder = "⚠️ Select from catalog only";
+                    showStatus("⚠️ Item description must be selected from the autocomplete catalog list. Freeform entry is restricted.", 3500);
+                    setTimeout(() => {
+                        descInput.classList.remove("input-error");
+                        descInput.placeholder = "Search catalog item...";
+                    }, 3500);
+                }
+                closeAllRecommendationDropdowns();
+            }, 250);
         });
 
         descInput.addEventListener("keydown", (e) => {
             const items = recList.querySelectorAll(".recommendation-item");
             
             if (e.key === "Enter") {
-                e.preventDefault(); // Prevent inserting newlines in the description field
+                e.preventDefault();
                 if (recList.style.display === "block" && items.length > 0) {
-                    if (state.activeRecIndex >= 0 && state.activeRecIndex < items.length) {
-                        selectRecommendation(items[state.activeRecIndex], index, tr);
+                    const targetIdx = state.activeRecIndex >= 0 ? state.activeRecIndex : 0;
+                    if (items[targetIdx]) {
+                        items[targetIdx].dispatchEvent(new MouseEvent("mousedown"));
                     }
+                } else {
+                    descInput.blur();
                 }
             } else if (recList.style.display === "block" && items.length > 0) {
                 if (e.key === "ArrowDown") {
@@ -1974,18 +2050,6 @@ function renderInvoiceRows() {
                     recList.style.display = "none";
                     state.activeRecIndex = -1;
                 }
-            }
-        });
-
-        // Focus event
-        descInput.addEventListener("focus", (e) => {
-            closeAllRecommendationDropdowns();
-            closeAllSizeDropdowns();
-            state.activeRecInput = descInput;
-            autoResizeTextarea(descInput);
-            const query = e.target.value;
-            if (query.trim().length >= 2) {
-                showRecommendations(query, recList, index, descInput);
             }
         });
 
@@ -2024,24 +2088,31 @@ function syncAllPrintSpans() {
     rows.forEach((tr, index) => {
         const item = state.invoiceItems[index];
         const descInput = tr.querySelector(".desc-input");
+        const subDescInput = tr.querySelector(".sub-desc-input");
         const sizeInput = tr.querySelector(".size-input");
         const qtyInput = tr.querySelector(".qty-input");
         const rateInput = tr.querySelector(".rate-input");
         const amtInput = tr.querySelector(".amount-input");
         
         const descSpan = tr.querySelector(".print-desc");
+        const subDescSpan = tr.querySelector(".print-sub-desc");
         const sizeSpan = tr.querySelector(".print-size");
         const qtySpan = tr.querySelector(".print-qty");
         const rateSpan = tr.querySelector(".print-rate");
         const amtSpan = tr.querySelector(".print-amount");
         
         const descVal = descInput ? descInput.value : (item ? item.description : '');
+        const subDescVal = subDescInput ? subDescInput.value : (item ? (item.subDescription || '') : '');
         const sizeVal = sizeInput ? sizeInput.value : (item ? item.size : '-');
         const qtyVal = qtyInput ? qtyInput.value : (item ? item.qty : 1);
         const rateVal = rateInput ? parseFloat(rateInput.value || 0).toFixed(2) : (item ? parseFloat(item.rate || 0).toFixed(2) : '0.00');
         const amtVal = amtInput ? parseFloat(amtInput.value || 0).toFixed(2) : (item ? ((item.qty || 0) * (item.rate || 0)).toFixed(2) : '0.00');
         
         if (descSpan) descSpan.innerText = descVal;
+        if (subDescSpan) {
+            subDescSpan.innerText = subDescVal;
+            subDescSpan.style.display = subDescVal.trim() ? 'block' : 'none';
+        }
         if (sizeSpan) sizeSpan.innerText = sizeVal || '-';
         if (qtySpan) qtySpan.innerText = qtyVal;
         if (rateSpan) rateSpan.innerText = `₹${rateVal}`;
@@ -2062,8 +2133,14 @@ function showRecommendations(query, container, index, inputEl) {
     container.innerHTML = "";
     state.activeRecIndex = -1;
     
-    const queryLower = query.toLowerCase();
+    const queryLower = (query || "").toLowerCase().trim();
     
+    // Catalog header bar inside autocomplete dropdown
+    const headerEl = document.createElement("div");
+    headerEl.style.cssText = "font-size: 9px; font-weight: 700; color: #0f766e; padding: 4px 8px; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; background: #f0fdfa; display: flex; justify-content: space-between; align-items: center;";
+    headerEl.innerHTML = `<span>📋 Catalog Items</span><span style="font-size: 8px; color: #64748b; font-weight: normal;">Click to select</span>`;
+    container.appendChild(headerEl);
+
     // Filter matching catalog items: group by unique base description/product name
     const uniqueMatches = new Map();
     for (const item of state.priceList) {
@@ -2071,9 +2148,9 @@ function showRecommendations(query, container, index, inputEl) {
         const skuStr = String(item.sku || "");
         const sizeStr = String(item.size || "");
         
-        const descMatch = baseName.toLowerCase().includes(queryLower);
-        const skuMatch = skuStr.toLowerCase().includes(queryLower);
-        const sizeMatch = sizeStr.toLowerCase().includes(queryLower);
+        const descMatch = !queryLower || baseName.toLowerCase().includes(queryLower);
+        const skuMatch = queryLower && skuStr.toLowerCase().includes(queryLower);
+        const sizeMatch = queryLower && sizeStr.toLowerCase().includes(queryLower);
         
         if (descMatch || skuMatch || sizeMatch) {
             const key = baseName.toLowerCase().trim();
@@ -2082,7 +2159,7 @@ function showRecommendations(query, container, index, inputEl) {
             }
         }
         
-        if (uniqueMatches.size >= 8) break; // Limit to 8 recommendations
+        if (uniqueMatches.size >= 15) break; // Display up to 15 matching items
     }
 
     if (uniqueMatches.size > 0) {
@@ -2094,7 +2171,8 @@ function showRecommendations(query, container, index, inputEl) {
             
             // Format layout
             div.innerHTML = `
-                <div class="rec-desc" style="line-height: 1.4;">${baseName}</div>
+                <div class="rec-desc" style="line-height: 1.4; font-weight: 600; color: #0f172a;">${baseName}</div>
+                ${match.sku ? `<div style="font-size: 9px; color: #64748b;">Code: ${match.sku}</div>` : ''}
             `;
 
             // Data attachment
@@ -2104,7 +2182,8 @@ function showRecommendations(query, container, index, inputEl) {
             div.dataset.price = match.price;
             div.dataset.gst = match.gst !== undefined ? match.gst : 12;
 
-            div.addEventListener("click", () => {
+            div.addEventListener("mousedown", (e) => {
+                e.preventDefault();
                 selectRecommendation(div, index, inputEl.closest("tr"));
             });
 
@@ -2117,12 +2196,16 @@ function showRecommendations(query, container, index, inputEl) {
         if (container.parentElement) container.parentElement.classList.add("has-open-dropdown");
         if (tableWrapper) tableWrapper.classList.add("has-open-dropdown");
     } else {
-        container.style.display = "none";
+        const noMatchDiv = document.createElement("div");
+        noMatchDiv.style.cssText = "padding: 8px 10px; font-size: 11px; color: #dc2626; background: #fef2f2; line-height: 1.3;";
+        noMatchDiv.innerHTML = `<strong>⚠️ No item found in catalog</strong><br><span style="font-size: 9px; color: #7f1d1d;">Items must be selected from the catalog list.</span>`;
+        container.appendChild(noMatchDiv);
+        container.style.display = "block";
         const row = inputEl ? inputEl.closest("tr") : null;
         const tableWrapper = inputEl ? inputEl.closest(".table-wrapper") : null;
-        if (row) row.classList.remove("has-open-dropdown");
-        if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
-        if (tableWrapper) tableWrapper.classList.remove("has-open-dropdown");
+        if (row) row.classList.add("has-open-dropdown");
+        if (container.parentElement) container.parentElement.classList.add("has-open-dropdown");
+        if (tableWrapper) tableWrapper.classList.add("has-open-dropdown");
     }
 }
 
@@ -2834,7 +2917,7 @@ function loadSavedInvoice(inv) {
     
     state.invoiceItems = JSON.parse(JSON.stringify(inv.invoiceItems || []));
     if (state.invoiceItems.length === 0) {
-        state.invoiceItems = [{ description: "", sku: "", size: "", qty: 1, rate: 0 }];
+        state.invoiceItems = [{ description: "", subDescription: "", sku: "", size: "", qty: 1, rate: 0 }];
     }
     
     document.getElementById("discount-flat-input").value = inv.discount || 0;
@@ -3238,6 +3321,7 @@ function getActiveInvoiceObj() {
         subtotal += qty * rate;
         return {
             description: item.description || "",
+            subDescription: item.subDescription || "",
             sku: item.sku || "",
             size: item.size || "",
             qty: qty,
@@ -3278,7 +3362,11 @@ function getPrintableInvoiceHTML(inv) {
         const amt = (parseFloat(item.qty)||0) * (parseFloat(item.rate)||0);
         return `<tr style="border-bottom:1px solid #e2e8f0;">
             <td style="padding:6px 8px;text-align:center;color:#64748b;font-size:11px;">${idx+1}</td>
-            <td style="padding:6px 8px;font-weight:700;color:#0f172a;font-size:11px;">${item.description||''}${item.sku ? ' <span style="color:#64748b;font-size:10px;font-weight:400;">['+item.sku+']</span>' : ''}</td>
+            <td style="padding:6px 8px;font-weight:700;color:#0f172a;font-size:11px;">
+                ${item.description||''}
+                ${item.sku ? ' <span style="color:#64748b;font-size:10px;font-weight:400;">['+item.sku+']</span>' : ''}
+                ${item.subDescription ? '<div style="font-size:10px;color:#64748b;font-weight:400;font-style:italic;margin-top:2px;">'+item.subDescription+'</div>' : ''}
+            </td>
             <td style="padding:6px 8px;text-align:center;color:#475569;font-size:11px;">${item.size||'-'}</td>
             <td style="padding:6px 8px;text-align:center;font-weight:600;color:#0f172a;font-size:11px;">${item.qty||0}</td>
             <td style="padding:6px 8px;text-align:right;color:#334155;font-size:11px;">₹${parseFloat(item.rate||0).toFixed(2)}</td>

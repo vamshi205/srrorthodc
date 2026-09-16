@@ -9,13 +9,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CashInvoiceAdmin } from '@/components/admin/CashInvoiceAdmin';
-import { FileText, Receipt, ArrowLeft } from 'lucide-react';
+import { FileText, Receipt, ArrowLeft, Bell } from 'lucide-react';
+import { NotificationSettingsAdmin } from '@/components/admin/NotificationSettingsAdmin';
 
 const Admin = () => {
   const navigate = useNavigate();
   const { fetchProcedures, loading } = useProcedures();
 
-  const [selectedPanel, setSelectedPanel] = useState<'dc' | 'cash' | 'quotation' | null>(null);
+  const [selectedPanel, setSelectedPanel] = useState<'dc' | 'cash' | 'quotation' | 'notifications' | null>(null);
   const [adminAccessOpen, setAdminAccessOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -155,6 +156,27 @@ const Admin = () => {
                   </p>
                 </div>
               </button>
+
+              {/* Card 4: Notifications & Reminders Admin */}
+              <button
+                onClick={() => {
+                  setSelectedPanel('notifications');
+                  setAdminAccessOpen(true);
+                }}
+                className="group p-6 rounded-2xl border-2 border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500 transition-all duration-200 text-left flex flex-col justify-between space-y-6 shadow-md"
+              >
+                <div className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-md group-hover:scale-110 transition-transform font-black">
+                  <Bell className="w-6 h-6 text-slate-950" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400">
+                    Notifications &amp; Reminders
+                  </h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Customize payment reminder frequencies, return item cutoff thresholds, first login alert popups, and chime sounds.
+                  </p>
+                </div>
+              </button>
             </div>
           </main>
         )}
@@ -175,7 +197,7 @@ const Admin = () => {
             <DialogHeader>
               <DialogTitle>Admin Access</DialogTitle>
               <DialogDescription>
-                Enter the administrator password to open the {selectedPanel === 'dc' ? 'DC System' : selectedPanel === 'cash' ? 'Cash Invoice' : 'Quotation Settings'} Admin panel.
+                Enter the administrator password to open the {selectedPanel === 'dc' ? 'DC System' : selectedPanel === 'cash' ? 'Cash Invoice' : selectedPanel === 'quotation' ? 'Quotation Settings' : 'Notifications & Reminders'} Admin panel.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -254,6 +276,27 @@ const Admin = () => {
                   className="absolute inset-0 w-full h-full border-0"
                 />
               </div>
+            </div>
+          </main>
+        )}
+
+        {isAdminAuthorized && selectedPanel === 'notifications' && (
+          <main className="container mx-auto max-w-4xl py-4 sm:py-6">
+            <div className="space-y-6">
+              <div className="flex items-center gap-4">
+                <Button variant="ghost" onClick={handleBackToChoice} className="gap-2 h-9">
+                  <ArrowLeft className="w-4 h-4" /> Back to Choice
+                </Button>
+                <div>
+                  <h1 className="text-xl font-display font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+                    Notifications &amp; Alerts Settings
+                  </h1>
+                  <p className="text-xs text-muted-foreground">
+                    Customize interval timers, return cutoff days, and first login popup alerts.
+                  </p>
+                </div>
+              </div>
+              <NotificationSettingsAdmin />
             </div>
           </main>
         )}
