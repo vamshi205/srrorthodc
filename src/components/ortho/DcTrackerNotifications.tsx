@@ -13,7 +13,6 @@ import {
   Volume2,
   VolumeX,
   RefreshCw,
-  Sparkles,
   ArrowRight,
   ShieldAlert,
 } from "lucide-react";
@@ -1385,18 +1384,6 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
               </span>
 
               <div className="flex items-center gap-1.5 ml-auto">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setIsOpen(false);
-                    setLoginPopupOpen(true);
-                  }}
-                  className="h-6 text-[10px] font-bold text-amber-800 dark:text-amber-300 border-amber-300/80 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 px-2 gap-1"
-                >
-                  <Sparkles className="w-3 h-3 text-amber-500 shrink-0" /> Test Popup
-                </Button>
-
                 {!showPopoverSnooze ? (
                   <Button
                     variant="ghost"
