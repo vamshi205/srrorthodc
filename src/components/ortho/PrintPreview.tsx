@@ -4,6 +4,7 @@ import { ActiveProcedure } from '@/types/procedure';
 interface PrintPreviewProps {
   activeProcedures: ActiveProcedure[];
   hospitalName: string;
+  doctorName?: string;
   dcNo: string;
   deliveredBy?: string;
   receivedBy?: string;
@@ -23,7 +24,7 @@ interface ProcedureGroup {
 }
 
 export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
-  ({ activeProcedures, hospitalName, dcNo, deliveredBy, receivedBy, manualItems = [], manualInstruments = [], manualBoxNumbers = [], manualMaterialType = 'SS' }, ref) => {
+  ({ activeProcedures, hospitalName, doctorName, dcNo, deliveredBy, receivedBy, manualItems = [], manualInstruments = [], manualBoxNumbers = [], manualMaterialType = 'SS' }, ref) => {
     const procedureGroups = useMemo(() => {
       const groups: ProcedureGroup[] = [];
 
@@ -145,6 +146,11 @@ export const PrintPreview = forwardRef<HTMLDivElement, PrintPreviewProps>(
             <p>
               <strong>Hospital:</strong> {hospitalName || '___________________'}
             </p>
+            {doctorName && (
+              <p className="mt-1">
+                <strong>Doctor:</strong> {doctorName.toLowerCase().startsWith('dr') ? doctorName : `Dr. ${doctorName}`}
+              </p>
+            )}
             <p className="mt-1">
               <strong>DC No:</strong> {dcNo || '___________________'}
             </p>

@@ -24,7 +24,9 @@ import { Procedure, ActiveProcedure, SizeQty } from '@/types/procedure';
 import { auth } from '@/firebase';
 import { PersonnelSelect } from '@/components/ortho/PersonnelSelect';
 import { HospitalSelect } from '@/components/ortho/HospitalSelect';
+import { DoctorSelect } from '@/components/ortho/DoctorSelect';
 import { saveCustomer } from '@/lib/customerStorage';
+import { saveDoctorName } from '@/lib/doctorStorage';
 
 export default function OrthoApp() {
   const navigate = useNavigate();
@@ -685,11 +687,20 @@ export default function OrthoApp() {
     setManualInstrumentQuery('');
     setManualBoxInput('');
     setHospitalName('');
+    setDoctorName('');
     setDcNo('');
     setReceivedBy('');
     setDeliveredBy('');
     setRemarks('');
   }, []);
+
+  const handleHospitalChange = useCallback((newHospital: string) => {
+    // If selecting a different hospital, clear doctor field so previous hospital's doctor doesn't remain
+    if (newHospital.trim().toLowerCase() !== hospitalName.trim().toLowerCase()) {
+      setDoctorName('');
+    }
+    setHospitalName(newHospital);
+  }, [hospitalName]);
 
   const handleSaveDc = useCallback(async (shouldNavigate: boolean = true, shouldClear: boolean = true): Promise<boolean> => {
     if (!hospitalName || !dcNo || !receivedBy || !deliveredBy) {
@@ -717,6 +728,7 @@ export default function OrthoApp() {
       await saveSavedDc({
         hospitalName,
         dcNo,
+        doctorName: doctorName.trim() || undefined,
         materialType: dcMaterialType,
         deliveredBy,
         receivedBy,
@@ -732,6 +744,11 @@ export default function OrthoApp() {
         saveCustomer({ name: hospitalName.trim() }).catch((err) =>
           console.error("Auto-sync hospital to customer directory error:", err)
         );
+      }
+
+      // Ensure doctor name is saved to doctor recommendations roster
+      if (doctorName.trim()) {
+        saveDoctorName(doctorName.trim());
       }
 
       toast({ title: 'DC saved successfully', description: `${hospitalName} · ${dcNo}` });
@@ -751,6 +768,7 @@ export default function OrthoApp() {
         setManualMaterialType('SS');
         handleClearManualEntry();
         setCustomDcDate(new Date().toISOString().split('T')[0]);
+        setDoctorName('');
       }
 
       if (shouldNavigate) {
@@ -771,7 +789,7 @@ export default function OrthoApp() {
     } finally {
       setIsSavingDc(false);
     }
-  }, [activeProcedures, buildSavePayload, customDcDate, dcNo, deliveredBy, handleClearManualEntry, hospitalName, manualBoxNumbers.length, manualInstruments.length, manualItems.length, manualMaterialType, navigate, receivedBy, remarks, toast]);
+  }, [activeProcedures, buildSavePayload, customDcDate, dcNo, deliveredBy, doctorName, handleClearManualEntry, hospitalName, manualBoxNumbers.length, manualInstruments.length, manualItems.length, manualMaterialType, navigate, receivedBy, remarks, toast]);
 
   const handleSavePDF = async () => {
     if (!printRef.current) return;
@@ -1031,12 +1049,7 @@ export default function OrthoApp() {
                             <HospitalSelect
                               id="hospital-name-input"
                               value={hospitalName}
-                              onChange={setHospitalName}
-                              onSelectCustomer={(cust) => {
-                                if (cust.contactPerson && !doctorName) {
-                                  setDoctorName(cust.contactPerson);
-                                }
-                              }}
+                              onChange={handleHospitalChange}
                               placeholder="Select or enter hospital name..."
                             />
                           </div>
@@ -1044,12 +1057,15 @@ export default function OrthoApp() {
 
                         <div>
                           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Doctor Name</Label>
-                          <Input
-                            value={doctorName}
-                            onChange={(e) => setDoctorName(e.target.value)}
-                            placeholder="Dr. Name"
-                            className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
-                          />
+                          <div className="mt-1">
+                            <DoctorSelect
+                              id="doctor-name-input"
+                              value={doctorName}
+                              onChange={setDoctorName}
+                              hospitalName={hospitalName}
+                              placeholder="Dr. Name"
+                            />
+                          </div>
                         </div>
 
                         <div>
@@ -1121,12 +1137,7 @@ export default function OrthoApp() {
                           <HospitalSelect
                             id="hospital-name-input-manual"
                             value={hospitalName}
-                            onChange={setHospitalName}
-                            onSelectCustomer={(cust) => {
-                              if (cust.contactPerson && !doctorName) {
-                                setDoctorName(cust.contactPerson);
-                              }
-                            }}
+                            onChange={handleHospitalChange}
                             placeholder="Select or enter hospital name..."
                           />
                         </div>
@@ -1134,12 +1145,15 @@ export default function OrthoApp() {
 
                       <div>
                         <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Doctor Name</Label>
-                        <Input
-                          value={doctorName}
-                          onChange={(e) => setDoctorName(e.target.value)}
-                          placeholder="Dr. Name"
-                          className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
-                        />
+                        <div className="mt-1">
+                          <DoctorSelect
+                            id="doctor-name-input-manual"
+                            value={doctorName}
+                            onChange={setDoctorName}
+                            hospitalName={hospitalName}
+                            placeholder="Dr. Name"
+                          />
+                        </div>
                       </div>
 
                       <div>
@@ -1766,8 +1780,19 @@ export default function OrthoApp() {
               <div className="mt-1">
                 <HospitalSelect
                   value={hospitalName}
-                  onChange={setHospitalName}
+                  onChange={handleHospitalChange}
                   placeholder="Select or enter hospital name..."
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Doctor Name</Label>
+              <div className="mt-1">
+                <DoctorSelect
+                  value={doctorName}
+                  onChange={setDoctorName}
+                  hospitalName={hospitalName}
+                  placeholder="Dr. Name"
                 />
               </div>
             </div>
@@ -1956,6 +1981,7 @@ export default function OrthoApp() {
               ref={printRef}
               activeProcedures={activeProcedures}
               hospitalName={hospitalName}
+              doctorName={doctorName}
               dcNo={dcNo}
               deliveredBy={deliveredBy}
               receivedBy={receivedBy}

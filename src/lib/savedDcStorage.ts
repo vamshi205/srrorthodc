@@ -44,6 +44,7 @@ export type SavedDc = {
   savedAt: string;
   deliveredBy: string;
   receivedBy: string;
+  doctorName?: string;
   remarks: string;
   status: SavedDcStatus;
   items: SavedDcItem[];
