@@ -141,6 +141,9 @@ document.addEventListener("DOMContentLoaded", () => {
             renderSavedInvoicesList();
             renderDashboardInvoicesList();
         } else if (action === "SAVE_CASH_INVOICE_RESPONSE") {
+            if (typeof window.finishSavingProgressBar === "function") {
+                window.finishSavingProgressBar(e.data?.success !== false);
+            }
             renderSavedInvoicesList();
             renderDashboardInvoicesList();
         } else if (action === "FETCH_CASH_CUSTOMERS_RESPONSE" && Array.isArray(payload)) {
@@ -229,8 +232,8 @@ function loadPersistedData() {
         if (!embedContainer) {
             embedContainer = document.createElement("div");
             embedContainer.id = "embed-view-container";
-            embedContainer.style.cssText = "display:block; padding:16px; background:#0f172a; min-height:100vh; font-family:'Outfit', sans-serif;";
-            embedContainer.innerHTML = `<div style="max-width:820px; margin:40px auto; color:#fff; text-align:center; font-size:16px; font-weight:600;">Loading Cash Memo ${viewInv}...</div>`;
+            embedContainer.style.cssText = "display:block; padding:16px; background:#0f172a; min-height:100vh; font-family:'Inter', system-ui, sans-serif;";
+            embedContainer.innerHTML = `<div style="max-width:100%; width:100%; margin:40px auto; color:#fff; text-align:center; font-size:16px; font-weight:600;">Loading Cash Memo ${viewInv}...</div>`;
             document.body.appendChild(embedContainer);
         }
 
@@ -882,7 +885,83 @@ function setupEventListeners() {
         });
     }
 
+    // Synchronize all table inputs from DOM directly into state.invoiceItems before saving or validating
+    const syncItemsFromDom = () => {
+        const tbody = document.getElementById("invoice-tbody");
+        if (!tbody) return;
+        const rows = tbody.querySelectorAll("tr");
+        if (!rows || rows.length === 0) return;
+
+        while (state.invoiceItems.length < rows.length) {
+            state.invoiceItems.push({ description: "", subDescription: "", sku: "", size: "", qty: 1, rate: 0 });
+        }
+
+        rows.forEach((tr, index) => {
+            if (!state.invoiceItems[index]) {
+                state.invoiceItems[index] = { description: "", subDescription: "", sku: "", size: "", qty: 1, rate: 0 };
+            }
+            const item = state.invoiceItems[index];
+            const descInput = tr.querySelector(".desc-input");
+            const subDescInput = tr.querySelector(".sub-desc-input");
+            const sizeInput = tr.querySelector(".size-input");
+            const qtyInput = tr.querySelector(".qty-input");
+            const rateInput = tr.querySelector(".rate-input");
+
+            const domDesc = descInput ? descInput.value.trim() : (item.description || "").trim();
+            const domSubDesc = subDescInput ? subDescInput.value.trim() : (item.subDescription || "").trim();
+            const domSize = sizeInput ? sizeInput.value.trim() : (item.size || "").trim();
+            const domQty = qtyInput ? (parseInt(qtyInput.value) || 1) : (item.qty || 1);
+            const domRate = rateInput && rateInput.value !== "" ? parseFloat(rateInput.value) : (item.rate || 0);
+
+            if (domDesc) {
+                const matched = state.priceList.find(p =>
+                    String(p.description || p.base_description || "").trim().toLowerCase() === domDesc.toLowerCase()
+                );
+                item.description = matched ? String(matched.description || matched.base_description) : domDesc;
+                if (matched && matched.sku && !item.sku) {
+                    item.sku = matched.sku;
+                }
+            } else {
+                item.description = "";
+            }
+
+            item.subDescription = domSubDesc;
+            item.size = domSize;
+            item.qty = domQty > 0 ? domQty : 1;
+
+            if (domRate > 0) {
+                item.rate = domRate;
+            } else if (item.description) {
+                const sizeLower = (item.size || "").toLowerCase().trim();
+                const matchedPrice = state.priceList.find(p => {
+                    const descMatch = String(p.description || p.base_description || "").trim().toLowerCase() === item.description.toLowerCase();
+                    if (!descMatch) return false;
+                    if (!sizeLower) return true;
+                    return String(p.size || "").trim().toLowerCase() === sizeLower;
+                });
+                if (matchedPrice && matchedPrice.price) {
+                    const pVal = parseFloat(matchedPrice.price) || 0;
+                    item.rate = pVal;
+                    if (rateInput && pVal > 0) rateInput.value = pVal;
+                    if (matchedPrice.sku && !item.sku) item.sku = matchedPrice.sku;
+                } else {
+                    item.rate = 0;
+                }
+            } else {
+                item.rate = 0;
+            }
+
+            recalculateRowAmount(tr, item.qty, item.rate);
+        });
+
+        updateCalculations();
+        saveItemsToDraft();
+    };
+
     const validateInvoice = () => {
+        // Sync any active table inputs from DOM into state before validation
+        syncItemsFromDom();
+
         // 1. Validate Customer/Client Name — read from DOM or state
         const domClientName = (document.getElementById("preview-client-name")?.innerText || "").trim();
         const clientName = domClientName || (state.clientInfo.name || "").trim();
@@ -1024,8 +1103,102 @@ function setupEventListeners() {
         syncCustomerToFirestore(custObj);
     };
 
+    let _savingProgTimer1 = null;
+    let _savingProgTimer2 = null;
+
+    const startSavingProgressBar = (invNumber) => {
+        const barContainer = document.getElementById("save-progress-bar-container");
+        const bar = document.getElementById("save-progress-bar");
+        const toast = document.getElementById("saving-indicator-toast");
+        const text = document.getElementById("saving-indicator-text");
+        const pct = document.getElementById("saving-indicator-pct");
+        const spinner = document.getElementById("saving-indicator-spinner");
+        const saveBtn = document.getElementById("save-invoice-btn");
+        const savePrintBtn = document.getElementById("save-print-btn");
+
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            if (!saveBtn.dataset.originalHtml) saveBtn.dataset.originalHtml = saveBtn.innerHTML;
+            saveBtn.innerHTML = `<span class="saving-btn-spinner"></span> Saving...`;
+        }
+        if (savePrintBtn) savePrintBtn.disabled = true;
+
+        if (barContainer && bar && toast) {
+            barContainer.style.display = "block";
+            toast.style.display = "flex";
+            toast.style.opacity = "1";
+            bar.style.width = "25%";
+            bar.style.background = "linear-gradient(90deg, #0d9488, #10b981, #f59e0b)";
+            if (text) text.innerText = invNumber ? `Saving Cash Memo #${invNumber}...` : "Saving Cash Memo...";
+            if (pct) pct.innerText = "25%";
+            if (spinner) spinner.style.display = "block";
+
+            if (_savingProgTimer1) clearTimeout(_savingProgTimer1);
+            if (_savingProgTimer2) clearTimeout(_savingProgTimer2);
+
+            _savingProgTimer1 = setTimeout(() => {
+                bar.style.width = "65%";
+                if (pct) pct.innerText = "65%";
+            }, 300);
+
+            _savingProgTimer2 = setTimeout(() => {
+                bar.style.width = "85%";
+                if (pct) pct.innerText = "85%";
+            }, 650);
+        }
+    };
+
+    const finishSavingProgressBar = (success = true) => {
+        const barContainer = document.getElementById("save-progress-bar-container");
+        const bar = document.getElementById("save-progress-bar");
+        const toast = document.getElementById("saving-indicator-toast");
+        const text = document.getElementById("saving-indicator-text");
+        const pct = document.getElementById("saving-indicator-pct");
+        const spinner = document.getElementById("saving-indicator-spinner");
+        const saveBtn = document.getElementById("save-invoice-btn");
+        const savePrintBtn = document.getElementById("save-print-btn");
+
+        if (_savingProgTimer1) clearTimeout(_savingProgTimer1);
+        if (_savingProgTimer2) clearTimeout(_savingProgTimer2);
+
+        if (bar && pct) {
+            bar.style.width = "100%";
+            pct.innerText = "100%";
+            if (success) {
+                bar.style.background = "#10b981";
+                if (text) text.innerText = "✓ Saved Successfully!";
+                if (spinner) spinner.style.display = "none";
+            } else {
+                bar.style.background = "#ef4444";
+                if (text) text.innerText = "✕ Save Failed";
+            }
+        }
+
+        setTimeout(() => {
+            if (toast) toast.style.opacity = "0";
+            setTimeout(() => {
+                if (barContainer) barContainer.style.display = "none";
+                if (toast) toast.style.display = "none";
+                if (spinner) spinner.style.display = "block";
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    if (saveBtn.dataset.originalHtml) {
+                        saveBtn.innerHTML = saveBtn.dataset.originalHtml;
+                    }
+                }
+                if (savePrintBtn) savePrintBtn.disabled = false;
+            }, 300);
+        }, 700);
+    };
+
+    window.startSavingProgressBar = startSavingProgressBar;
+    window.finishSavingProgressBar = finishSavingProgressBar;
+
     // Reusable function to save the current invoice in the workspace
     const saveActiveInvoice = () => {
+        // Sync any active table inputs from DOM into state before validation
+        syncItemsFromDom();
+
         // Sync DOM values into state before validation
         const domName = document.getElementById("preview-client-name")?.innerText.trim();
         const domAddress = document.getElementById("preview-client-address")?.innerText.trim();
@@ -1088,8 +1261,15 @@ function setupEventListeners() {
             state.savedInvoices.push(invoiceToSave);
             showStatus(`Saved invoice: ${invoiceToSave.invNumber}`);
         }
+
+        // Trigger loading bar
+        startSavingProgressBar(invoiceToSave.invNumber);
+
         if (window.parent && window.parent !== window) {
             window.parent.postMessage({ action: "SAVE_CASH_INVOICE", payload: invoiceToSave }, "*");
+        } else {
+            // Standalone fallback
+            setTimeout(() => finishSavingProgressBar(true), 600);
         }
 
         const fromDcTracker = sessionStorage.getItem('from_dc_tracker') === 'true';
@@ -1102,8 +1282,6 @@ function setupEventListeners() {
             openInvoicesDashboard();
         } else {
             showStatus("Saving and redirecting to DC Tracker...");
-            const saveBtn = document.getElementById("save-invoice-btn");
-            if (saveBtn) saveBtn.disabled = true;
         }
 
         // Background Google Drive sync
@@ -1113,6 +1291,7 @@ function setupEventListeners() {
     };
 
     const saveActiveInvoiceSilent = () => {
+        syncItemsFromDom();
         if (!validateInvoice()) return false;
 
         // Auto-save customer details
@@ -1159,8 +1338,14 @@ function setupEventListeners() {
             state.savedInvoices.push(invoiceToSave);
             showStatus(`Saved invoice: ${invoiceToSave.invNumber}`);
         }
+
+        // Trigger loading bar
+        startSavingProgressBar(invoiceToSave.invNumber);
+
         if (window.parent && window.parent !== window) {
             window.parent.postMessage({ action: "SAVE_CASH_INVOICE", payload: invoiceToSave }, "*");
+        } else {
+            setTimeout(() => finishSavingProgressBar(true), 600);
         }
         renderSavedInvoicesList();
 
@@ -1882,6 +2067,22 @@ function renderInvoiceRows() {
             sizeInput.addEventListener("input", (e) => {
                 const query = e.target.value;
                 updateStateVal("size", query);
+                
+                // Auto-match rate if exact size matches catalog for this item
+                const itemDesc = state.invoiceItems[index]?.description || (tr.querySelector(".desc-input")?.value || "").trim();
+                if (itemDesc && query.trim()) {
+                    const matchedPrice = state.priceList.find(p => 
+                        String(p.description || p.base_description || "").toLowerCase().trim() === itemDesc.toLowerCase().trim() &&
+                        String(p.size || "").toLowerCase().trim() === query.toLowerCase().trim()
+                    );
+                    if (matchedPrice && matchedPrice.price) {
+                        const pVal = parseFloat(matchedPrice.price) || 0;
+                        state.invoiceItems[index].rate = pVal;
+                        rateInput.value = pVal;
+                        recalculateRowAmount(tr, state.invoiceItems[index].qty || 1, pVal);
+                        updateCalculations();
+                    }
+                }
                 showSizeRecommendations(query, sizeRecList, index, sizeInput, rateInput, tr);
             });
 
@@ -1961,6 +2162,7 @@ function renderInvoiceRows() {
         descInput.addEventListener("input", (e) => {
             const query = e.target.value;
             autoResizeTextarea(descInput);
+            state.invoiceItems[index].description = query;
             showRecommendations(query, recList, index, descInput);
         });
 
@@ -2546,7 +2748,7 @@ function showSizeRecommendations(query, container, idx, inputEl, rateInput, rowE
     container.innerHTML = "";
     state.activeSizeIndex = -1;
     
-    const itemDesc = state.invoiceItems[idx].description || "";
+    const itemDesc = state.invoiceItems[idx]?.description || (rowEl?.querySelector(".desc-input")?.value || "").trim();
     if (!itemDesc) {
         container.style.display = "none";
         if (rowEl) rowEl.classList.remove("has-open-dropdown");
@@ -2587,7 +2789,7 @@ function showSizeRecommendations(query, container, idx, inputEl, rateInput, rowE
                 </div>
             `;
             
-            div.addEventListener("click", () => {
+            const applySizeSelection = () => {
                 state.invoiceItems[idx].size = match.size;
                 state.invoiceItems[idx].sku = match.sku || "";
                 state.invoiceItems[idx].rate = itemPrice;
@@ -2605,6 +2807,16 @@ function showSizeRecommendations(query, container, idx, inputEl, rateInput, rowE
                 if (container.parentElement) container.parentElement.classList.remove("has-open-dropdown");
                 if (tableWrapper) tableWrapper.classList.remove("has-open-dropdown");
                 showStatus(`Selected size: ${match.size} ${itemPrice > 0 ? '(Rate: ₹' + itemPrice + ')' : ''}`);
+            };
+
+            div.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                applySizeSelection();
+            });
+
+            div.addEventListener("click", (e) => {
+                e.preventDefault();
+                applySizeSelection();
             });
             container.appendChild(div);
         });
@@ -3386,17 +3598,17 @@ function getPrintableInvoiceHTML(inv) {
     const amountInWordsHtml = words ? `<div style="margin-top:8px;font-size:11px;color:#334155;background:#f8fafc;padding:6px 10px;border-radius:6px;border-left:4px solid #0f766e;">Amount in Words: <strong style="color:#0f172a;">${words}</strong></div>` : '';
 
     return `
-    <div id="printable-inv-area" style="background:#fff;padding:24px 30px;border-radius:8px;font-family:'Outfit',sans-serif;max-width:800px;margin:0 auto;box-shadow:0 4px 20px rgba(0,0,0,0.08);color:#0f172a;">
+    <div id="printable-inv-area" style="background:#fff;padding:24px 30px;border-radius:8px;font-family:'Inter',system-ui,-apple-system,sans-serif;width:100%;max-width:100%;margin:0 auto;box-shadow:0 4px 20px rgba(0,0,0,0.08);color:#0f172a;">
         <!-- Header -->
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:2px solid #0f766e;margin-bottom:12px;">
             <div>
-                <h2 style="font-size:20px;font-weight:800;color:#0f766e;margin:0 0 2px 0;">SRR ORTHO PLUS</h2>
+                <h2 style="font-family:'Outfit',sans-serif;font-size:20px;font-weight:800;color:#0f766e;margin:0 0 2px 0;">SRR ORTHO PLUS</h2>
                 <p style="font-size:11px;color:#475569;margin:1px 0;">217, SIDDARTH NAGAR, HYDERABAD - 500038</p>
                 <p style="font-size:11px;color:#475569;margin:1px 0;">Phone: 9396857455 | Email: srrorthoplus999@gmail.com</p>
                 <p style="font-size:11px;color:#475569;margin:1px 0;">Website: srrorthoplus.com</p>
             </div>
             <div style="text-align:right;">
-                <p style="font-size:20px;font-weight:900;color:#0f766e;margin:0 0 4px 0;letter-spacing:1px;text-transform:uppercase;">CASH MEMO</p>
+                <p style="font-family:'Outfit',sans-serif;font-size:20px;font-weight:900;color:#0f766e;margin:0 0 4px 0;letter-spacing:1px;text-transform:uppercase;">CASH MEMO</p>
                 <table style="border-collapse:collapse;font-size:11px;margin-left:auto;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;">
                     <tr><td style="font-weight:600;color:#475569;padding:2px 6px;text-align:right;">Bill No:</td><td style="font-weight:700;color:#0f172a;padding:2px 6px;text-align:left;">${inv.invNumber || '-'}</td></tr>
                     <tr><td style="font-weight:600;color:#475569;padding:2px 6px;text-align:right;">DC No:</td><td style="font-weight:700;color:#0f172a;padding:2px 6px;text-align:left;">${inv.dcNumber || '-'}</td></tr>
@@ -3735,14 +3947,14 @@ function showEmbedInvoiceView(inv) {
     if (!embedContainer) {
         embedContainer = document.createElement("div");
         embedContainer.id = "embed-view-container";
-        embedContainer.style.cssText = "display:block; padding:16px; background:#0f172a; min-height:100vh; font-family:'Outfit', sans-serif;";
+        embedContainer.style.cssText = "display:block; padding:16px; background:#0f172a; min-height:100vh; font-family:'Inter', system-ui, sans-serif;";
         document.body.appendChild(embedContainer);
     } else {
         embedContainer.style.display = "block";
     }
 
     embedContainer.innerHTML = `
-        <div style="max-width: 820px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);">
+        <div style="max-width: 100%; width: 100%; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);">
             <div style="padding: 12px 20px; background: #1e293b; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155;">
                 <span style="font-weight: 700; font-size: 14px; color: #f8fafc;">
                     📄 Cash Memo Details — ${inv.invNumber || ''}
@@ -3800,9 +4012,10 @@ function showEmbedInvoiceView(inv) {
                 <html>
                 <head>
                     <title>CASH MEMO - ${inv.invNumber || 'SRR'}</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet">
                     <style>
-                        body { margin: 0; padding: 6mm 10mm; font-family: 'Outfit', sans-serif; background: #fff; color: #0f172a; font-size: 11px; }
+                        body { margin: 0; padding: 6mm 10mm; font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; font-size: 11px; }
+                        h1, h2, h3, .heading { font-family: 'Outfit', system-ui, sans-serif; }
                         @page { size: A4 portrait; margin: 6mm; }
                         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box !important; }
                     </style>
@@ -3852,9 +4065,10 @@ function openViewInvoiceModal(inv, autoPrint = false) {
                 <html>
                 <head>
                     <title>CASH MEMO - ${inv.invNumber || 'SRR'}</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800;900&family=Caveat:wght@700&display=swap" rel="stylesheet">
                     <style>
-                        body { margin: 0; padding: 6mm 10mm; font-family: 'Outfit', sans-serif; background: #fff; color: #0f172a; font-size: 11px; }
+                        body { margin: 0; padding: 6mm 10mm; font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; font-size: 11px; }
+                        h1, h2, h3, .heading { font-family: 'Outfit', system-ui, sans-serif; }
                         @page { size: A4 portrait; margin: 6mm; }
                         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box !important; }
                     </style>
@@ -4191,9 +4405,10 @@ function printLedger(customerName, startDate, endDate, rowsHtml, openingBal, clo
         <html>
         <head>
             <title>Ledger - ${customerName}</title>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
             <style>
-                body { font-family: 'Outfit', sans-serif; padding: 20px; color: #1f2937; }
-                h1 { font-size: 20px; margin-bottom: 5px; }
+                body { font-family: 'Inter', system-ui, -apple-system, sans-serif; padding: 20px; color: #1f2937; }
+                h1 { font-family: 'Outfit', system-ui, sans-serif; font-size: 20px; margin-bottom: 5px; }
                 h2 { font-size: 14px; color: #4b5563; margin-top: 0; margin-bottom: 20px; }
                 table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
                 th { background: #f3f4f6; border-bottom: 2px solid #e5e7eb; padding: 8px; font-weight: bold; text-align: left; }

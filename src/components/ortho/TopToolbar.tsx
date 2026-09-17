@@ -88,8 +88,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     }`;
 
   return (
-    <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-1.5">
-      <div className="rounded-2xl border border-white/20 dark:border-white/10 bg-gradient-to-r from-teal-600/90 via-teal-700/90 to-cyan-800/90 dark:from-slate-900/95 dark:via-teal-950/90 dark:to-slate-900/95 backdrop-blur-xl shadow-lg px-4 py-3 flex items-center justify-between gap-4 text-white">
+    <header className="sticky top-0 z-30 w-full mb-3 sm:mb-4">
+      <div className="w-full rounded-2xl border border-white/20 dark:border-white/10 bg-gradient-to-r from-teal-600/95 via-teal-700/95 to-cyan-800/95 dark:from-slate-900/95 dark:via-teal-950/95 dark:to-slate-900/95 backdrop-blur-xl shadow-lg px-3.5 sm:px-5 py-2.5 sm:py-3 flex items-center justify-between gap-3 sm:gap-4 text-white">
         
         {/* Left Side: Back button, Logo & Brand */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -388,6 +388,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </header>
   );
 };

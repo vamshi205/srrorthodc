@@ -489,7 +489,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto py-4">
+    <div className="space-y-6 w-full py-2 sm:py-4">
       {/* Back button and title */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" onClick={onBack} className="gap-2 h-9">
@@ -508,7 +508,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
       <Card className="glass-card rounded-xl border border-border shadow-md">
         <CardContent className="p-6">
           <Tabs defaultValue="catalog" className="w-full">
-            <TabsList className="grid grid-cols-2 sm:grid-cols-5 h-auto sm:h-10 w-full max-w-2xl mb-6 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-5 h-auto sm:h-10 w-full max-w-4xl mb-6 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
               <TabsTrigger value="catalog" className="text-xs font-semibold gap-1.5"><Database className="w-3.5 h-3.5" /> Catalog &amp; Imports</TabsTrigger>
               <TabsTrigger value="customers" className="text-xs font-semibold gap-1.5"><Building2 className="w-3.5 h-3.5 text-teal-600" /> Customers &amp; Hospitals</TabsTrigger>
               <TabsTrigger value="profile" className="text-xs font-semibold gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Profile</TabsTrigger>

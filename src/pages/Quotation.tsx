@@ -32,7 +32,7 @@ export default function Quotation() {
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
-      <main className="flex-grow flex flex-col px-2 sm:px-4 py-2 sm:py-3 overflow-x-hidden">
+      <main className="flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}

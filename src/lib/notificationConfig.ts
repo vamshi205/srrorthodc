@@ -1,4 +1,5 @@
 export interface NotificationConfig {
+  collectPaymentScrollerEnabled: boolean; // default true
   paymentIntervalHours: number; // default 4
   paymentReminderEnabled: boolean; // default true
   minPaymentAlertAmount: number; // default 0
@@ -20,6 +21,7 @@ export interface NotificationConfig {
 }
 
 export const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
+  collectPaymentScrollerEnabled: true,
   paymentIntervalHours: 4,
   paymentReminderEnabled: true,
   minPaymentAlertAmount: 0,
@@ -53,6 +55,9 @@ export function getNotificationConfig(): NotificationConfig {
     }
     if (parsed.invoiceReminderEnabled === undefined) {
       parsed.invoiceReminderEnabled = true;
+    }
+    if (parsed.collectPaymentScrollerEnabled === undefined) {
+      parsed.collectPaymentScrollerEnabled = true;
     }
     return { ...DEFAULT_NOTIFICATION_CONFIG, ...parsed };
   } catch {

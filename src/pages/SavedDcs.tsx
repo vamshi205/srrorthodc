@@ -1114,7 +1114,7 @@ const SavedDcs = () => {
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
       {/* Main Content */}
-      <main className="flex-grow flex flex-col px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
+      <main className="flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
           {/* Top toolbar */}
           <TopToolbar
             theme={theme}
@@ -2608,7 +2608,7 @@ const SavedDcs = () => {
 
       {/* Cash Memo Viewer Modal Popup */}
       <Dialog open={cashMemoModalOpen} onOpenChange={setCashMemoModalOpen}>
-        <DialogContent className="max-w-5xl h-[90vh] p-0 flex flex-col overflow-hidden bg-slate-900 border-slate-700" aria-describedby={undefined}>
+        <DialogContent className="w-[95vw] max-w-6xl h-[92vh] p-0 flex flex-col overflow-hidden bg-slate-900 border-slate-700" aria-describedby={undefined}>
           <DialogHeader className="p-3 sm:p-4 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-slate-800">
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-white">
               <Receipt className="h-5 w-5 text-blue-400" />

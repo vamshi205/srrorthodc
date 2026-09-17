@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
 import { auth } from "@/firebase";
+import { CheckCircle2 } from "lucide-react";
 import {
   fetchCashInvoicesFromFirestore,
   saveCashInvoiceToFirestore,
@@ -19,6 +20,10 @@ export default function CashInvoice() {
     return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'light';
   });
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState(0);
+  const [saveStatusText, setSaveStatusText] = useState("");
+
   const toggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(nextTheme);
@@ -30,22 +35,17 @@ export default function CashInvoice() {
     }
   };
 
-  const [iframeSrc, setIframeSrc] = useState(() => {
+  // State to hold iframe URL with query parameters passed from caller
+  const [iframeSrc, setIframeSrc] = useState<string>("/cash-invoice/index.html?v=3");
+
+  useEffect(() => {
+    // Preserve any search parameters from the parent window and pass them to the iframe
     const search = window.location.search;
-    const sep = search ? '&' : '?';
-    return `/cash-invoice/index.html${search}${sep}v=3&t=${Date.now()}`;
-  });
-
-  useEffect(() => {
-    // When navigating or route search changes, ensure iframe reflects current query or fresh state
-    const search = location.search;
-    const sep = search ? '&' : '?';
-    setIframeSrc(`/cash-invoice/index.html${search}${sep}v=3&t=${Date.now()}`);
-  }, [location.pathname, location.search]);
-
-  useEffect(() => {
-    // Skip the inner auth overlay screen in Cash Invoice Maker
-    sessionStorage.setItem("im_authorized", "true");
+    if (search) {
+      setIframeSrc(`/cash-invoice/index.html${search}&v=3&t=${Date.now()}`);
+    } else {
+      setIframeSrc(`/cash-invoice/index.html?v=3&t=${Date.now()}`);
+    }
 
     // Pass the Google OAuth redirect hash to the iframe if present
     const parentHash = window.location.hash;
@@ -57,6 +57,10 @@ export default function CashInvoice() {
         window.history.replaceState(window.history.state, "", "/");
       }, 800);
     }
+
+    // Skip the inner auth overlay screen in Cash Invoice Maker
+    sessionStorage.setItem("im_authorized", "true");
+
     // Listen for postMessages from the Cash Invoice iframe to store/fetch directly in Firestore
     const handleMessage = async (event: MessageEvent) => {
       const { action, payload, requestId } = event.data || {};
@@ -68,8 +72,16 @@ export default function CashInvoice() {
         const invoices = await fetchCashInvoicesFromFirestore();
         targetWindow?.postMessage({ action: 'FETCH_CASH_INVOICES_RESPONSE', payload: invoices, requestId }, '*');
       } else if (action === 'SAVE_CASH_INVOICE') {
+        setIsSaving(true);
+        setSaveProgress(25);
+        setSaveStatusText(`Saving Cash Memo #${payload?.invNumber || ''}...`);
+
+        const progTimer1 = setTimeout(() => setSaveProgress(60), 300);
+        const progTimer2 = setTimeout(() => setSaveProgress(85), 650);
+
         const success = await saveCashInvoiceToFirestore(payload);
         if (success && payload && payload.dcNumber) {
+          setSaveStatusText(`Syncing with DC #${payload.dcNumber}...`);
           try {
             const dcs = await loadSavedDcs();
             const matchingDc = dcs.find(d => d.dcNo && d.dcNo.trim().toLowerCase() === payload.dcNumber.trim().toLowerCase());
@@ -118,14 +130,25 @@ export default function CashInvoice() {
             console.error("Error auto-linking cash invoice to DC:", err);
           }
         }
+
+        clearTimeout(progTimer1);
+        clearTimeout(progTimer2);
+        setSaveProgress(100);
+        setSaveStatusText(success ? "✓ Cash Memo Saved Successfully!" : "✕ Failed to Save");
+
         targetWindow?.postMessage({ action: 'SAVE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
-        if (success) {
-          const fromDcTracker = sessionStorage.getItem('from_dc_tracker') === 'true';
-          if (fromDcTracker) {
-            sessionStorage.removeItem('from_dc_tracker');
-            navigate("/saved?queue=cash");
+
+        setTimeout(() => {
+          setIsSaving(false);
+          setSaveProgress(0);
+          if (success) {
+            const fromDcTracker = sessionStorage.getItem('from_dc_tracker') === 'true';
+            if (fromDcTracker) {
+              sessionStorage.removeItem('from_dc_tracker');
+              navigate("/saved?queue=cash");
+            }
           }
-        }
+        }, 750);
       } else if (action === 'DELETE_CASH_INVOICE') {
         const success = await deleteCashInvoiceFromFirestore(payload);
         targetWindow?.postMessage({ action: 'DELETE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
@@ -154,7 +177,7 @@ export default function CashInvoice() {
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
-      <main className="flex-grow flex flex-col px-2 sm:px-4 lg:px-6 pt-2 pb-4 overflow-x-hidden">
+      <main className="flex-grow flex flex-col px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}
@@ -170,8 +193,36 @@ export default function CashInvoice() {
           setCollapsedProcedures={() => {}}
         />
         
-        {/* Floating dashboard card aligned with the main toolbar */}
-        <div className="mt-0 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[600px]">
+        {/* Full page canvas container matching DC module */}
+        <div className="mt-2 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[calc(100vh-100px)]">
+          {/* Top Loading Bar for Saving Cash Invoices */}
+          {isSaving && (
+            <div className="absolute top-0 left-0 right-0 z-50 pointer-events-none">
+              {/* Animated Gradient Bar */}
+              <div className="w-full h-1.5 bg-teal-100 dark:bg-teal-950 overflow-hidden shadow-sm">
+                <div
+                  className="h-full bg-gradient-to-r from-teal-500 via-emerald-500 to-amber-500 transition-all duration-300 ease-out"
+                  style={{ width: `${saveProgress}%` }}
+                />
+              </div>
+
+              {/* Floating saving status pill */}
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-auto">
+                <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/95 dark:bg-slate-900/95 border border-teal-500/40 shadow-xl backdrop-blur-md text-xs font-semibold text-slate-800 dark:text-slate-100 animate-in fade-in slide-in-from-top-3 duration-200">
+                  {saveProgress < 100 ? (
+                    <div className="w-4 h-4 rounded-full border-2 border-teal-600 border-t-transparent animate-spin shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  )}
+                  <span className="truncate max-w-[280px] sm:max-w-md">{saveStatusText}</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-bold shrink-0">
+                    {saveProgress}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <iframe
             src={iframeSrc}
             title="Cash Invoice Maker"
@@ -182,3 +233,4 @@ export default function CashInvoice() {
     </div>
   );
 }
+

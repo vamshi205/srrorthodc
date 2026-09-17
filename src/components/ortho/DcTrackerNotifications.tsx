@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Bell,
   BellRing,
@@ -403,7 +404,10 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       if (hasPendingPayments || hasPendingReturns || hasPendingInvoices) {
         const timer = setTimeout(() => {
           setLoginPopupOpen(true);
+          const now = Date.now();
           localStorage.setItem(STORAGE_KEYS.LAST_LOGIN_POPUP_DATE, todayDateStr);
+          localStorage.setItem(STORAGE_KEYS.LAST_PAYMENT_REMINDER, String(now));
+          localStorage.setItem(STORAGE_KEYS.LAST_RETURN_REMINDER_DATE, todayDateStr);
           sessionStorage.setItem(STORAGE_KEYS.SEEN_LOGIN_POPUP_SESSION, "true");
           logReminderAction({
             action: "POPUP_SHOWN",
@@ -430,6 +434,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     config.firstLoginIncludeInvoices,
     config.soundEnabled,
     paymentReminders.totalCount,
+    paymentReminders.totalAmount,
     returnReminders.count,
     invoiceReminders.count,
   ]);
@@ -441,6 +446,9 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     const intervalMs = (config.paymentIntervalHours || 4) * 60 * 60 * 1000;
 
     const checkReminders = () => {
+      // Do not trigger recurring banner if login modal is currently open
+      if (loginPopupOpen) return;
+
       const snoozedUntil = Number(localStorage.getItem(STORAGE_KEYS.SNOOZED_UNTIL) || 0);
       if (Date.now() < snoozedUntil) return;
 
@@ -503,6 +511,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     };
   }, [
     savedDcs.length,
+    loginPopupOpen,
     paymentReminders,
     returnReminders,
     config.paymentIntervalHours,
@@ -526,7 +535,17 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
   return (
     <>
       {/* 1. FIRST LOGIN / MORNING WELCOME REMINDER MODAL */}
-      <Dialog open={loginPopupOpen} onOpenChange={setLoginPopupOpen}>
+      <Dialog
+        open={loginPopupOpen}
+        onOpenChange={(open) => {
+          setLoginPopupOpen(open);
+          if (!open) {
+            setActiveBanner(null);
+            localStorage.setItem(STORAGE_KEYS.LAST_PAYMENT_REMINDER, String(Date.now()));
+            localStorage.setItem(STORAGE_KEYS.LAST_RETURN_REMINDER_DATE, new Date().toISOString().slice(0, 10));
+          }
+        }}
+      >
         <DialogContent className="w-[95vw] sm:max-w-lg p-0 overflow-hidden rounded-2xl sm:rounded-3xl border border-amber-300 dark:border-amber-900/60 shadow-2xl bg-white dark:bg-slate-950 z-[100] max-h-[90vh] flex flex-col [&>button]:hidden">
           {/* Modal Header */}
           <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-teal-800 p-4 sm:p-5 text-slate-950 relative overflow-hidden shrink-0">
@@ -771,6 +790,9 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
                 size="sm"
                 onClick={() => {
                   setLoginPopupOpen(false);
+                  setActiveBanner(null);
+                  localStorage.setItem(STORAGE_KEYS.LAST_PAYMENT_REMINDER, String(Date.now()));
+                  localStorage.setItem(STORAGE_KEYS.LAST_RETURN_REMINDER_DATE, new Date().toISOString().slice(0, 10));
                   logReminderAction({
                     action: "DISMISSED",
                     label: "Popup Dismissed via Footer",
@@ -898,111 +920,115 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* 2. FLOATING RECURRING REMINDER BANNER - Positioned at bottom-right so it never overlaps top notification bar or toolbar */}
-      {activeBanner && (
-        <div
-          onMouseEnter={() => setIsBannerHovered(true)}
-          onMouseLeave={() => setIsBannerHovered(false)}
-          className="fixed bottom-5 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-50 sm:max-w-md sm:w-full animate-in fade-in slide-in-from-bottom-5 duration-300 pointer-events-auto shadow-2xl"
-        >
-          <div className="rounded-2xl border-2 border-amber-500/40 bg-slate-950/95 text-white shadow-2xl p-3.5 sm:p-4 backdrop-blur-xl ring-1 ring-white/10">
-            <div className="flex items-start justify-between gap-2.5 sm:gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
-                  <BellRing className="w-5 h-5 animate-bounce" />
+      {/* 2. FLOATING RECURRING REMINDER BANNER - Portaled to document.body so it is viewport-fixed and never trapped by parent backdrop-blur/transforms */}
+      {typeof document !== "undefined" &&
+        document.body &&
+        activeBanner &&
+        createPortal(
+          <div
+            onMouseEnter={() => setIsBannerHovered(true)}
+            onMouseLeave={() => setIsBannerHovered(false)}
+            className="fixed bottom-5 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-[9999] sm:max-w-md sm:w-full animate-in fade-in slide-in-from-bottom-5 duration-300 pointer-events-auto shadow-2xl"
+          >
+            <div className="rounded-2xl border-2 border-amber-500/40 bg-slate-950/95 text-white shadow-2xl p-3.5 sm:p-4 backdrop-blur-xl ring-1 ring-white/10">
+              <div className="flex items-start justify-between gap-2.5 sm:gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
+                    <BellRing className="w-5 h-5 animate-bounce" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-xs sm:text-sm text-amber-200 tracking-tight truncate">
+                      {activeBanner.title}
+                    </h4>
+                    <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 leading-relaxed break-words">
+                      {activeBanner.message}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h4 className="font-bold text-xs sm:text-sm text-amber-200 tracking-tight truncate">
-                    {activeBanner.title}
-                  </h4>
-                  <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 leading-relaxed break-words">
-                    {activeBanner.message}
-                  </p>
-                </div>
+                <button
+                  onClick={() => setActiveBanner(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                  title="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                onClick={() => setActiveBanner(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
-                title="Dismiss"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="mt-3.5 pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-              <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                {activeBanner.type === "payment"
-                  ? `Every ${config.paymentIntervalHours || 4} Hours`
-                  : "Daily Alert"}
-              </span>
+              <div className="mt-3.5 pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {activeBanner.type === "payment"
+                    ? `Every ${config.paymentIntervalHours || 4} Hours`
+                    : "Daily Alert"}
+                </span>
 
-              {!showBannerSnooze ? (
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setShowBannerSnooze(true)}
-                    className="h-7 text-xs text-slate-300 hover:text-white hover:bg-white/10 px-2.5 gap-1"
-                  >
-                    <Clock className="w-3 h-3 text-slate-400" />
-                    Remind Later...
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setActiveBanner(null);
-                      setIsOpen(true);
-                      if (activeBanner.type === "payment") setActiveTab("payments");
-                      else if (activeBanner.type === "return") setActiveTab("returns");
-                    }}
-                    className="h-7 text-xs bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold px-3 shadow-md"
-                  >
-                    View Details
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-1 bg-white/10 p-1 rounded-xl">
-                  <span className="text-[10px] text-amber-200 font-black uppercase tracking-wider px-1">
-                    Remind in:
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleSnoozeOption("15m")}
-                    className="h-6 text-[11px] text-white bg-white/10 hover:bg-white/20 px-2 font-bold"
-                  >
-                    ⏱️ 15m
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleSnoozeOption("1h")}
-                    className="h-6 text-[11px] text-white bg-white/10 hover:bg-white/20 px-2 font-bold"
-                  >
-                    ⏳ 1h
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleSnoozeOption("tomorrow")}
-                    className="h-6 text-[11px] text-white bg-white/10 hover:bg-white/20 px-2 font-bold"
-                  >
-                    📅 Tomorrow
-                  </Button>
-                  <button
-                    onClick={() => setShowBannerSnooze(false)}
-                    className="text-slate-400 hover:text-white px-1 text-xs"
-                    title="Cancel"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
+                {!showBannerSnooze ? (
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowBannerSnooze(true)}
+                      className="h-7 text-xs text-slate-300 hover:text-white hover:bg-white/10 px-2.5 gap-1"
+                    >
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      Remind Later...
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setActiveBanner(null);
+                        setIsOpen(true);
+                        if (activeBanner.type === "payment") setActiveTab("payments");
+                        else if (activeBanner.type === "return") setActiveTab("returns");
+                      }}
+                      className="h-7 text-xs bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold px-3 shadow-md"
+                    >
+                      View Details
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1 bg-white/10 p-1 rounded-xl">
+                    <span className="text-[10px] text-amber-200 font-black uppercase tracking-wider px-1">
+                      Remind in:
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSnoozeOption("15m")}
+                      className="h-6 text-[11px] text-white bg-white/10 hover:bg-white/20 px-2 font-bold"
+                    >
+                      ⏱️ 15m
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSnoozeOption("1h")}
+                      className="h-6 text-[11px] text-white bg-white/10 hover:bg-white/20 px-2 font-bold"
+                    >
+                      ⏳ 1h
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleSnoozeOption("tomorrow")}
+                      className="h-6 text-[11px] text-white bg-white/10 hover:bg-white/20 px-2 font-bold"
+                    >
+                      📅 Tomorrow
+                    </Button>
+                    <button
+                      onClick={() => setShowBannerSnooze(false)}
+                      className="text-slate-400 hover:text-white px-1 text-xs"
+                      title="Cancel"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* 3. NOTIFICATION BELL TRIGGER & POPOVER PANEL */}
       <Popover open={isOpen} onOpenChange={setIsOpen}>

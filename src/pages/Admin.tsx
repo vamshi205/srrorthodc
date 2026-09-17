@@ -65,8 +65,8 @@ const Admin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
-      <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
+      <main className="flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}
@@ -84,34 +84,34 @@ const Admin = () => {
 
         {/* Choice Screen when not authorized */}
         {!isAdminAuthorized && (
-          <main className="container mx-auto max-w-5xl py-12">
-            <div className="text-center space-y-3 mb-10">
-              <h1 className="text-3xl font-display font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+          <div className="w-full py-6 sm:py-8 flex-1 flex flex-col justify-center">
+            <div className="text-center space-y-2 mb-8">
+              <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
                 Admin Control Panel
               </h1>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Select an administration portal to configure procedures, product catalogs, default company profiles, or cloud sync back-ends.
+              <p className="text-xs sm:text-sm text-muted-foreground max-w-xl mx-auto">
+                Select an administration portal to configure procedures, product catalogs, company profiles, notifications, or delivery analytics.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5 w-full">
               {/* Card 1: DC Admin Panel */}
               <button
                 onClick={() => {
                   setSelectedPanel('dc');
                   setAdminAccessOpen(true);
                 }}
-                className="group p-6 rounded-2xl border-2 border-teal-500/40 bg-teal-500/5 hover:bg-teal-500/10 hover:border-teal-500 transition-all duration-200 text-left flex flex-col justify-between space-y-6 shadow-md"
+                className="group p-5 rounded-2xl border-2 border-teal-500/40 bg-teal-500/5 hover:bg-teal-500/10 hover:border-teal-500 transition-all duration-200 text-left flex flex-col justify-between space-y-5 shadow-md"
               >
-                <div className="w-12 h-12 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-                  <FileText className="w-6 h-6" />
+                <div className="w-11 h-11 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                  <FileText className="w-5 h-5" />
                 </div>
                 <div className="space-y-1.5">
-                  <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400">
+                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400">
                     DC System Admin
                   </h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Add new orthopaedic procedures, customize item quantities, and manage the list of surgical instruments.
+                    Add new orthopaedic procedures, customize item quantities, and manage surgical instruments.
                   </p>
                 </div>
               </button>
@@ -122,17 +122,17 @@ const Admin = () => {
                   setSelectedPanel('cash');
                   setAdminAccessOpen(true);
                 }}
-                className="group p-6 rounded-2xl border-2 border-purple-500/40 bg-purple-500/5 hover:bg-purple-500/10 hover:border-purple-500 transition-all duration-200 text-left flex flex-col justify-between space-y-6 shadow-md"
+                className="group p-5 rounded-2xl border-2 border-purple-500/40 bg-purple-500/5 hover:bg-purple-500/10 hover:border-purple-500 transition-all duration-200 text-left flex flex-col justify-between space-y-5 shadow-md"
               >
-                <div className="w-12 h-12 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-                  <Receipt className="w-6 h-6" />
+                <div className="w-11 h-11 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                  <Receipt className="w-5 h-5" />
                 </div>
                 <div className="space-y-1.5">
-                  <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
                     Cash Invoice Admin
                   </h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Upload price catalog spreadsheets, set default bank and UPI details, manage invoice templates, and configure cloud backups.
+                    Upload price catalog spreadsheets, set default bank and UPI details, and manage customer directories.
                   </p>
                 </div>
               </button>
@@ -143,17 +143,17 @@ const Admin = () => {
                   setSelectedPanel('quotation');
                   setAdminAccessOpen(true);
                 }}
-                className="group p-6 rounded-2xl border-2 border-blue-500/40 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500 transition-all duration-200 text-left flex flex-col justify-between space-y-6 shadow-md"
+                className="group p-5 rounded-2xl border-2 border-blue-500/40 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500 transition-all duration-200 text-left flex flex-col justify-between space-y-5 shadow-md"
               >
-                <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-                  <FileText className="w-6 h-6" />
+                <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                  <FileText className="w-5 h-5" />
                 </div>
                 <div className="space-y-1.5">
-                  <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
                     Quotation Settings
                   </h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Configure official company letterhead details, authorized signatory, default terms &amp; conditions, and quotation templates.
+                    Configure official company letterhead details, authorized signatory, and quotation templates.
                   </p>
                 </div>
               </button>
@@ -164,43 +164,43 @@ const Admin = () => {
                   setSelectedPanel('notifications');
                   setAdminAccessOpen(true);
                 }}
-                className="group p-6 rounded-2xl border-2 border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500 transition-all duration-200 text-left flex flex-col justify-between space-y-6 shadow-md"
+                className="group p-5 rounded-2xl border-2 border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500 transition-all duration-200 text-left flex flex-col justify-between space-y-5 shadow-md"
               >
-                <div className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-md group-hover:scale-110 transition-transform font-black">
-                  <Bell className="w-6 h-6 text-slate-950" />
+                <div className="w-11 h-11 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-md group-hover:scale-110 transition-transform font-black">
+                  <Bell className="w-5 h-5 text-slate-950" />
                 </div>
                 <div className="space-y-1.5">
-                  <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400">
+                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400">
                     Notifications &amp; Reminders
                   </h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Customize payment reminder frequencies, return item cutoff thresholds, first login alert popups, and chime sounds.
+                    Customize payment reminder frequencies, return item cutoff thresholds, popups, and ticker bar.
                   </p>
                 </div>
               </button>
 
-              {/* Card 5: Delivery & Field Personnel Analytics */}
+              {/* Card 5: Delivery & Personnel Analytics */}
               <button
                 onClick={() => {
                   setSelectedPanel('personnel');
                   setAdminAccessOpen(true);
                 }}
-                className="group p-6 rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500 transition-all duration-200 text-left flex flex-col justify-between space-y-6 shadow-md"
+                className="group p-5 rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500 transition-all duration-200 text-left flex flex-col justify-between space-y-5 shadow-md"
               >
-                <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform font-black">
-                  <Truck className="w-6 h-6" />
+                <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform font-black">
+                  <Truck className="w-5 h-5" />
                 </div>
                 <div className="space-y-1.5">
-                  <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-                    Delivery &amp; Field Analytics
+                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                    Delivery &amp; Personnel Analytics
                   </h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Complete operational intelligence: who delivered what, items volume, hospital coverage, and pending return accountability.
+                    Leaderboards, item breakdowns by person, duplicate deduplication, and pending returns.
                   </p>
                 </div>
               </button>
             </div>
-          </main>
+          </div>
         )}
 
         {/* Password Authorization Dialog */}
@@ -256,89 +256,85 @@ const Admin = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Panel Rendering once authorized */}
+        {/* Panel Rendering once authorized - Full Page Width */}
         {isAdminAuthorized && selectedPanel === 'dc' && (
-          <main className="container mx-auto max-w-4xl py-4 sm:py-6">
-            <div className="space-y-6">
-              <div className="flex items-center gap-4">
-                <Button variant="ghost" onClick={handleBackToChoice} className="gap-2 h-9">
-                  <ArrowLeft className="w-4 h-4" /> Back to Choice
-                </Button>
-                <div>
-                  <h1 className="text-xl font-display font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-                    DC System Management
-                  </h1>
-                  <p className="text-xs text-muted-foreground">
-                    Create new surgical procedures and customize their default item contents.
-                  </p>
-                </div>
+          <div className="w-full py-2 sm:py-4 space-y-6">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" onClick={handleBackToChoice} className="gap-2 h-9">
+                <ArrowLeft className="w-4 h-4" /> Back to Choice
+              </Button>
+              <div>
+                <h1 className="text-xl font-display font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+                  DC System Management
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  Create new surgical procedures and customize their default item contents.
+                </p>
               </div>
-              <AddProcedureForm />
             </div>
-          </main>
+            <AddProcedureForm />
+          </div>
         )}
 
         {isAdminAuthorized && selectedPanel === 'cash' && (
-          <CashInvoiceAdmin onBack={handleBackToChoice} />
+          <div className="w-full py-2 sm:py-4">
+            <CashInvoiceAdmin onBack={handleBackToChoice} />
+          </div>
         )}
 
         {isAdminAuthorized && selectedPanel === 'quotation' && (
-          <main className="container mx-auto max-w-6xl py-4 sm:py-6">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <Button variant="ghost" onClick={handleBackToChoice} className="gap-2 h-9">
-                    <ArrowLeft className="w-4 h-4" /> Back to Choice
-                  </Button>
-                  <div>
-                    <h1 className="text-xl font-display font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-                      Quotation Settings &amp; Administration
-                    </h1>
-                    <p className="text-xs text-muted-foreground">
-                      Configure letterhead branding, company address, default quotation terms, and templates.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[700px] h-[calc(100vh-180px)]">
-                <iframe
-                  src="/quotation/index.html?view=settings&adminOnly=true"
-                  title="Quotation Settings"
-                  className="absolute inset-0 w-full h-full border-0"
-                />
-              </div>
-            </div>
-          </main>
-        )}
-
-        {isAdminAuthorized && selectedPanel === 'notifications' && (
-          <main className="container mx-auto max-w-4xl py-4 sm:py-6">
-            <div className="space-y-6">
+          <div className="w-full py-2 sm:py-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <Button variant="ghost" onClick={handleBackToChoice} className="gap-2 h-9">
                   <ArrowLeft className="w-4 h-4" /> Back to Choice
                 </Button>
                 <div>
                   <h1 className="text-xl font-display font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-                    Notifications &amp; Alerts Settings
+                    Quotation Settings &amp; Administration
                   </h1>
                   <p className="text-xs text-muted-foreground">
-                    Customize interval timers, return cutoff days, and first login popup alerts.
+                    Configure letterhead branding, company address, default quotation terms, and templates.
                   </p>
                 </div>
               </div>
-              <NotificationSettingsAdmin />
             </div>
-          </main>
+            
+            <div className="w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[700px] h-[calc(100vh-180px)]">
+              <iframe
+                src="/quotation/index.html?view=settings&adminOnly=true"
+                title="Quotation Settings"
+                className="absolute inset-0 w-full h-full border-0"
+              />
+            </div>
+          </div>
+        )}
+
+        {isAdminAuthorized && selectedPanel === 'notifications' && (
+          <div className="w-full py-2 sm:py-4 space-y-6">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" onClick={handleBackToChoice} className="gap-2 h-9">
+                <ArrowLeft className="w-4 h-4" /> Back to Choice
+              </Button>
+              <div>
+                <h1 className="text-xl font-display font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+                  Notifications &amp; Alerts Settings
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  Customize interval timers, return cutoff days, first login popups, and live payment ticker.
+                </p>
+              </div>
+            </div>
+            <NotificationSettingsAdmin />
+          </div>
         )}
 
         {isAdminAuthorized && selectedPanel === 'personnel' && (
-          <main className="container mx-auto max-w-6xl py-4 sm:py-6">
+          <div className="w-full py-2 sm:py-4">
             <DeliveryPersonnelAdmin onBack={handleBackToChoice} />
-          </main>
+          </div>
         )}
-      </div>
+      </main>
     </div>
   );
 };

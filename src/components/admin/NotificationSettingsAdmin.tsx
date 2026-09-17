@@ -180,7 +180,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
               </span>
             </div>
           </CardHeader>
-          <CardContent className="p-4 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <CardContent className="p-4 pt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Category 1: Cash / Collect Payments */}
             <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
               config.paymentReminderEnabled 
@@ -205,7 +205,11 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                 </div>
                 <Switch
                   checked={config.paymentReminderEnabled}
-                  onCheckedChange={(val) => setConfig({ ...config, paymentReminderEnabled: val })}
+                  onCheckedChange={(val) => {
+                    const updated = { ...config, paymentReminderEnabled: val };
+                    setConfig(updated);
+                    saveNotificationConfig(updated);
+                  }}
                 />
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
@@ -222,7 +226,53 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
               </div>
             </div>
 
-            {/* Category 2: Returns */}
+            {/* Category 2: Collect Payment Scroller */}
+            <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
+              config.collectPaymentScrollerEnabled && config.paymentReminderEnabled
+                ? "border-amber-500/40 bg-amber-50/40 dark:bg-amber-950/20 shadow-xs" 
+                : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-70"
+            }`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                    config.collectPaymentScrollerEnabled && config.paymentReminderEnabled ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                  }`}>
+                    <IndianRupee className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                      Payment Scroller
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Header live ticker bar
+                    </div>
+                  </div>
+                </div>
+                <Switch
+                  checked={config.collectPaymentScrollerEnabled}
+                  onCheckedChange={(val) => {
+                    const updated = { ...config, collectPaymentScrollerEnabled: val };
+                    setConfig(updated);
+                    saveNotificationConfig(updated);
+                  }}
+                  disabled={!config.paymentReminderEnabled}
+                />
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
+                <span className="text-muted-foreground">Status:</span>
+                {config.collectPaymentScrollerEnabled && config.paymentReminderEnabled ? (
+                  <Badge className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-[10px] h-5 px-1.5 font-bold">
+                    Scroller Active
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-slate-500 border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
+                    Scroller Hidden
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* Category 3: Returns */}
             <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
               config.returnReminderEnabled 
                 ? "border-cyan-500/40 bg-cyan-50/40 dark:bg-cyan-950/20 shadow-xs" 
@@ -246,7 +296,11 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                 </div>
                 <Switch
                   checked={config.returnReminderEnabled}
-                  onCheckedChange={(val) => setConfig({ ...config, returnReminderEnabled: val })}
+                  onCheckedChange={(val) => {
+                    const updated = { ...config, returnReminderEnabled: val };
+                    setConfig(updated);
+                    saveNotificationConfig(updated);
+                  }}
                 />
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
@@ -263,7 +317,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
               </div>
             </div>
 
-            {/* Category 3: Invoices */}
+            {/* Category 4: Invoices */}
             <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
               config.invoiceReminderEnabled 
                 ? "border-purple-500/40 bg-purple-50/40 dark:bg-purple-950/20 shadow-xs" 
@@ -287,7 +341,11 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                 </div>
                 <Switch
                   checked={config.invoiceReminderEnabled}
-                  onCheckedChange={(val) => setConfig({ ...config, invoiceReminderEnabled: val })}
+                  onCheckedChange={(val) => {
+                    const updated = { ...config, invoiceReminderEnabled: val };
+                    setConfig(updated);
+                    saveNotificationConfig(updated);
+                  }}
                 />
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
@@ -323,11 +381,34 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
               </div>
               <Switch
                 checked={config.paymentReminderEnabled}
-                onCheckedChange={(val) => setConfig({ ...config, paymentReminderEnabled: val })}
+                onCheckedChange={(val) => {
+                  const updated = { ...config, paymentReminderEnabled: val };
+                  setConfig(updated);
+                  saveNotificationConfig(updated);
+                }}
               />
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-1 space-y-4">
+            <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60">
+              <div>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Header Live Payment Scroller
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Show or hide the live animated payment ticker next to DC Operations header
+                </p>
+              </div>
+              <Switch
+                checked={config.collectPaymentScrollerEnabled}
+                onCheckedChange={(val) => {
+                  const updated = { ...config, collectPaymentScrollerEnabled: val };
+                  setConfig(updated);
+                  saveNotificationConfig(updated);
+                }}
+                disabled={!config.paymentReminderEnabled}
+              />
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                 Reminder Interval (High Weightage)

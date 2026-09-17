@@ -30,7 +30,9 @@
     --paper-input-border: #cbd5e1;
     --paper-input-focus-bg: #ffffff;
     
-    --font-stack: 'Outfit', system-ui, -apple-system, sans-serif;
+    --font-body: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-stack: var(--font-body);
     --shadow-main: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
     --shadow-paper: 0 15px 40px -12px rgba(0, 0, 0, 0.15);
     --shadow-glow: 0 0 20px 2px rgba(53, 181, 166, 0.25);
@@ -71,12 +73,22 @@
 body {
     background-color: var(--bg-app);
     color: var(--text-main);
-    font-family: var(--font-stack);
+    font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
     overflow-x: hidden;
     transition: background-color var(--transition-smooth), color var(--transition-smooth);
+}
+
+/* Typography Consistency with DC and Portal */
+h1, h2, h3, .doc-heading h1, .company-info h2, .app-logo, .inv-title, .modal-title, .section-title {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+}
+
+input, select, textarea, button, .table-input, .editable-text, table, th, td, .btn, .badge, .bill-label {
+    font-family: var(--font-body);
 }
 
 /* App Container Layout */
@@ -602,34 +614,37 @@ body {
     left: 100%;
 }
 
-/* Invoice Container */
+/* Invoice Container: Full Page Width like DC */
 .invoice-container {
     flex-grow: 1;
-    padding: 12px 16px 20px 16px;
+    padding: 16px 20px 40px 20px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     justify-content: flex-start;
-    gap: 12px;
+    gap: 16px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
-/* A4 Paper Dimensions: ~210mm x 297mm */
-/* A4 Paper Dimensions: ~210mm x 297mm */
+/* Full Page Width Cash Memo Canvas matching DC */
 .invoice-paper {
     background: var(--paper-bg);
     color: var(--paper-text);
-    width: 210mm;
+    width: 100%;
+    max-width: 100%;
     min-height: auto;
-    padding: 8mm 12mm 6mm 12mm;
-    box-shadow: var(--shadow-paper);
-    border-radius: 6px;
+    padding: 24px 28px;
+    box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    border-radius: 12px;
+    border: 1px solid var(--paper-border);
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
     position: relative;
     transition: background-color var(--transition-fast), color var(--transition-fast);
-    zoom: 1.12;
+    zoom: 1;
 }
 
 .divider {
@@ -1605,7 +1620,7 @@ select.table-input {
         padding: 0 !important;
         height: auto !important;
         overflow: visible !important;
-        font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         font-size: 11px !important;
         line-height: 1.4 !important;
     }
@@ -1847,7 +1862,7 @@ select.table-input {
 
     .print-text {
         display: inline-block !important;
-        font-family: 'Outfit', sans-serif !important;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
         font-size: 11px !important;
         color: #0f172a !important;
         white-space: pre-wrap !important;
@@ -2778,15 +2793,32 @@ select.table-input {
     margin-top: 4px;
 }
 
+.bill-to-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 24px;
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .bill-to-form {
+        grid-template-columns: 1fr;
+        gap: 6px 0;
+    }
+}
+
 .bill-row {
-    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 0;
 }
 
 .bill-label {
     font-size: 12px;
     font-weight: 600;
     color: #475569;
-    min-width: 115px;
+    min-width: 120px;
     flex-shrink: 0;
 }
 
@@ -2797,9 +2829,10 @@ select.table-input {
 .bill-field-input {
     display: inline-block;
     flex: 1;
-    max-width: 480px;
-    min-width: 260px;
-    padding: 5px 10px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 180px;
+    padding: 6px 12px;
     font-size: 12px;
     font-weight: 600;
     color: #0f172a;
@@ -2807,8 +2840,8 @@ select.table-input {
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     transition: all 0.15s ease;
-    min-height: 28px;
-    line-height: 18px;
+    min-height: 32px;
+    line-height: 20px;
     box-sizing: border-box;
 }
 
@@ -2850,3 +2883,27 @@ select.table-input {
 #view-invoice-modal {
     z-index: 1000000 !important;
 }
+
+/* Saving Loading Bar & Indicator Animations */
+@keyframes spin-fast {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer-pulse {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.saving-btn-spinner {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin-fast 0.6s linear infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+

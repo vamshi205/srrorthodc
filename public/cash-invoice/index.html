@@ -7,10 +7,10 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <!-- Premium Google Fonts: Outfit -->
+    <!-- Google Fonts: Inter (body & tables) & Outfit (display headers) matching the portal -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Caveat:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -34,6 +34,18 @@
             <button type="button" class="btn btn-primary" id="auth-login-btn" style="width: 100%; justify-content: center; padding: 12px; margin-top: 10px;">Unlock Application</button>
             <p id="auth-error-msg" style="color: var(--danger); font-size: 11px; margin-top: 5px; display: none; font-weight: 600;">Invalid username or password.</p>
         </div>
+    </div>
+
+    <!-- Top-of-Screen Saving Progress Loading Bar -->
+    <div id="save-progress-bar-container" style="display:none; position:fixed; top:0; left:0; width:100%; height:4px; z-index:99999999; background:rgba(13,148,136,0.15); pointer-events:none;">
+        <div id="save-progress-bar" style="width:0%; height:100%; background:linear-gradient(90deg, #0d9488, #10b981, #f59e0b); transition:width 0.35s cubic-bezier(0.4, 0, 0.2, 1); box-shadow:0 0 12px rgba(16,185,129,0.6);"></div>
+    </div>
+
+    <!-- Floating Saving Notification Banner -->
+    <div id="saving-indicator-toast" style="display:none; position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:99999999; background:rgba(255,255,255,0.96); backdrop-filter:blur(12px); border:1px solid rgba(13,148,136,0.4); box-shadow:0 12px 36px rgba(0,0,0,0.18); border-radius:9999px; padding:7px 18px; font-family:'Inter', system-ui, sans-serif; font-size:12px; font-weight:600; color:#0f172a; align-items:center; gap:10px; pointer-events:none; transition:opacity 0.2s ease;">
+        <div id="saving-indicator-spinner" style="width:14px; height:14px; border:2px solid #0d9488; border-top-color:transparent; border-radius:50%; animation:spin-fast 0.6s linear infinite; flex-shrink:0;"></div>
+        <span id="saving-indicator-text" style="white-space:nowrap;">Saving Cash Memo...</span>
+        <span id="saving-indicator-pct" style="font-size:10px; font-family:monospace; background:#ccfbf1; color:#0f766e; padding:2px 6px; border-radius:6px; font-weight:700; flex-shrink:0;">25%</span>
     </div>
 
     <div class="app-container">
@@ -144,7 +156,7 @@
                             <div class="bill-to-header" style="margin-bottom: 8px;">
                                 <h3 style="margin: 0; font-size: 13px; font-weight: 700; color: var(--paper-accent, #0f766e); text-transform: uppercase; letter-spacing: 0.5px;">Bill To:</h3>
                             </div>
-                            <div class="bill-to-form" style="display: flex; flex-direction: column; gap: 6px;">
+                            <div class="bill-to-form">
                                 <div class="bill-row autocomplete-container" style="position: relative; z-index: 100000; display: flex; align-items: center;">
                                     <span class="bill-label" style="font-size: 12px; font-weight: 600; color: #475569; min-width: 115px; flex-shrink: 0;">Customer Name:</span>
                                     <span class="editable-text client-name bill-field-input" id="preview-client-name" contenteditable="true" data-placeholder="e.g. Dr. Rajesh Sharma or Apollo Hospital"></span>

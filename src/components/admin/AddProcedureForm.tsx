@@ -380,7 +380,7 @@ export function AddProcedureForm() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-20">
+    <div className="space-y-6 w-full pb-20">
       {/* 1. Selection & Mode Toggle */}
       <Card className="border-2 border-slate-200 shadow-sm overflow-hidden bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
         <CardHeader className="pb-3 border-b border-white/50 bg-white/30 backdrop-blur-sm">
@@ -851,8 +851,8 @@ export function AddProcedureForm() {
       </Tabs>
 
       {/* Floating Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-200 py-4 px-6 z-40">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+      <div className="fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 py-3 sm:py-4 px-4 sm:px-8 z-40">
+        <div className="w-full flex items-center justify-between">
           <div>
             {isEditMode && (
               <Button
