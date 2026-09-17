@@ -22,6 +22,9 @@ import { useProcedures } from '@/hooks/useProcedures';
 import { loadSavedDcs, saveSavedDc } from '@/lib/savedDcStorage';
 import { Procedure, ActiveProcedure, SizeQty } from '@/types/procedure';
 import { auth } from '@/firebase';
+import { PersonnelSelect } from '@/components/ortho/PersonnelSelect';
+import { HospitalSelect } from '@/components/ortho/HospitalSelect';
+import { saveCustomer } from '@/lib/customerStorage';
 
 export default function OrthoApp() {
   const navigate = useNavigate();
@@ -724,6 +727,13 @@ export default function OrthoApp() {
         customAt: customDcDate ? new Date(customDcDate).toISOString() : undefined,
       });
 
+      // Ensure hospital name is automatically registered in customer directory for autocomplete & cash invoicing
+      if (hospitalName.trim()) {
+        saveCustomer({ name: hospitalName.trim() }).catch((err) =>
+          console.error("Auto-sync hospital to customer directory error:", err)
+        );
+      }
+
       toast({ title: 'DC saved successfully', description: `${hospitalName} · ${dcNo}` });
 
       // Reload recent DCs
@@ -1017,13 +1027,19 @@ export default function OrthoApp() {
                           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
                             Hospital Name <span className="text-red-500">*</span>
                           </Label>
-                          <Input
-                            id="hospital-name-input"
-                            value={hospitalName}
-                            onChange={(e) => setHospitalName(e.target.value)}
-                            placeholder="Enter hospital name"
-                            className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
-                          />
+                          <div className="mt-1">
+                            <HospitalSelect
+                              id="hospital-name-input"
+                              value={hospitalName}
+                              onChange={setHospitalName}
+                              onSelectCustomer={(cust) => {
+                                if (cust.contactPerson && !doctorName) {
+                                  setDoctorName(cust.contactPerson);
+                                }
+                              }}
+                              placeholder="Select or enter hospital name..."
+                            />
+                          </div>
                         </div>
 
                         <div>
@@ -1050,12 +1066,13 @@ export default function OrthoApp() {
 
                         <div>
                           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Delivered By</Label>
-                          <Input
-                            value={deliveredBy}
-                            onChange={(e) => setDeliveredBy(e.target.value)}
-                            placeholder="Personnel Name"
-                            className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
-                          />
+                          <div className="mt-1">
+                            <PersonnelSelect
+                              value={deliveredBy}
+                              onChange={setDeliveredBy}
+                              placeholder="Select or enter personnel..."
+                            />
+                          </div>
                         </div>
 
                         <div>
@@ -1100,13 +1117,19 @@ export default function OrthoApp() {
                         <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
                           Hospital Name <span className="text-red-500">*</span>
                         </Label>
-                        <Input
-                          id="hospital-name-input-manual"
-                          value={hospitalName}
-                          onChange={(e) => setHospitalName(e.target.value)}
-                          placeholder="Enter hospital name"
-                          className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
-                        />
+                        <div className="mt-1">
+                          <HospitalSelect
+                            id="hospital-name-input-manual"
+                            value={hospitalName}
+                            onChange={setHospitalName}
+                            onSelectCustomer={(cust) => {
+                              if (cust.contactPerson && !doctorName) {
+                                setDoctorName(cust.contactPerson);
+                              }
+                            }}
+                            placeholder="Select or enter hospital name..."
+                          />
+                        </div>
                       </div>
 
                       <div>
@@ -1133,12 +1156,13 @@ export default function OrthoApp() {
 
                       <div>
                         <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Delivered By</Label>
-                        <Input
-                          value={deliveredBy}
-                          onChange={(e) => setDeliveredBy(e.target.value)}
-                          placeholder="Personnel Name"
-                          className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
-                        />
+                        <div className="mt-1">
+                          <PersonnelSelect
+                            value={deliveredBy}
+                            onChange={setDeliveredBy}
+                            placeholder="Select or enter personnel..."
+                          />
+                        </div>
                       </div>
 
                       <div>
@@ -1737,9 +1761,27 @@ export default function OrthoApp() {
         <DialogContent>
           <DialogHeader><DialogTitle>DC Details</DialogTitle></DialogHeader>
           <div className="space-y-4 pt-4">
-            <div><Label>Hospital Name</Label><Input value={hospitalName} onChange={(e) => setHospitalName(e.target.value)} placeholder="Enter hospital name" className="mt-1" /></div>
+            <div>
+              <Label className="text-xs font-bold">Hospital Name *</Label>
+              <div className="mt-1">
+                <HospitalSelect
+                  value={hospitalName}
+                  onChange={setHospitalName}
+                  placeholder="Select or enter hospital name..."
+                />
+              </div>
+            </div>
             <div><Label>DC Number</Label><Input value={dcNo} onChange={(e) => setDcNo(e.target.value)} placeholder="Enter DC number" className="mt-1" /></div>
-            <div><Label>Delivered By *</Label><Input value={deliveredBy} onChange={(e) => setDeliveredBy(e.target.value)} placeholder="Enter deliverer name" className="mt-1" /></div>
+            <div>
+              <Label className="text-xs font-bold">Delivered By *</Label>
+              <div className="mt-1">
+                <PersonnelSelect
+                  value={deliveredBy}
+                  onChange={setDeliveredBy}
+                  placeholder="Select or enter deliverer..."
+                />
+              </div>
+            </div>
             <div><Label>Received By *</Label><Input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} placeholder="Enter receiver name" className="mt-1" /></div>
             <div><Label>Remarks</Label><Input value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Add remarks (optional)" className="mt-1" /></div>
             <div className="flex flex-col sm:flex-row gap-2">

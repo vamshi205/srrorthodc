@@ -86,6 +86,14 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     paymentTotal?: number;
     returnCount?: number;
   } | null>(null);
+  const [isBannerHovered, setIsBannerHovered] = useState(false);
+
+  // If currently active tab's category is disabled in Admin, fall back to "all"
+  useEffect(() => {
+    if (activeTab === "payments" && !config.paymentReminderEnabled) setActiveTab("all");
+    if (activeTab === "returns" && !config.returnReminderEnabled) setActiveTab("all");
+    if (activeTab === "invoices" && !config.invoiceReminderEnabled) setActiveTab("all");
+  }, [activeTab, config.paymentReminderEnabled, config.returnReminderEnabled, config.invoiceReminderEnabled]);
 
   const handleSnoozeOption = (option: "15m" | "1h" | "tomorrow") => {
     let snoozeUntil = 0;
@@ -363,15 +371,20 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
 
   // 3. Invoice Reminders
   const invoiceReminders = useMemo(() => {
+    if (!config.invoiceReminderEnabled) {
+      return { dcs: [], count: 0 };
+    }
     const returnedDcs = savedDcs.filter((dc) => dc.status === "returned");
     return {
       dcs: returnedDcs,
       count: returnedDcs.length,
     };
-  }, [savedDcs]);
+  }, [savedDcs, config.invoiceReminderEnabled]);
 
   const totalActionCount =
-    paymentReminders.totalCount + returnReminders.count + invoiceReminders.count;
+    (config.paymentReminderEnabled ? paymentReminders.totalCount : 0) +
+    (config.returnReminderEnabled ? returnReminders.count : 0) +
+    (config.invoiceReminderEnabled ? invoiceReminders.count : 0);
 
   // First Login Reminder Popup Check
   useEffect(() => {
@@ -383,9 +396,9 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     const seenSession = sessionStorage.getItem(STORAGE_KEYS.SEEN_LOGIN_POPUP_SESSION);
 
     if (lastLoginPopupDate !== todayDateStr && !seenSession) {
-      const hasPendingPayments = config.firstLoginIncludePayments && paymentReminders.totalCount > 0;
-      const hasPendingReturns = config.firstLoginIncludeReturns && returnReminders.count > 0;
-      const hasPendingInvoices = config.firstLoginIncludeInvoices && invoiceReminders.count > 0;
+      const hasPendingPayments = config.paymentReminderEnabled && config.firstLoginIncludePayments && paymentReminders.totalCount > 0;
+      const hasPendingReturns = config.returnReminderEnabled && config.firstLoginIncludeReturns && returnReminders.count > 0;
+      const hasPendingInvoices = config.invoiceReminderEnabled && config.firstLoginIncludeInvoices && invoiceReminders.count > 0;
 
       if (hasPendingPayments || hasPendingReturns || hasPendingInvoices) {
         const timer = setTimeout(() => {
@@ -498,9 +511,9 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     config.returnCutoffDays,
   ]);
 
-  // Auto dismiss toast banner based on admin config
+  // Auto dismiss toast banner based on admin config (pauses while user is hovering)
   useEffect(() => {
-    if (!activeBanner) return;
+    if (!activeBanner || isBannerHovered) return;
     const dismissSeconds = config.bannerAutoDismissSeconds;
     if (dismissSeconds && dismissSeconds > 0) {
       const timer = setTimeout(() => {
@@ -508,7 +521,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       }, dismissSeconds * 1000);
       return () => clearTimeout(timer);
     }
-  }, [activeBanner, config.bannerAutoDismissSeconds]);
+  }, [activeBanner, isBannerHovered, config.bannerAutoDismissSeconds]);
 
   return (
     <>
@@ -885,9 +898,13 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* 2. FLOATING RECURRING REMINDER BANNER */}
+      {/* 2. FLOATING RECURRING REMINDER BANNER - Positioned at bottom-right so it never overlaps top notification bar or toolbar */}
       {activeBanner && (
-        <div className="fixed top-14 sm:top-20 left-3 right-3 sm:left-auto sm:right-4 z-50 sm:max-w-md sm:w-full animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-auto">
+        <div
+          onMouseEnter={() => setIsBannerHovered(true)}
+          onMouseLeave={() => setIsBannerHovered(false)}
+          className="fixed bottom-5 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-50 sm:max-w-md sm:w-full animate-in fade-in slide-in-from-bottom-5 duration-300 pointer-events-auto shadow-2xl"
+        >
           <div className="rounded-2xl border-2 border-amber-500/40 bg-slate-950/95 text-white shadow-2xl p-3.5 sm:p-4 backdrop-blur-xl ring-1 ring-white/10">
             <div className="flex items-start justify-between gap-2.5 sm:gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -1075,36 +1092,50 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
               </div>
             </div>
 
-            {/* Subtle Metric Badges */}
-            <div className="grid grid-cols-3 gap-2 mt-3 pt-2.5 border-t border-slate-200/70 dark:border-slate-800 text-xs">
-              <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg px-2.5 py-1.5 shadow-2xs">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">Collect</span>
-                <span className="font-bold text-slate-900 dark:text-slate-100 truncate block">
-                  ₹{paymentReminders.totalAmount.toLocaleString("en-IN")}
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {paymentReminders.totalCount} {paymentReminders.totalCount === 1 ? "party" : "parties"}
-                </span>
-              </div>
+            {/* Subtle Metric Badges - only for enabled categories */}
+            {((config.paymentReminderEnabled ? 1 : 0) + (config.returnReminderEnabled ? 1 : 0) + (config.invoiceReminderEnabled ? 1 : 0)) > 0 && (
+              <div className={`grid ${
+                ((config.paymentReminderEnabled ? 1 : 0) + (config.returnReminderEnabled ? 1 : 0) + (config.invoiceReminderEnabled ? 1 : 0)) === 3
+                  ? "grid-cols-3"
+                  : ((config.paymentReminderEnabled ? 1 : 0) + (config.returnReminderEnabled ? 1 : 0) + (config.invoiceReminderEnabled ? 1 : 0)) === 2
+                  ? "grid-cols-2"
+                  : "grid-cols-1"
+              } gap-2 mt-3 pt-2.5 border-t border-slate-200/70 dark:border-slate-800 text-xs`}>
+                {config.paymentReminderEnabled && (
+                  <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">Collect</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100 truncate block">
+                      ₹{paymentReminders.totalAmount.toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {paymentReminders.totalCount} {paymentReminders.totalCount === 1 ? "party" : "parties"}
+                    </span>
+                  </div>
+                )}
 
-              <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg px-2.5 py-1.5 shadow-2xs">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">Returns</span>
-                <span className="font-bold text-slate-900 dark:text-slate-100 block">
-                  {returnReminders.count} <span className="text-[11px] font-normal text-slate-500">sets</span>
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  ≥ {config.returnCutoffDays || 2}d out
-                </span>
-              </div>
+                {config.returnReminderEnabled && (
+                  <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">Returns</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100 block">
+                      {returnReminders.count} <span className="text-[11px] font-normal text-slate-500">sets</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      ≥ {config.returnCutoffDays || 2}d out
+                    </span>
+                  </div>
+                )}
 
-              <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg px-2.5 py-1.5 shadow-2xs">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">Invoices</span>
-                <span className="font-bold text-slate-900 dark:text-slate-100 block">
-                  {invoiceReminders.count} <span className="text-[11px] font-normal text-slate-500">pending</span>
-                </span>
-                <span className="text-[10px] text-slate-400">Awaiting cash</span>
+                {config.invoiceReminderEnabled && (
+                  <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">Invoices</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100 block">
+                      {invoiceReminders.count} <span className="text-[11px] font-normal text-slate-500">pending</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400">Awaiting cash</span>
+                  </div>
+                )}
               </div>
-            </div>
+            )}
           </div>
 
           {/* Body Tabs */}
@@ -1115,19 +1146,25 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
             className="w-full"
           >
             <div className="px-3 pt-2.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-              <TabsList className="w-full grid grid-cols-4 h-8 bg-slate-200/70 dark:bg-slate-800 p-0.5 rounded-lg text-xs">
-                <TabsTrigger value="all" className="text-[10px] sm:text-[11px] font-semibold py-1 px-1">
+              <TabsList className="w-full flex items-center h-8 bg-slate-200/70 dark:bg-slate-800 p-0.5 rounded-lg text-xs">
+                <TabsTrigger value="all" className="flex-1 text-[10px] sm:text-[11px] font-semibold py-1 px-1">
                   All ({totalActionCount})
                 </TabsTrigger>
-                <TabsTrigger value="payments" className="text-[10px] sm:text-[11px] font-semibold py-1 px-1">
-                  Pay ({paymentReminders.totalCount})
-                </TabsTrigger>
-                <TabsTrigger value="returns" className="text-[10px] sm:text-[11px] font-semibold py-1 px-1">
-                  Ret ({returnReminders.count})
-                </TabsTrigger>
-                <TabsTrigger value="invoices" className="text-[10px] sm:text-[11px] font-semibold py-1 px-1">
-                  Inv ({invoiceReminders.count})
-                </TabsTrigger>
+                {config.paymentReminderEnabled && (
+                  <TabsTrigger value="payments" className="flex-1 text-[10px] sm:text-[11px] font-semibold py-1 px-1">
+                    Pay ({paymentReminders.totalCount})
+                  </TabsTrigger>
+                )}
+                {config.returnReminderEnabled && (
+                  <TabsTrigger value="returns" className="flex-1 text-[10px] sm:text-[11px] font-semibold py-1 px-1">
+                    Ret ({returnReminders.count})
+                  </TabsTrigger>
+                )}
+                {config.invoiceReminderEnabled && (
+                  <TabsTrigger value="invoices" className="flex-1 text-[10px] sm:text-[11px] font-semibold py-1 px-1">
+                    Inv ({invoiceReminders.count})
+                  </TabsTrigger>
+                )}
               </TabsList>
             </div>
 

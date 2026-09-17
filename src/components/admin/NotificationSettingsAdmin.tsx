@@ -14,6 +14,7 @@ import {
   AlertCircle,
   History,
   Trash2,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -157,6 +158,154 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Category Visibility Master Controls */}
+        <Card className="rounded-2xl border-2 border-teal-500/30 dark:border-teal-500/20 shadow-md bg-gradient-to-r from-teal-50/50 via-white to-amber-50/30 dark:from-slate-900/90 dark:via-slate-900 dark:to-teal-950/20 backdrop-blur-md md:col-span-2">
+          <CardHeader className="p-4 pb-3 border-b border-teal-100/60 dark:border-slate-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center font-black shadow-sm">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    Reminder Categories &amp; Visibility Controls
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Show or hide reminder categories across the entire portal (bell badge, tabs, scroller &amp; popups).
+                  </CardDescription>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold text-teal-800 dark:text-teal-300 bg-teal-100/70 dark:bg-teal-950 px-2.5 py-1 rounded-full border border-teal-200 dark:border-teal-800 self-start sm:self-auto">
+                Toggle to Show or Hide
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Category 1: Cash / Collect Payments */}
+            <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
+              config.paymentReminderEnabled 
+                ? "border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-xs" 
+                : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-70"
+            }`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                    config.paymentReminderEnabled ? "bg-emerald-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                  }`}>
+                    <Wallet className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                      Cash / Payments
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Cash queue &amp; invoice dues
+                    </div>
+                  </div>
+                </div>
+                <Switch
+                  checked={config.paymentReminderEnabled}
+                  onCheckedChange={(val) => setConfig({ ...config, paymentReminderEnabled: val })}
+                />
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
+                <span className="text-muted-foreground">Status:</span>
+                {config.paymentReminderEnabled ? (
+                  <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] h-5 px-1.5 font-bold">
+                    Visible &amp; Active
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-slate-500 border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
+                    Hidden Everywhere
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* Category 2: Returns */}
+            <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
+              config.returnReminderEnabled 
+                ? "border-cyan-500/40 bg-cyan-50/40 dark:bg-cyan-950/20 shadow-xs" 
+                : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-70"
+            }`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                    config.returnReminderEnabled ? "bg-cyan-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                  }`}>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                      Item Returns
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Dispatched surgery sets
+                    </div>
+                  </div>
+                </div>
+                <Switch
+                  checked={config.returnReminderEnabled}
+                  onCheckedChange={(val) => setConfig({ ...config, returnReminderEnabled: val })}
+                />
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
+                <span className="text-muted-foreground">Status:</span>
+                {config.returnReminderEnabled ? (
+                  <Badge className="bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] h-5 px-1.5 font-bold">
+                    Visible &amp; Active
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-slate-500 border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
+                    Hidden Everywhere
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* Category 3: Invoices */}
+            <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
+              config.invoiceReminderEnabled 
+                ? "border-purple-500/40 bg-purple-50/40 dark:bg-purple-950/20 shadow-xs" 
+                : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-70"
+            }`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                    config.invoiceReminderEnabled ? "bg-purple-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                  }`}>
+                    <Receipt className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                      Returned Invoices
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Sets awaiting cash memo
+                    </div>
+                  </div>
+                </div>
+                <Switch
+                  checked={config.invoiceReminderEnabled}
+                  onCheckedChange={(val) => setConfig({ ...config, invoiceReminderEnabled: val })}
+                />
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
+                <span className="text-muted-foreground">Status:</span>
+                {config.invoiceReminderEnabled ? (
+                  <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[10px] h-5 px-1.5 font-bold">
+                    Visible &amp; Active
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-slate-500 border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
+                    Hidden Everywhere
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Section 1: Payment Reminders */}
         <Card className="rounded-2xl border-border/60 shadow-sm bg-white/70 dark:bg-slate-900/70 backdrop-blur-md">
           <CardHeader className="p-4 pb-3">
@@ -457,10 +606,10 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                   <SelectValue placeholder="Auto-dismiss timer" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="5">After 5 Seconds</SelectItem>
-                  <SelectItem value="8">After 8 Seconds (Default)</SelectItem>
-                  <SelectItem value="12">After 12 Seconds</SelectItem>
-                  <SelectItem value="0">Stay until manually closed</SelectItem>
+                  <SelectItem value="0">Stay until manually closed (Default)</SelectItem>
+                  <SelectItem value="8">After 8 Seconds</SelectItem>
+                  <SelectItem value="15">After 15 Seconds</SelectItem>
+                  <SelectItem value="30">After 30 Seconds</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -9,14 +9,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CashInvoiceAdmin } from '@/components/admin/CashInvoiceAdmin';
-import { FileText, Receipt, ArrowLeft, Bell } from 'lucide-react';
+import { FileText, Receipt, ArrowLeft, Bell, Truck } from 'lucide-react';
 import { NotificationSettingsAdmin } from '@/components/admin/NotificationSettingsAdmin';
+import { DeliveryPersonnelAdmin } from '@/components/admin/DeliveryPersonnelAdmin';
 
 const Admin = () => {
   const navigate = useNavigate();
   const { fetchProcedures, loading } = useProcedures();
 
-  const [selectedPanel, setSelectedPanel] = useState<'dc' | 'cash' | 'quotation' | 'notifications' | null>(null);
+  const [selectedPanel, setSelectedPanel] = useState<'dc' | 'cash' | 'quotation' | 'notifications' | 'personnel' | null>(null);
   const [adminAccessOpen, setAdminAccessOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -177,6 +178,27 @@ const Admin = () => {
                   </p>
                 </div>
               </button>
+
+              {/* Card 5: Delivery & Field Personnel Analytics */}
+              <button
+                onClick={() => {
+                  setSelectedPanel('personnel');
+                  setAdminAccessOpen(true);
+                }}
+                className="group p-6 rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500 transition-all duration-200 text-left flex flex-col justify-between space-y-6 shadow-md"
+              >
+                <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform font-black">
+                  <Truck className="w-6 h-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="font-bold text-lg text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                    Delivery &amp; Field Analytics
+                  </h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Complete operational intelligence: who delivered what, items volume, hospital coverage, and pending return accountability.
+                  </p>
+                </div>
+              </button>
             </div>
           </main>
         )}
@@ -197,7 +219,17 @@ const Admin = () => {
             <DialogHeader>
               <DialogTitle>Admin Access</DialogTitle>
               <DialogDescription>
-                Enter the administrator password to open the {selectedPanel === 'dc' ? 'DC System' : selectedPanel === 'cash' ? 'Cash Invoice' : selectedPanel === 'quotation' ? 'Quotation Settings' : 'Notifications & Reminders'} Admin panel.
+                Enter the administrator password to open the {
+                  selectedPanel === 'dc'
+                    ? 'DC System'
+                    : selectedPanel === 'cash'
+                    ? 'Cash Invoice'
+                    : selectedPanel === 'quotation'
+                    ? 'Quotation Settings'
+                    : selectedPanel === 'notifications'
+                    ? 'Notifications & Reminders'
+                    : 'Delivery & Personnel Analytics'
+                } Admin panel.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -298,6 +330,12 @@ const Admin = () => {
               </div>
               <NotificationSettingsAdmin />
             </div>
+          </main>
+        )}
+
+        {isAdminAuthorized && selectedPanel === 'personnel' && (
+          <main className="container mx-auto max-w-6xl py-4 sm:py-6">
+            <DeliveryPersonnelAdmin onBack={handleBackToChoice} />
           </main>
         )}
       </div>

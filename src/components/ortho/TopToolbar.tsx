@@ -23,6 +23,7 @@ import {
   LogOut,
   Menu,
   Receipt,
+  ArrowLeft,
 } from 'lucide-react';
 
 type TopToolbarProps = {
@@ -90,16 +91,32 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pb-1.5">
       <div className="rounded-2xl border border-white/20 dark:border-white/10 bg-gradient-to-r from-teal-600/90 via-teal-700/90 to-cyan-800/90 dark:from-slate-900/95 dark:via-teal-950/90 dark:to-slate-900/95 backdrop-blur-xl shadow-lg px-4 py-3 flex items-center justify-between gap-4 text-white">
         
-        {/* Left Side: Logo & Brand */}
-        <div className="flex items-center gap-3 min-w-0 cursor-pointer" onClick={() => navigate('/')}>
-          <div className="w-10 h-10 rounded-xl bg-white p-0.5 border border-white/40 flex items-center justify-center shadow-md shrink-0 overflow-hidden">
-            <img src="/srr-favicon.png" alt="SRR Ortho Logo" className="w-full h-full object-contain" />
-          </div>
-          <div className="min-w-0">
-            <div className="font-display font-bold text-lg tracking-tight text-white leading-tight truncate">
-              SRR Ortho Plus Portal
+        {/* Left Side: Back button, Logo & Brand */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(-1);
+            }}
+            className="h-8 sm:h-9 px-2 sm:px-3 rounded-lg sm:rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs flex items-center gap-1.5 border border-white/25 shadow-xs transition-all active:scale-95 shrink-0"
+            title="Go Back to Previous Screen"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Back</span>
+          </Button>
+
+          <div className="flex items-center gap-2.5 min-w-0 cursor-pointer" onClick={() => navigate('/')} title="Return to Dashboard Home">
+            <div className="w-10 h-10 rounded-xl bg-white p-0.5 border border-white/40 flex items-center justify-center shadow-md shrink-0 overflow-hidden">
+              <img src="/srr-favicon.png" alt="SRR Ortho Logo" className="w-full h-full object-contain" />
             </div>
-            <div className="text-xs text-teal-100/70 truncate hidden sm:block">Operations & Inventory Portal</div>
+            <div className="min-w-0">
+              <div className="font-display font-bold text-lg tracking-tight text-white leading-tight truncate">
+                SRR Ortho Plus Portal
+              </div>
+              <div className="text-xs text-teal-100/70 truncate hidden sm:block">Operations & Inventory Portal</div>
+            </div>
           </div>
         </div>
 
@@ -248,6 +265,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                   {/* Navigation Group */}
                   <div className="space-y-2">
                     <div className="text-xs font-bold uppercase tracking-wider text-teal-400/80 px-1">Navigation</div>
+                    <SheetClose asChild>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start gap-3 h-10 text-sm font-bold rounded-lg text-slate-200 hover:text-white hover:bg-white/10 border border-white/15"
+                        onClick={() => navigate(-1)}
+                      >
+                        <ArrowLeft className="w-4 h-4 text-sky-400" /> Go Back
+                      </Button>
+                    </SheetClose>
                     <SheetClose asChild>
                       <Button
                         variant="ghost"

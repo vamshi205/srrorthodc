@@ -66,6 +66,8 @@ import { auth } from "@/firebase";
 import html2pdf from "html2pdf.js";
 import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore, type CashInvoiceData } from "@/services/cashInvoiceFirebaseService";
 import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotifications";
+import { CollectPaymentsScroller } from "@/components/ortho/CollectPaymentsScroller";
+import { PersonnelSelect } from "@/components/ortho/PersonnelSelect";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -1131,7 +1133,7 @@ const SavedDcs = () => {
 
           {/* DC Tracker Operations & Reminders Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 py-2.5 px-3.5 sm:px-4.5 rounded-2xl bg-gradient-to-r from-white via-teal-50/40 to-white dark:from-slate-900 dark:via-teal-950/20 dark:to-slate-900 border border-teal-200/70 dark:border-slate-800 shadow-xs backdrop-blur-md transition-all">
-            <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
               <div className="w-8 h-8 rounded-xl bg-teal-500/15 dark:bg-teal-500/20 border border-teal-500/30 flex items-center justify-center shrink-0">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
@@ -1152,6 +1154,19 @@ const SavedDcs = () => {
                 </p>
               </div>
             </div>
+
+            {/* Live Collect Payments Scroller */}
+            <CollectPaymentsScroller
+              savedDcs={savedDcs}
+              cashInvoices={cashInvoices}
+              onCollectPayment={openPaymentDialog}
+              onViewDc={(dc, queue) => {
+                setActiveQueue(queue);
+                setSearchParams({ queue });
+                setSelectedDcId(dc.id);
+                setDetailsDialogOpen(true);
+              }}
+            />
 
             <div className="flex items-center gap-2 shrink-0">
               <DcTrackerNotifications
@@ -2381,13 +2396,14 @@ const SavedDcs = () => {
           {actionDialog.type === "return" && actionDialog.dc && (
             <div className="space-y-4 pt-2">
               <div>
-                <Label>Returned By *</Label>
-                <Input
-                  value={returnedByInput}
-                  onChange={(e) => setReturnedByInput(e.target.value)}
-                  placeholder="Enter name"
-                  className="mt-1"
-                />
+                <Label className="text-xs font-bold">Returned By *</Label>
+                <div className="mt-1">
+                  <PersonnelSelect
+                    value={returnedByInput}
+                    onChange={setReturnedByInput}
+                    placeholder="Select or enter returned by..."
+                  />
+                </div>
               </div>
               <div>
                 <Label>Return Remarks</Label>

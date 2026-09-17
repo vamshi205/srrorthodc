@@ -6,8 +6,37 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { RefreshCw, Cloud, Database, FileText, CheckCircle2, Settings, UserCheck, HardDrive, Trash2, ArrowLeft } from "lucide-react";
+import {
+  RefreshCw,
+  Cloud,
+  Database,
+  FileText,
+  CheckCircle2,
+  Settings,
+  UserCheck,
+  HardDrive,
+  Trash2,
+  ArrowLeft,
+  Building2,
+  Phone,
+  MapPin,
+  User,
+  Plus,
+  Search,
+  Edit2,
+  Sparkles,
+} from "lucide-react";
+import {
+  Customer,
+  getSavedCustomers,
+  saveCustomer,
+  deleteCustomer,
+  fetchUnifiedCustomers,
+  syncCustomersFromDcs,
+} from "@/lib/customerStorage";
+import { loadSavedDcs } from "@/lib/savedDcStorage";
 
 type CashInvoiceAdminProps = {
   onBack: () => void;
@@ -99,7 +128,120 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
       const savedCusts = localStorage.getItem("im_customers");
       setCustomersCount(savedCusts ? JSON.parse(savedCusts).length : 0);
     } catch (e) { setCustomersCount(0); }
+
+    // Load Customers and listen to updates
+    setCustomerList(getSavedCustomers());
+    fetchUnifiedCustomers().then((list) => {
+      setCustomerList(list);
+      setCustomersCount(list.length);
+    });
+
+    const handleCustUpdate = () => {
+      const updated = getSavedCustomers();
+      setCustomerList(updated);
+      setCustomersCount(updated.length);
+    };
+    window.addEventListener("srrortho:customers_updated", handleCustUpdate);
+    return () => {
+      window.removeEventListener("srrortho:customers_updated", handleCustUpdate);
+    };
   }, []);
+
+  // Customer Management states
+  const [customerList, setCustomerList] = useState<Customer[]>(getSavedCustomers);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [editingCust, setEditingCust] = useState<Customer | null>(null);
+  const [custName, setCustName] = useState("");
+  const [custMobile, setCustMobile] = useState("");
+  const [custContactPerson, setCustContactPerson] = useState("");
+  const [custAddress, setCustAddress] = useState("");
+  const [custNotes, setCustNotes] = useState("");
+  const [isCustSaving, setIsCustSaving] = useState(false);
+
+  // Filtered customer list
+  const filteredCustomers = customerList.filter((c) => {
+    if (!customerSearch.trim()) return true;
+    const q = customerSearch.toLowerCase();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.mobile && c.mobile.includes(q)) ||
+      (c.contactPerson && c.contactPerson.toLowerCase().includes(q)) ||
+      (c.address && c.address.toLowerCase().includes(q))
+    );
+  });
+
+  const handleSaveCustomerSubmit = async () => {
+    if (!custName.trim()) {
+      toast.error("Hospital / Customer name is required.");
+      return;
+    }
+
+    setIsCustSaving(true);
+    try {
+      const saved = await saveCustomer({
+        id: editingCust?.id,
+        name: custName.trim(),
+        mobile: custMobile.trim(),
+        contactPerson: custContactPerson.trim(),
+        address: custAddress.trim(),
+        notes: custNotes.trim(),
+      });
+
+      toast.success(editingCust ? `Updated "${saved.name}"` : `Added "${saved.name}" to directory.`);
+      setEditingCust(null);
+      setCustName("");
+      setCustMobile("");
+      setCustContactPerson("");
+      setCustAddress("");
+      setCustNotes("");
+      setCustomerList(getSavedCustomers());
+      setCustomersCount(getSavedCustomers().length);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to save customer.");
+    } finally {
+      setIsCustSaving(false);
+    }
+  };
+
+  const handleEditCustomerClick = (cust: Customer) => {
+    setEditingCust(cust);
+    setCustName(cust.name);
+    setCustMobile(cust.mobile || "");
+    setCustContactPerson(cust.contactPerson || "");
+    setCustAddress(cust.address || "");
+    setCustNotes(cust.notes || "");
+  };
+
+  const handleCancelEditCust = () => {
+    setEditingCust(null);
+    setCustName("");
+    setCustMobile("");
+    setCustContactPerson("");
+    setCustAddress("");
+    setCustNotes("");
+  };
+
+  const handleDeleteCustomerClick = async (id: string, name: string) => {
+    if (confirm(`Remove "${name}" from customer directory?`)) {
+      await deleteCustomer(id);
+      setCustomerList(getSavedCustomers());
+      setCustomersCount(getSavedCustomers().length);
+      toast.success(`Removed "${name}"`);
+    }
+  };
+
+  const handleSyncDcHospitals = async () => {
+    try {
+      const dcs = await loadSavedDcs();
+      const updated = syncCustomersFromDcs(dcs);
+      setCustomerList(updated);
+      setCustomersCount(updated.length);
+      toast.success(`Synchronized ${updated.length} customers from DC history.`);
+    } catch (e) {
+      console.error("Error syncing DC hospitals:", e);
+      toast.error("Could not sync hospitals from DC history.");
+    }
+  };
 
   // Profile Form changes
   const handleProfileChange = (field: string, value: string) => {
@@ -366,8 +508,9 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
       <Card className="glass-card rounded-xl border border-border shadow-md">
         <CardContent className="p-6">
           <Tabs defaultValue="catalog" className="w-full">
-            <TabsList className="grid grid-cols-4 h-10 w-full max-w-lg mb-6 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-              <TabsTrigger value="catalog" className="text-xs font-semibold gap-1.5"><Database className="w-3.5 h-3.5" /> Catalog & Imports</TabsTrigger>
+            <TabsList className="grid grid-cols-2 sm:grid-cols-5 h-auto sm:h-10 w-full max-w-2xl mb-6 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
+              <TabsTrigger value="catalog" className="text-xs font-semibold gap-1.5"><Database className="w-3.5 h-3.5" /> Catalog &amp; Imports</TabsTrigger>
+              <TabsTrigger value="customers" className="text-xs font-semibold gap-1.5"><Building2 className="w-3.5 h-3.5 text-teal-600" /> Customers &amp; Hospitals</TabsTrigger>
               <TabsTrigger value="profile" className="text-xs font-semibold gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Profile</TabsTrigger>
               <TabsTrigger value="gdrive" className="text-xs font-semibold gap-1.5"><Cloud className="w-3.5 h-3.5" /> Cloud Backup</TabsTrigger>
               <TabsTrigger value="data" className="text-xs font-semibold gap-1.5"><Settings className="w-3.5 h-3.5" /> Maintenance</TabsTrigger>
@@ -686,6 +829,196 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       )}
                     </div>
                   </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Customers & Hospitals Tab */}
+            <TabsContent value="customers" className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/60">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-teal-600" />
+                    Customer &amp; Hospital Directory
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Manage official hospital and customer accounts. Synchronized across Delivery Challans, Cash Invoicing, and reminders.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSyncDcHospitals}
+                    className="h-8 text-xs gap-1.5 border-teal-300 text-teal-800 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950 font-semibold"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                    Import from DC History
+                  </Button>
+                </div>
+              </div>
+
+              {/* Form to Add / Edit Customer */}
+              <div className="p-4 rounded-xl border border-teal-500/30 bg-teal-50/40 dark:bg-teal-950/20 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-teal-900 dark:text-teal-200 flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5" />
+                    {editingCust ? "Edit Customer / Hospital" : "Add New Customer / Hospital"}
+                  </h4>
+                  {editingCust && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancelEditCust}
+                      className="h-6 text-[11px] text-muted-foreground"
+                    >
+                      Cancel Edit
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <Label className="text-xs font-bold">Hospital / Customer Name *</Label>
+                    <Input
+                      value={custName}
+                      onChange={(e) => setCustName(e.target.value)}
+                      placeholder="e.g. Apollo Hospital, Jubilee Hills"
+                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-bold flex items-center gap-1">
+                      <Phone className="w-3 h-3 text-teal-600" />
+                      Mobile Number *
+                    </Label>
+                    <Input
+                      type="tel"
+                      value={custMobile}
+                      onChange={(e) => setCustMobile(e.target.value)}
+                      placeholder="e.g. 9848012345"
+                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950 font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-bold">Contact Person / Incharge</Label>
+                    <Input
+                      value={custContactPerson}
+                      onChange={(e) => setCustContactPerson(e.target.value)}
+                      placeholder="e.g. OT Incharge / Dr. Rao"
+                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-bold">Branch / Address</Label>
+                    <Input
+                      value={custAddress}
+                      onChange={(e) => setCustAddress(e.target.value)}
+                      placeholder="e.g. Jubilee Hills, Hyderabad"
+                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    disabled={isCustSaving || !custName.trim()}
+                    onClick={handleSaveCustomerSubmit}
+                    className="h-8 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {editingCust ? "Update Hospital / Customer" : "Save Customer"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Search and Customer List */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search hospitals or mobile number..."
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                      className="pl-9 h-8 text-xs"
+                    />
+                  </div>
+                  <Badge variant="outline" className="self-start sm:self-auto text-xs px-2.5 py-1">
+                    {filteredCustomers.length} Registered Customers
+                  </Badge>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-950 text-muted-foreground border-b border-slate-200 dark:border-slate-800 font-bold uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2.5 px-4">Hospital / Customer Name</th>
+                        <th className="py-2.5 px-3">Mobile Number</th>
+                        <th className="py-2.5 px-3">Contact Person</th>
+                        <th className="py-2.5 px-4">Address / Branch</th>
+                        <th className="py-2.5 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredCustomers.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center py-8 text-muted-foreground text-xs">
+                            No customers found matching your search.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredCustomers.map((cust) => (
+                          <tr key={cust.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/40">
+                            <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-slate-100">
+                              {cust.name}
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-teal-700 dark:text-teal-400">
+                              {cust.mobile ? (
+                                <span className="flex items-center gap-1">
+                                  <Phone className="w-3 h-3" />
+                                  {cust.mobile}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground text-[10px] font-normal">Not added</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-muted-foreground">
+                              {cust.contactPerson || "-"}
+                            </td>
+                            <td className="py-2.5 px-4 text-muted-foreground max-w-xs truncate" title={cust.address}>
+                              {cust.address || "-"}
+                            </td>
+                            <td className="py-2.5 px-3 text-right space-x-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleEditCustomerClick(cust)}
+                                className="h-7 w-7 text-slate-500 hover:text-teal-700"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteCustomerClick(cust.id, cust.name)}
+                                className="h-7 w-7 text-slate-400 hover:text-red-600"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </TabsContent>

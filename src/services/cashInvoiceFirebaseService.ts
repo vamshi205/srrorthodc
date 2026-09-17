@@ -131,3 +131,18 @@ export async function saveCashCustomerToFirestore(customer: CashCustomerData): P
     return false;
   }
 }
+
+/**
+ * Delete a Cash Customer from Firestore
+ */
+export async function deleteCashCustomerFromFirestore(idOrName: string): Promise<boolean> {
+  try {
+    const docId = idOrName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const ref = doc(db, CASH_CUSTOMERS_COLLECTION, docId);
+    await deleteDoc(ref);
+    return true;
+  } catch (error) {
+    console.error('Error deleting cash customer from Firestore:', error);
+    return false;
+  }
+}

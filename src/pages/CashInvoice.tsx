@@ -54,7 +54,7 @@ export default function CashInvoice() {
       setIframeSrc(`/cash-invoice/index.html${search}${search ? '&' : '?'}v=3&t=${Date.now()}${parentHash}`);
       // Clean parent URL hash so it doesn't linger in the address bar
       setTimeout(() => {
-        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        window.history.replaceState(window.history.state, "", "/");
       }, 800);
     }
     // Listen for postMessages from the Cash Invoice iframe to store/fetch directly in Firestore
