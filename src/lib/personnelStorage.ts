@@ -24,16 +24,74 @@ export const KNOWN_NAME_ALIASES: Record<string, string> = {
   'prasanth k': 'Prashanth',
 };
 
+export const DISALLOWED_PERSONNEL_NAMES = new Set([
+  'hospital purchased',
+  'hospital purchase',
+  'hospital',
+  'patient',
+  'patient purchase',
+  'purchased by hospital',
+  'purchased',
+  'purchase',
+  'none',
+  'nil',
+  'na',
+  'n/a',
+  'test',
+  'direct',
+  'self',
+  'counter',
+  'other',
+  'unknown',
+  '-',
+  '--',
+]);
+
+const IGNORED_STORAGE_KEY = 'srrortho:ignored_personnel';
+
+export const getIgnoredPersonnel = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(IGNORED_STORAGE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr.map((s: string) => String(s).toLowerCase().trim()) : []);
+  } catch {
+    return new Set();
+  }
+};
+
+export const addIgnoredPersonnel = (name: string): void => {
+  try {
+    const set = getIgnoredPersonnel();
+    const lower = name.trim().toLowerCase();
+    if (!lower) return;
+    set.add(lower);
+    localStorage.setItem(IGNORED_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.error('Error saving ignored personnel:', e);
+  }
+};
+
+export const isDisallowedPersonnel = (rawName?: string): boolean => {
+  if (!rawName) return true;
+  const lower = rawName.trim().toLowerCase();
+  if (DISALLOWED_PERSONNEL_NAMES.has(lower)) return true;
+  if (lower.startsWith('hospital purch') || lower.startsWith('purchased by')) return true;
+  return false;
+};
+
 /**
  * Normalizes a personnel name:
  * - Trims and collapses multiple whitespace
  * - Checks known alias variations (e.g., Prasanth -> Prashanth)
+ * - Rejects disallowed or ignored non-personnel terms
  */
 export const normalizePersonnelName = (rawName?: string): string => {
   if (!rawName) return '';
   const trimmed = rawName.trim().replace(/\s+/g, ' ');
-  if (!trimmed || trimmed === '-' || trimmed.toLowerCase() === 'none') return '';
+  if (!trimmed || isDisallowedPersonnel(trimmed)) return '';
   const lower = trimmed.toLowerCase();
+  if (getIgnoredPersonnel().has(lower)) return '';
   if (KNOWN_NAME_ALIASES[lower]) {
     return KNOWN_NAME_ALIASES[lower];
   }
@@ -95,7 +153,7 @@ export const deduplicatePersonnelList = (list: Personnel[]): { deduped: Personne
 };
 
 /**
- * Retrieve all registered personnel from localStorage with automatic de-duplication
+ * Retrieve all registered personnel from localStorage with automatic de-duplication and scrubbing
  */
 export const getSavedPersonnel = (): Personnel[] => {
   try {
@@ -106,8 +164,10 @@ export const getSavedPersonnel = (): Personnel[] => {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const { deduped, hasDuplicates } = deduplicatePersonnelList(parsed);
-      if (hasDuplicates) {
+      const ignored = getIgnoredPersonnel();
+      const filtered = parsed.filter(p => !isDisallowedPersonnel(p?.name) && !ignored.has(String(p?.name || '').toLowerCase().trim()));
+      const { deduped, hasDuplicates } = deduplicatePersonnelList(filtered);
+      if (hasDuplicates || filtered.length !== parsed.length) {
         // Automatically save the cleaned deduped version
         localStorage.setItem(STORAGE_KEY, JSON.stringify(deduped));
       }
@@ -192,12 +252,18 @@ export const updatePersonnel = (id: string, updates: Partial<Personnel>): boolea
 };
 
 /**
- * Delete a person
+ * Delete a person and prevent resurrection from DC history
  */
-export const deletePersonnel = (id: string): boolean => {
+export const deletePersonnel = (idOrName: string): boolean => {
   const list = getSavedPersonnel();
-  const filtered = list.filter(p => p.id !== id);
-  if (filtered.length === list.length) return false;
+  const target = list.find(p => p.id === idOrName || p.name.toLowerCase() === idOrName.toLowerCase());
+  const filtered = list.filter(p => p.id !== idOrName && p.name.toLowerCase() !== idOrName.toLowerCase());
+  
+  if (target) {
+    addIgnoredPersonnel(target.name);
+  } else {
+    addIgnoredPersonnel(idOrName);
+  }
 
   savePersonnelList(filtered);
   return true;
@@ -294,8 +360,10 @@ export const syncPersonnelFromDcs = (dcs: Array<{ deliveredBy?: string; returned
 
   dcs.forEach(dc => {
     [dc.deliveredBy, dc.returnedBy].forEach(rawName => {
+      if (isDisallowedPersonnel(rawName)) return;
       const clean = normalizePersonnelName(rawName);
       if (!clean) return;
+      if (clean.toLowerCase() === 'courier') return; // Do not register Courier as a staff person
       if (!nameSet.has(clean.toLowerCase())) {
         nameSet.add(clean.toLowerCase());
         additions.push({
@@ -332,15 +400,15 @@ export const getAllPersonnelNames = (
 
   const nameSet = new Set<string>();
   activeNames.forEach(n => {
-    if (n) nameSet.add(n);
+    if (n && !isDisallowedPersonnel(n)) nameSet.add(n);
   });
 
   if (savedDcs && savedDcs.length > 0) {
     savedDcs.forEach(dc => {
       const deliv = normalizePersonnelName(dc.deliveredBy);
-      if (deliv) nameSet.add(deliv);
+      if (deliv && !isDisallowedPersonnel(deliv)) nameSet.add(deliv);
       const ret = normalizePersonnelName(dc.returnedBy);
-      if (ret) nameSet.add(ret);
+      if (ret && !isDisallowedPersonnel(ret)) nameSet.add(ret);
     });
   }
 

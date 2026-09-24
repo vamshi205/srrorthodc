@@ -344,8 +344,8 @@
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.2) !important;
   }
 
-  input:not([type="checkbox"]):not([type="radio"]):focus,
-  input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+  input:not([type="checkbox"]):not([type="radio"]):not([cmdk-input]):focus,
+  input:not([type="checkbox"]):not([type="radio"]):not([cmdk-input]):focus-visible,
   textarea:focus,
   textarea:focus-visible {
     background: rgba(255, 255, 255, 0.95) !important;
@@ -354,13 +354,24 @@
     outline: none !important;
   }
 
-  .dark input:not([type="checkbox"]):not([type="radio"]):focus,
-  .dark input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([cmdk-input]):focus,
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([cmdk-input]):focus-visible,
   .dark textarea:focus,
   .dark textarea:focus-visible {
     background: rgba(14, 22, 38, 0.85) !important;
     border-color: hsl(var(--primary)) !important;
     box-shadow: 0 0 0 3px hsl(var(--primary) / 0.22), inset 0 1px 3px rgba(0,0,0,0.3) !important;
+  }
+
+  /* Reset cmdk search inputs inside popovers and comboboxes */
+  [cmdk-input-wrapper] input,
+  [cmdk-input],
+  [cmdk-input]:focus,
+  [cmdk-input]:focus-visible {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
   }
 
   /* Gradient button */

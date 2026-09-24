@@ -133,13 +133,56 @@ export async function saveCashCustomerToFirestore(customer: CashCustomerData): P
 }
 
 /**
- * Delete a Cash Customer from Firestore
+ * Delete a Cash Customer from Firestore (checks direct doc ID, sanitized name doc ID, and queries documents by name or id)
  */
-export async function deleteCashCustomerFromFirestore(idOrName: string): Promise<boolean> {
+export async function deleteCashCustomerFromFirestore(idOrName: string, secondaryName?: string): Promise<boolean> {
+  if (!idOrName) return false;
   try {
-    const docId = idOrName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const ref = doc(db, CASH_CUSTOMERS_COLLECTION, docId);
-    await deleteDoc(ref);
+    const targetsToDelete = new Set<string>();
+    
+    // Direct ID doc
+    targetsToDelete.add(idOrName);
+    targetsToDelete.add(idOrName.toLowerCase().replace(/[^a-z0-9]/g, '_'));
+
+    if (secondaryName) {
+      targetsToDelete.add(secondaryName);
+      targetsToDelete.add(secondaryName.toLowerCase().replace(/[^a-z0-9]/g, '_'));
+    }
+
+    for (const docId of targetsToDelete) {
+      try {
+        await deleteDoc(doc(db, CASH_CUSTOMERS_COLLECTION, docId));
+      } catch {
+        // ignore individual doc delete error
+      }
+    }
+
+    // Also scan collection to delete any documents matching name or ID
+    const searchTerms = [idOrName.toLowerCase().trim()];
+    if (secondaryName) searchTerms.push(secondaryName.toLowerCase().trim());
+
+    const snapshot = await getDocs(collection(db, CASH_CUSTOMERS_COLLECTION));
+    const deletePromises: Promise<void>[] = [];
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      const docName = (data.name || "").toLowerCase().trim();
+      const docDataId = (data.id || "").toLowerCase().trim();
+      const docSnapId = docSnap.id.toLowerCase().trim();
+
+      const matches = searchTerms.some(
+        (term) => term === docName || term === docDataId || term === docSnapId
+      );
+
+      if (matches) {
+        deletePromises.push(deleteDoc(docSnap.ref));
+      }
+    });
+
+    if (deletePromises.length > 0) {
+      await Promise.all(deletePromises);
+    }
+
     return true;
   } catch (error) {
     console.error('Error deleting cash customer from Firestore:', error);

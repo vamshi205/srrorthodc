@@ -24,6 +24,7 @@ import {
   Menu,
   Receipt,
   ArrowLeft,
+  Building2,
 } from 'lucide-react';
 
 type TopToolbarProps = {
@@ -65,6 +66,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   const isLandingScreen = pathname === '/' && !currentMode;
   const isImageDb = pathname === '/images';
   const isCashInvoice = pathname === '/cash-invoice';
+  const isCustomers = pathname === '/customers';
   const isQuotation = pathname === '/quotation';
   const isDcTracker = pathname === '/saved';
   const isAdmin = pathname === '/admin';
@@ -167,6 +169,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               onClick={() => navigate('/cash-invoice')}
             >
               <Receipt className={`w-3.5 h-3.5 ${isCashInvoice ? 'text-teal-800' : 'text-teal-200'}`} /> Cash Invoice
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className={getNavBtnClass(isCustomers)}
+              onClick={() => navigate('/customers')}
+            >
+              <Building2 className={`w-3.5 h-3.5 ${isCustomers ? 'text-teal-800' : 'text-teal-200'}`} /> Customers
             </Button>
 
             <Button
@@ -328,6 +339,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                         onClick={() => navigate('/cash-invoice')}
                       >
                         <Receipt className="w-4 h-4 text-teal-400" /> Cash Invoice
+                      </Button>
+                    </SheetClose>
+                    <SheetClose asChild>
+                      <Button
+                        variant="ghost"
+                        className={getMobileNavClass(isCustomers)}
+                        onClick={() => navigate('/customers')}
+                      >
+                        <Building2 className="w-4 h-4 text-emerald-400" /> Customers & Hospitals
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>

@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import {
   Customer,
+  HospitalContact,
   getSavedCustomers,
   saveCustomer,
   deleteCustomer,
@@ -153,9 +154,14 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
   const [editingCust, setEditingCust] = useState<Customer | null>(null);
   const [custName, setCustName] = useState("");
   const [custMobile, setCustMobile] = useState("");
+  const [custHospitalNumber, setCustHospitalNumber] = useState("");
+  const [custOtNumber, setCustOtNumber] = useState("");
+  const [custPersonalNumber, setCustPersonalNumber] = useState("");
   const [custContactPerson, setCustContactPerson] = useState("");
   const [custAddress, setCustAddress] = useState("");
+  const [custEmail, setCustEmail] = useState("");
   const [custNotes, setCustNotes] = useState("");
+  const [custContacts, setCustContacts] = useState<HospitalContact[]>([]);
   const [isCustSaving, setIsCustSaving] = useState(false);
 
   // Filtered customer list
@@ -165,10 +171,38 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
     return (
       c.name.toLowerCase().includes(q) ||
       (c.mobile && c.mobile.includes(q)) ||
+      (c.otNumber && c.otNumber.includes(q)) ||
+      (c.hospitalNumber && c.hospitalNumber.includes(q)) ||
+      (c.personalNumber && c.personalNumber.includes(q)) ||
       (c.contactPerson && c.contactPerson.toLowerCase().includes(q)) ||
-      (c.address && c.address.toLowerCase().includes(q))
+      (c.address && c.address.toLowerCase().includes(q)) ||
+      (c.email && c.email.toLowerCase().includes(q)) ||
+      (c.contacts && c.contacts.some(item => 
+        (item.name && item.name.toLowerCase().includes(q)) ||
+        (item.phone && item.phone.includes(q)) ||
+        (item.role && item.role.toLowerCase().includes(q))
+      ))
     );
   });
+
+  const handleAddContactRow = () => {
+    setCustContacts((prev) => [
+      ...prev,
+      { id: `c_${Date.now()}`, role: "OT Number", name: "", phone: "" },
+    ]);
+  };
+
+  const handleUpdateContactRow = (index: number, field: keyof HospitalContact, value: string) => {
+    setCustContacts((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleRemoveContactRow = (index: number) => {
+    setCustContacts((prev) => prev.filter((_, idx) => idx !== index));
+  };
 
   const handleSaveCustomerSubmit = async () => {
     if (!custName.trim()) {
@@ -178,12 +212,18 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
 
     setIsCustSaving(true);
     try {
+      const cleanContacts = custContacts.filter(c => c.name?.trim() || c.phone?.trim());
       const saved = await saveCustomer({
         id: editingCust?.id,
         name: custName.trim(),
-        mobile: custMobile.trim(),
+        mobile: (custMobile || custPersonalNumber || custOtNumber || custHospitalNumber || cleanContacts[0]?.phone || "").trim(),
+        hospitalNumber: custHospitalNumber.trim(),
+        otNumber: custOtNumber.trim(),
+        personalNumber: custPersonalNumber.trim(),
         contactPerson: custContactPerson.trim(),
+        contacts: cleanContacts,
         address: custAddress.trim(),
+        email: custEmail.trim(),
         notes: custNotes.trim(),
       });
 
@@ -191,9 +231,14 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
       setEditingCust(null);
       setCustName("");
       setCustMobile("");
+      setCustHospitalNumber("");
+      setCustOtNumber("");
+      setCustPersonalNumber("");
       setCustContactPerson("");
       setCustAddress("");
+      setCustEmail("");
       setCustNotes("");
+      setCustContacts([]);
       setCustomerList(getSavedCustomers());
       setCustomersCount(getSavedCustomers().length);
     } catch (e: any) {
@@ -207,18 +252,28 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
     setEditingCust(cust);
     setCustName(cust.name);
     setCustMobile(cust.mobile || "");
+    setCustHospitalNumber(cust.hospitalNumber || "");
+    setCustOtNumber(cust.otNumber || "");
+    setCustPersonalNumber(cust.personalNumber || "");
     setCustContactPerson(cust.contactPerson || "");
     setCustAddress(cust.address || "");
+    setCustEmail(cust.email || "");
     setCustNotes(cust.notes || "");
+    setCustContacts(Array.isArray(cust.contacts) ? [...cust.contacts] : []);
   };
 
   const handleCancelEditCust = () => {
     setEditingCust(null);
     setCustName("");
     setCustMobile("");
+    setCustHospitalNumber("");
+    setCustOtNumber("");
+    setCustPersonalNumber("");
     setCustContactPerson("");
     setCustAddress("");
+    setCustEmail("");
     setCustNotes("");
+    setCustContacts([]);
   };
 
   const handleDeleteCustomerClick = async (id: string, name: string) => {
@@ -885,30 +940,60 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       value={custName}
                       onChange={(e) => setCustName(e.target.value)}
                       placeholder="e.g. Apollo Hospital, Jubilee Hills"
+                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-bold text-sky-700 dark:text-sky-400 flex items-center gap-1">
+                      <Building2 className="w-3 h-3 text-sky-600" />
+                      Hospital Number (Reception / Board)
+                    </Label>
+                    <Input
+                      type="tel"
+                      value={custHospitalNumber}
+                      onChange={(e) => setCustHospitalNumber(e.target.value)}
+                      placeholder="e.g. 040-23607777"
                       className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
                     />
                   </div>
 
                   <div>
-                    <Label className="text-xs font-bold flex items-center gap-1">
+                    <Label className="text-xs font-bold text-teal-700 dark:text-teal-400 flex items-center gap-1">
                       <Phone className="w-3 h-3 text-teal-600" />
-                      Mobile Number *
+                      OT Number (Theatre / Incharge)
                     </Label>
                     <Input
                       type="tel"
-                      value={custMobile}
-                      onChange={(e) => setCustMobile(e.target.value)}
-                      placeholder="e.g. 9848012345"
+                      value={custOtNumber}
+                      onChange={(e) => setCustOtNumber(e.target.value)}
+                      placeholder="e.g. 9848011223"
                       className="mt-1 h-8 text-xs bg-white dark:bg-slate-950 font-semibold"
                     />
                   </div>
 
                   <div>
-                    <Label className="text-xs font-bold">Contact Person / Incharge</Label>
+                    <Label className="text-xs font-bold text-purple-700 dark:text-purple-400 flex items-center gap-1">
+                      <User className="w-3 h-3 text-purple-600" />
+                      Personal Number (Doctor / Mobile)
+                    </Label>
+                    <Input
+                      type="tel"
+                      value={custPersonalNumber}
+                      onChange={(e) => setCustPersonalNumber(e.target.value)}
+                      placeholder="e.g. 9848099881"
+                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs font-bold">Primary Doctor / Contact Person</Label>
                     <Input
                       value={custContactPerson}
                       onChange={(e) => setCustContactPerson(e.target.value)}
-                      placeholder="e.g. OT Incharge / Dr. Rao"
+                      placeholder="e.g. Dr. Rao / Sister Sujatha"
                       className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
                     />
                   </div>
@@ -922,6 +1007,79 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
                     />
                   </div>
+
+                  <div>
+                    <Label className="text-xs font-bold">Email ID</Label>
+                    <Input
+                      type="email"
+                      value={custEmail}
+                      onChange={(e) => setCustEmail(e.target.value)}
+                      placeholder="e.g. apollo@hospital.com"
+                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
+                    />
+                  </div>
+                </div>
+
+                {/* Dynamic Additional Contacts */}
+                <div className="p-3 rounded-lg border border-border/80 bg-white/60 dark:bg-slate-900/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Additional Contacts &amp; Numbers (Surgeons, OT Nurses, Stores, Accounts)
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddContactRow}
+                      className="h-7 text-xs gap-1 border-teal-500 text-teal-700 hover:bg-teal-50"
+                    >
+                      <Plus className="w-3 h-3" /> Add Contact
+                    </Button>
+                  </div>
+                  {custContacts.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground italic">
+                      No additional staff added. Click "+ Add Contact" to maintain multiple phone numbers.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {custContacts.map((contact, idx) => (
+                        <div key={contact.id || idx} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
+                          <select
+                            value={contact.role}
+                            onChange={(e) => handleUpdateContactRow(idx, "role", e.target.value)}
+                            className="h-7 text-xs font-bold rounded border border-input bg-background px-2 text-foreground"
+                          >
+                            <option value="OT Person">🩺 OT Person</option>
+                            <option value="Accounts">💳 Accounts</option>
+                            <option value="Reception">🏥 Reception</option>
+                            <option value="Doctor">👨‍⚕️ Doctor</option>
+                            <option value="Others">📋 Others</option>
+                          </select>
+                          <Input
+                            placeholder="Staff Name"
+                            value={contact.name}
+                            onChange={(e) => handleUpdateContactRow(idx, "name", e.target.value)}
+                            className="h-7 text-xs bg-white dark:bg-slate-950"
+                          />
+                          <Input
+                            placeholder="Phone Number"
+                            value={contact.phone}
+                            onChange={(e) => handleUpdateContactRow(idx, "phone", e.target.value)}
+                            className="h-7 text-xs bg-white dark:bg-slate-950"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveContactRow(idx)}
+                            className="h-7 w-7 text-red-500 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-1">
@@ -943,14 +1101,14 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                   <div className="relative flex-1 max-w-sm">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search hospitals or mobile number..."
+                      placeholder="Search hospital, OT number, doctor, phone..."
                       value={customerSearch}
                       onChange={(e) => setCustomerSearch(e.target.value)}
                       className="pl-9 h-8 text-xs"
                     />
                   </div>
-                  <Badge variant="outline" className="self-start sm:self-auto text-xs px-2.5 py-1">
-                    {filteredCustomers.length} Registered Customers
+                  <Badge variant="outline" className="self-start sm:self-auto text-xs px-2.5 py-1 font-bold">
+                    {filteredCustomers.length} Registered Hospitals
                   </Badge>
                 </div>
 
@@ -958,9 +1116,9 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 dark:bg-slate-950 text-muted-foreground border-b border-slate-200 dark:border-slate-800 font-bold uppercase text-[10px]">
                       <tr>
-                        <th className="py-2.5 px-4">Hospital / Customer Name</th>
-                        <th className="py-2.5 px-3">Mobile Number</th>
-                        <th className="py-2.5 px-3">Contact Person</th>
+                        <th className="py-2.5 px-4">Hospital / Customer</th>
+                        <th className="py-2.5 px-3">Phone Lines (OT / Hosp / Pers)</th>
+                        <th className="py-2.5 px-3">Staff &amp; Contacts</th>
                         <th className="py-2.5 px-4">Address / Branch</th>
                         <th className="py-2.5 px-3 text-right">Actions</th>
                       </tr>
@@ -976,20 +1134,53 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                         filteredCustomers.map((cust) => (
                           <tr key={cust.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/40">
                             <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-slate-100">
-                              {cust.name}
+                              <div className="text-teal-800 dark:text-teal-300 font-bold text-sm">{cust.name}</div>
+                              {cust.email && <div className="text-[10.5px] text-muted-foreground">✉️ {cust.email}</div>}
                             </td>
-                            <td className="py-2.5 px-3 font-semibold text-teal-700 dark:text-teal-400">
-                              {cust.mobile ? (
-                                <span className="flex items-center gap-1">
-                                  <Phone className="w-3 h-3" />
-                                  {cust.mobile}
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground text-[10px] font-normal">Not added</span>
-                              )}
+                            <td className="py-2.5 px-3">
+                              <div className="space-y-1">
+                                {cust.otNumber && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9.5px] font-extrabold bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 px-1.5 py-0.5 rounded">OT</span>
+                                    <a href={`tel:${cust.otNumber}`} className="font-semibold text-teal-700 hover:underline">{cust.otNumber}</a>
+                                  </div>
+                                )}
+                                {cust.hospitalNumber && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9.5px] font-extrabold bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 px-1.5 py-0.5 rounded">HOSP</span>
+                                    <a href={`tel:${cust.hospitalNumber}`} className="font-semibold text-sky-700 hover:underline">{cust.hospitalNumber}</a>
+                                  </div>
+                                )}
+                                {cust.personalNumber && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9.5px] font-extrabold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 px-1.5 py-0.5 rounded">PERS</span>
+                                    <a href={`tel:${cust.personalNumber}`} className="font-semibold text-purple-700 hover:underline">{cust.personalNumber}</a>
+                                  </div>
+                                )}
+                                {!cust.otNumber && !cust.hospitalNumber && !cust.personalNumber && cust.mobile && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9.5px] font-extrabold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">MOB</span>
+                                    <a href={`tel:${cust.mobile}`} className="font-semibold text-slate-700 hover:underline">{cust.mobile}</a>
+                                  </div>
+                                )}
+                              </div>
                             </td>
                             <td className="py-2.5 px-3 text-muted-foreground">
-                              {cust.contactPerson || "-"}
+                              {cust.contactPerson && <div className="font-bold text-slate-800 dark:text-slate-200">👤 {cust.contactPerson}</div>}
+                              {Array.isArray(cust.contacts) && cust.contacts.length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                  {cust.contacts.slice(0, 3).map((c, i) => (
+                                    <div key={i} className="text-[11px] flex items-center gap-1">
+                                      <span className="text-[9px] uppercase font-bold text-slate-400">[{c.role}]:</span>
+                                      <span>{c.name}</span>
+                                      {c.phone && <span className="text-teal-600 font-medium">({c.phone})</span>}
+                                    </div>
+                                  ))}
+                                  {cust.contacts.length > 3 && (
+                                    <div className="text-[10px] text-teal-600 font-bold">+{cust.contacts.length - 3} more contacts</div>
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td className="py-2.5 px-4 text-muted-foreground max-w-xs truncate" title={cust.address}>
                               {cust.address || "-"}

@@ -10,6 +10,10 @@ import {
   X,
   MapPin,
   Clock,
+  AlertCircle,
+  Stethoscope,
+  Smartphone,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,6 +71,7 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
   // On-the-fly quick add modal states
   const [quickAddModalOpen, setQuickAddModalOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newContactRole, setNewContactRole] = useState<"OT Person" | "Accounts" | "Reception" | "Others" | "Doctor">("OT Person");
   const [newMobile, setNewMobile] = useState("");
   const [newAddress, setNewAddress] = useState("");
   const [newContactPerson, setNewContactPerson] = useState("");
@@ -110,11 +115,12 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Combined suggestions
+  // Canonical suggestions: Proper registered directory hospitals take priority.
+  // Historical DC names are only included if not already covered by a registered customer.
   const allSuggestions = useMemo(() => {
     const map = new Map<string, Customer>();
 
-    // 1. Registered directory customers (higher priority)
+    // 1. Registered directory customers (CANONICAL PROPER HOSPITALS)
     customers.forEach((c) => {
       const canonical = normalizeHospitalName(c.name);
       if (canonical) {
@@ -125,12 +131,20 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
       }
     });
 
-    // 2. Historical DC names not yet registered
+    // 2. Historical DC names: only include if it does NOT match any registered customer
+    const registeredKeys = Array.from(map.keys());
     historicalNames.forEach((name) => {
       const canonical = normalizeHospitalName(name);
       if (!canonical) return;
       const key = canonical.toLowerCase();
-      if (!map.has(key)) {
+      const cleanKey = key.replace(/[^a-z0-9]/g, "");
+
+      const isCovered = registeredKeys.some((regKey) => {
+        const cleanReg = regKey.replace(/[^a-z0-9]/g, "");
+        return cleanReg === cleanKey || cleanReg.includes(cleanKey) || (cleanKey.length > 5 && cleanKey.includes(cleanReg));
+      });
+
+      if (!isCovered && !map.has(key)) {
         map.set(key, {
           id: `hist_${key}`,
           name: canonical,
@@ -140,25 +154,73 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
     });
 
     return Array.from(map.values()).sort((a, b) => {
-      // Items with mobile or registered first, then alphabetical
-      const aScore = (a.mobile ? 2 : 0) + (a.notes !== "From DC History" ? 1 : 0);
-      const bScore = (b.mobile ? 2 : 0) + (b.notes !== "From DC History" ? 1 : 0);
-      if (aScore !== bScore) return bScore - aScore;
+      // Registered directory hospitals ALWAYS first
+      const aIsReg = a.notes !== "From DC History";
+      const bIsReg = b.notes !== "From DC History";
+      if (aIsReg !== bIsReg) return aIsReg ? -1 : 1;
+
+      // Has phone lines next
+      const aHasPhone = Boolean(a.otNumber || a.hospitalNumber || a.personalNumber || a.mobile);
+      const bHasPhone = Boolean(b.otNumber || b.hospitalNumber || b.personalNumber || b.mobile);
+      if (aHasPhone !== bHasPhone) return aHasPhone ? -1 : 1;
+
       return a.name.localeCompare(b.name);
     });
   }, [customers, historicalNames]);
 
-  // Filter suggestions based on typed value
+  // Filter suggestions with multi-token matching, address search, and phone lookup
   const filteredSuggestions = useMemo(() => {
-    const query = (value || "").trim().toLowerCase();
-    if (!query) return allSuggestions.slice(0, 30);
+    const rawQuery = (value || "").trim().toLowerCase();
+    if (!rawQuery) return allSuggestions.slice(0, 30);
+
+    const cleanQuery = rawQuery.replace(/[,\.\-\/]/g, " ");
+    const queryTokens = cleanQuery.split(/\s+/).filter(Boolean);
 
     return allSuggestions
       .filter((item) => {
-        const nameMatch = item.name.toLowerCase().includes(query);
-        const mobileMatch = item.mobile && item.mobile.toLowerCase().includes(query);
-        const addressMatch = item.address && item.address.toLowerCase().includes(query);
-        return nameMatch || mobileMatch || addressMatch;
+        const nameLower = (item.name || "").toLowerCase();
+        const cleanName = nameLower.replace(/[,\.\-\/]/g, " ");
+        const addressLower = (item.address || "").toLowerCase();
+        const contactPersonLower = (item.contactPerson || "").toLowerCase();
+        const otDigits = (item.otNumber || "").replace(/\D/g, "");
+        const hospDigits = (item.hospitalNumber || "").replace(/\D/g, "");
+        const mobileDigits = (item.mobile || item.personalNumber || "").replace(/\D/g, "");
+        const queryDigits = rawQuery.replace(/\D/g, "");
+
+        // If numeric digits typed (>=3), match against phone numbers
+        if (queryDigits.length >= 3) {
+          if (otDigits.includes(queryDigits) || hospDigits.includes(queryDigits) || mobileDigits.includes(queryDigits)) {
+            return true;
+          }
+        }
+
+        // Token matching: every word in the query must match name, address, or contact person
+        return queryTokens.every(
+          (token) =>
+            cleanName.includes(token) ||
+            addressLower.includes(token) ||
+            contactPersonLower.includes(token)
+        );
+      })
+      .sort((a, b) => {
+        const aNameLower = a.name.toLowerCase();
+        const bNameLower = b.name.toLowerCase();
+
+        // Exact match first
+        if (aNameLower === rawQuery) return -1;
+        if (bNameLower === rawQuery) return 1;
+
+        // Starts with query next
+        const aStarts = aNameLower.startsWith(rawQuery);
+        const bStarts = bNameLower.startsWith(rawQuery);
+        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+
+        // Registered directory customer next
+        const aIsReg = a.notes !== "From DC History";
+        const bIsReg = b.notes !== "From DC History";
+        if (aIsReg !== bIsReg) return aIsReg ? -1 : 1;
+
+        return a.name.localeCompare(b.name);
       })
       .slice(0, 30);
   }, [allSuggestions, value]);
@@ -167,8 +229,27 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
   const exactMatch = useMemo(() => {
     const trimmed = (value || "").trim().toLowerCase();
     if (!trimmed) return null;
-    return allSuggestions.find((s) => s.name.toLowerCase() === trimmed) || null;
+    const clean = trimmed.replace(/[^a-z0-9]/g, "");
+    return (
+      allSuggestions.find((s) => s.name.toLowerCase() === trimmed) ||
+      allSuggestions.find((s) => s.name.toLowerCase().replace(/[^a-z0-9]/g, "") === clean) ||
+      null
+    );
   }, [allSuggestions, value]);
+
+  // Check if typed value is closely related to an existing registered hospital
+  const potentialExistingMatch = useMemo(() => {
+    if (!value || exactMatch) return null;
+    const clean = value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (clean.length < 3) return null;
+
+    return (
+      allSuggestions.find((s) => {
+        const sClean = s.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+        return sClean.startsWith(clean) || sClean.includes(clean);
+      }) || null
+    );
+  }, [allSuggestions, value, exactMatch]);
 
   const handleSelect = (cust: Customer) => {
     onChange(cust.name);
@@ -237,6 +318,21 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
     const clean = normalizeHospitalName(nameToAdd);
     if (!clean) return;
 
+    // Check if hospital already exists in customers
+    const existing = customers.find(
+      (c) => c.name.toLowerCase().trim() === clean.toLowerCase().trim()
+    );
+    if (existing) {
+      onChange(existing.name);
+      if (onSelectCustomer) onSelectCustomer(existing);
+      setOpen(false);
+      toast({
+        title: "Selected Existing Hospital",
+        description: `"${existing.name}" is already in customer directory.`,
+      });
+      return;
+    }
+
     try {
       const saved = await saveCustomer({ name: clean, mobile: "" });
       onChange(saved.name);
@@ -258,6 +354,7 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
   // Open the detail quick-add modal to enter mobile number on the fly
   const handleOpenQuickAddModal = (initialName: string) => {
     setNewName(initialName.trim());
+    setNewContactRole("OT Person");
     setNewMobile("");
     setNewAddress("");
     setNewContactPerson("");
@@ -265,7 +362,7 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
     setQuickAddModalOpen(true);
   };
 
-  // Submit on-the-fly modal with mobile number
+  // Submit on-the-fly modal with clean contact details
   const handleSaveModalCustomer = async () => {
     const clean = normalizeHospitalName(newName);
     if (!clean) {
@@ -277,10 +374,26 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
       return;
     }
 
-    if (!newMobile.trim()) {
+    // Check if hospital already exists
+    const existing = customers.find(
+      (c) => c.name.toLowerCase().trim() === clean.toLowerCase().trim()
+    );
+    if (existing) {
+      onChange(existing.name);
+      if (onSelectCustomer) onSelectCustomer(existing);
+      setQuickAddModalOpen(false);
       toast({
-        title: "Mobile Number Required",
-        description: "Please provide a valid mobile number for cash invoices and reminders.",
+        title: "Selected Existing Hospital",
+        description: `"${existing.name}" is already registered in customer directory.`,
+      });
+      return;
+    }
+
+    const primaryNumber = newMobile.trim();
+    if (!primaryNumber) {
+      toast({
+        title: "Phone Number Required",
+        description: "Please provide a valid phone number.",
         variant: "destructive",
       });
       return;
@@ -288,11 +401,24 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
 
     setIsSaving(true);
     try {
+      const contacts = [
+        {
+          id: `c_${Date.now()}`,
+          role: newContactRole,
+          name: newContactPerson.trim(),
+          phone: primaryNumber,
+        }
+      ];
+
       const saved = await saveCustomer({
         name: clean,
-        mobile: newMobile.trim(),
+        mobile: primaryNumber,
+        otNumber: newContactRole === "OT Person" ? primaryNumber : "",
+        hospitalNumber: newContactRole === "Reception" ? primaryNumber : "",
+        personalNumber: newContactRole === "Doctor" ? primaryNumber : "",
+        contactPerson: newContactRole === "Doctor" ? newContactPerson.trim() : "",
+        contacts,
         address: newAddress.trim(),
-        contactPerson: newContactPerson.trim(),
       });
 
       onChange(saved.name);
@@ -301,7 +427,7 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
 
       toast({
         title: "Hospital Saved",
-        description: `"${saved.name}" added with mobile ${saved.mobile}.`,
+        description: `"${saved.name}" added to customer directory.`,
       });
     } catch (e: any) {
       toast({
@@ -373,50 +499,58 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
           <div className="bg-slate-50 dark:bg-slate-950 px-3 py-1.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-400">
             <span className="flex items-center gap-1.5">
               <Search className="w-3 h-3 text-teal-600" />
-              {value.trim() ? `Matching "${value.trim()}"` : "Saved Hospitals Directory"}
+              {value.trim() ? `Matching Hospitals for "${value.trim()}"` : "Verified Hospital Directory"}
             </span>
             <span className="text-[10px] text-muted-foreground">
-              {filteredSuggestions.length} found · ↑↓ to navigate
+              {filteredSuggestions.length} available · ↑↓ to choose
             </span>
           </div>
 
-          {/* Quick On-the-Fly Add Banner when typing an unlisted hospital */}
-          {value.trim() && !exactMatch && (
-            <div className="p-2 bg-teal-50/70 dark:bg-teal-950/40 border-b border-teal-100 dark:border-teal-900/60 space-y-1.5">
-              <div className="text-[11px] font-medium text-teal-950 dark:text-teal-200">
-                Hospital not found in directory:
+          {/* Recommendation Banner when typed input resembles an existing hospital */}
+          {potentialExistingMatch && (
+            <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-2 animate-in fade-in duration-150">
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
+                  Existing Hospital Found
+                </div>
+                <div className="font-bold text-slate-900 dark:text-slate-100 text-xs truncate">
+                  {potentialExistingMatch.name}
+                </div>
+                {potentialExistingMatch.address && (
+                  <div className="text-[10.5px] text-muted-foreground truncate">
+                    📍 {potentialExistingMatch.address}
+                  </div>
+                )}
               </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="default"
-                  onClick={() => handleOpenQuickAddModal(value)}
-                  className="h-7 text-xs bg-teal-700 hover:bg-teal-800 text-white font-bold gap-1 px-2.5 shadow-xs"
-                >
-                  <Phone className="w-3 h-3" />
-                  Add with Mobile No.
-                </Button>
-
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleQuickAdd(value)}
-                  className="h-7 text-xs border-teal-300 dark:border-teal-800 text-teal-800 dark:text-teal-200 hover:bg-teal-100/60 font-semibold gap-1 px-2"
-                >
-                  <Plus className="w-3 h-3" />
-                  Quick Save Name
-                </Button>
-              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => handleSelect(potentialExistingMatch)}
+                className="h-7 text-xs bg-teal-700 hover:bg-teal-800 text-white font-bold shrink-0 gap-1 px-2.5 shadow-xs"
+              >
+                <Check className="w-3 h-3" />
+                Select This
+              </Button>
             </div>
           )}
 
           {/* Suggestions List */}
-          <div ref={listRef} className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 p-1">
+          <div ref={listRef} className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 p-1">
             {filteredSuggestions.length === 0 ? (
-              <div className="p-4 text-center text-slate-500 text-xs">
-                No hospitals matching "{value}". Click above to add it.
+              <div className="p-4 text-center space-y-2.5 bg-white dark:bg-slate-900">
+                <div className="text-xs text-slate-600 dark:text-slate-400">
+                  No hospital found matching <strong>"{value}"</strong>.
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => handleOpenQuickAddModal(value)}
+                  className="h-7 text-xs bg-teal-700 hover:bg-teal-800 text-white font-bold gap-1 shadow-xs"
+                >
+                  <Plus className="w-3 h-3" />
+                  Register "{value}" in Directory
+                </Button>
               </div>
             ) : (
               filteredSuggestions.map((item, idx) => {
@@ -429,42 +563,54 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
                     data-index={idx}
                     onClick={() => handleSelect(item)}
                     onMouseEnter={() => setHighlightedIndex(idx)}
-                    className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${
+                    className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-colors ${
                       isHighlighted
                         ? "bg-teal-50 dark:bg-teal-950/60 text-slate-900 dark:text-white"
                         : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <div className="w-5 h-5 rounded-full bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0 text-teal-700 dark:text-teal-300">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="w-6 h-6 rounded-full bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0 text-teal-700 dark:text-teal-300">
                         {isSelected ? (
-                          <Check className="w-3 h-3 font-bold" />
+                          <Check className="w-3.5 h-3.5 font-bold" />
                         ) : (
-                          <Building2 className="w-3 h-3" />
+                          <Building2 className="w-3.5 h-3.5" />
                         )}
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="font-bold text-slate-900 dark:text-slate-100 truncate flex items-center gap-1.5">
+                        <div className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm truncate flex items-center gap-1.5">
                           <span>{item.name}</span>
                           {item.contactPerson && (
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
+                            <span className="text-[10.5px] text-slate-500 dark:text-slate-400 font-normal">
                               ({item.contactPerson})
                             </span>
                           )}
                         </div>
 
-                        {(item.mobile || item.address) && (
-                          <div className="text-[10px] text-muted-foreground flex items-center gap-2 truncate mt-0.5">
-                            {item.mobile && (
-                              <span className="flex items-center gap-0.5 text-teal-700 dark:text-teal-400 font-semibold">
-                                <Phone className="w-2.5 h-2.5" />
-                                {item.mobile}
+                        {(item.otNumber || item.hospitalNumber || item.personalNumber || item.mobile || item.address) && (
+                          <div className="text-[10px] flex flex-wrap items-center gap-1.5 mt-1">
+                            {item.otNumber && (
+                              <span className="inline-flex items-center gap-0.5 text-emerald-800 dark:text-emerald-300 font-extrabold bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/80 dark:border-emerald-800 px-1.5 py-0.5 rounded text-[9.5px]">
+                                <Stethoscope className="w-2.5 h-2.5 text-emerald-600" />
+                                OT: {item.otNumber}
+                              </span>
+                            )}
+                            {item.hospitalNumber && (
+                              <span className="inline-flex items-center gap-0.5 text-sky-800 dark:text-sky-300 font-bold bg-sky-50 dark:bg-sky-950/70 border border-sky-200/80 dark:border-sky-800 px-1.5 py-0.5 rounded text-[9.5px]">
+                                <Building2 className="w-2.5 h-2.5 text-sky-600" />
+                                {item.hospitalNumber}
+                              </span>
+                            )}
+                            {(item.personalNumber || item.mobile) && (
+                              <span className="inline-flex items-center gap-0.5 text-purple-800 dark:text-purple-300 font-semibold bg-purple-50 dark:bg-purple-950/70 border border-purple-200/80 dark:border-purple-800 px-1.5 py-0.5 rounded text-[9.5px]">
+                                <Smartphone className="w-2.5 h-2.5 text-purple-600" />
+                                {item.personalNumber || item.mobile}
                               </span>
                             )}
                             {item.address && (
-                              <span className="flex items-center gap-0.5 truncate max-w-[170px]" title={item.address}>
-                                <MapPin className="w-2.5 h-2.5 shrink-0" />
+                              <span className="inline-flex items-center gap-0.5 text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={item.address}>
+                                <MapPin className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                                 {item.address}
                               </span>
                             )}
@@ -474,20 +620,21 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
                     </div>
 
                     <div className="shrink-0 ml-2 flex items-center gap-1">
-                      {item.notes === "From DC History" ? (
+                      {item.notes !== "From DC History" ? (
+                        <Badge
+                          className="text-[9.5px] px-1.5 py-0.5 h-4 bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-200 border-0 font-extrabold flex items-center gap-0.5"
+                        >
+                          <ShieldCheck className="w-2.5 h-2.5 text-teal-600" />
+                          Directory
+                        </Badge>
+                      ) : (
                         <Badge
                           variant="secondary"
                           className="text-[9px] px-1 py-0 h-4 bg-slate-100 dark:bg-slate-800 text-slate-500 font-normal"
                         >
                           <Clock className="w-2 h-2 mr-0.5" /> History
                         </Badge>
-                      ) : item.mobile ? (
-                        <Badge
-                          className="text-[9.5px] px-1.5 py-0 h-4 bg-teal-100 dark:bg-teal-900 text-teal-800 dark:text-teal-200 border-0 font-semibold"
-                        >
-                          📱 Registered
-                        </Badge>
-                      ) : null}
+                      )}
                     </div>
                   </div>
                 );
@@ -506,8 +653,8 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
               Register New Hospital / Customer
             </button>
 
-            <span className="text-[10px] text-slate-400">
-              Shared with Cash Invoices
+            <span className="text-[10px] text-slate-400 font-medium">
+              Customer Directory
             </span>
           </div>
         </div>
@@ -526,7 +673,7 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3.5 pt-2">
+          <div className="space-y-3 pt-2">
             <div>
               <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 Hospital / Customer Name <span className="text-red-500">*</span>
@@ -535,37 +682,52 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="e.g. Yashoda Hospital, Secunderabad"
-                className="mt-1 h-9 text-xs"
+                className="mt-1 h-9 text-xs font-bold"
                 autoFocus
               />
             </div>
 
-            <div>
-              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-teal-600" />
-                Mobile Number <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                type="tel"
-                value={newMobile}
-                onChange={(e) => setNewMobile(e.target.value)}
-                placeholder="e.g. 9848012345"
-                className="mt-1 h-9 text-xs font-semibold"
-              />
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Required for payment follow-ups, collection reminders &amp; WhatsApp invoicing.
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Contact Role
+                </Label>
+                <select
+                  value={newContactRole}
+                  onChange={(e: any) => setNewContactRole(e.target.value)}
+                  className="mt-1 w-full h-9 text-xs font-bold rounded-md border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-600"
+                >
+                  <option value="OT Person">🩺 OT Person</option>
+                  <option value="Accounts">💳 Accounts</option>
+                  <option value="Reception">🏥 Reception</option>
+                  <option value="Doctor">👨‍⚕️ Doctor</option>
+                  <option value="Others">📋 Others</option>
+                </select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Phone / Mobile Number <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="tel"
+                  value={newMobile}
+                  onChange={(e) => setNewMobile(e.target.value)}
+                  placeholder="e.g. 9848012345"
+                  className="mt-1 h-9 text-xs font-semibold"
+                />
+              </div>
             </div>
 
             <div>
               <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Doctor Name / Contact Person (Optional)
+                Contact Person Name (Optional)
               </Label>
               <Input
                 value={newContactPerson}
                 onChange={(e) => setNewContactPerson(e.target.value)}
-                placeholder="e.g. Dr. Ramesh / OT Store Incharge"
-                className="mt-1 h-9 text-xs"
+                placeholder="e.g. Dr. Ramesh / Sister Sujatha"
+                className="mt-1 h-8 text-xs"
               />
             </div>
 
@@ -577,7 +739,7 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
                 value={newAddress}
                 onChange={(e) => setNewAddress(e.target.value)}
                 placeholder="e.g. Somajiguda, Hyderabad"
-                className="mt-1 h-9 text-xs"
+                className="mt-1 h-8 text-xs"
               />
             </div>
 

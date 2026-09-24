@@ -7,9 +7,12 @@ import {
   fetchCashInvoicesFromFirestore,
   saveCashInvoiceToFirestore,
   deleteCashInvoiceFromFirestore,
-  fetchCashCustomersFromFirestore,
-  saveCashCustomerToFirestore,
 } from "@/services/cashInvoiceFirebaseService";
+import {
+  fetchUnifiedCustomers,
+  saveCustomer,
+  deleteCustomer,
+} from "@/lib/customerStorage";
 
 import { loadSavedDcs, transitionSavedDc } from "@/lib/savedDcStorage";
 
@@ -153,11 +156,24 @@ export default function CashInvoice() {
         const success = await deleteCashInvoiceFromFirestore(payload);
         targetWindow?.postMessage({ action: 'DELETE_CASH_INVOICE_RESPONSE', success, requestId }, '*');
       } else if (action === 'FETCH_CASH_CUSTOMERS') {
-        const customers = await fetchCashCustomersFromFirestore();
+        const customers = await fetchUnifiedCustomers();
         targetWindow?.postMessage({ action: 'FETCH_CASH_CUSTOMERS_RESPONSE', payload: customers, requestId }, '*');
       } else if (action === 'SAVE_CASH_CUSTOMER') {
-        const success = await saveCashCustomerToFirestore(payload);
-        targetWindow?.postMessage({ action: 'SAVE_CASH_CUSTOMER_RESPONSE', success, requestId }, '*');
+        try {
+          const savedCustomer = await saveCustomer(payload);
+          targetWindow?.postMessage({ action: 'SAVE_CASH_CUSTOMER_RESPONSE', success: true, payload: savedCustomer, requestId }, '*');
+        } catch (err: any) {
+          console.error("Error saving customer from iframe:", err);
+          targetWindow?.postMessage({ action: 'SAVE_CASH_CUSTOMER_RESPONSE', success: false, error: err.message, requestId }, '*');
+        }
+      } else if (action === 'DELETE_CASH_CUSTOMER') {
+        try {
+          const success = await deleteCustomer(payload);
+          targetWindow?.postMessage({ action: 'DELETE_CASH_CUSTOMER_RESPONSE', success, requestId }, '*');
+        } catch (err: any) {
+          console.error("Error deleting customer from iframe:", err);
+          targetWindow?.postMessage({ action: 'DELETE_CASH_CUSTOMER_RESPONSE', success: false, error: err.message, requestId }, '*');
+        }
       }
     };
 

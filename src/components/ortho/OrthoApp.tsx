@@ -96,10 +96,16 @@ export default function OrthoApp() {
     });
   }, []);
 
-  // Clear procedures and update mode from URL
+  // Clear procedures and update mode / hospital from URL
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const mode = params.get('mode');
+    const hospital = params.get('hospital');
+
+    if (hospital) {
+      setHospitalName(hospital);
+      setTempHospital(hospital);
+    }
 
     if (mode === 'manual') {
       setDcMode('manual');
@@ -739,9 +745,12 @@ export default function OrthoApp() {
         customAt: customDcDate ? new Date(customDcDate).toISOString() : undefined,
       });
 
-      // Ensure hospital name is automatically registered in customer directory for autocomplete & cash invoicing
+      // Ensure hospital name is automatically registered in customer directory on the fly
       if (hospitalName.trim()) {
-        saveCustomer({ name: hospitalName.trim() }).catch((err) =>
+        saveCustomer({
+          name: hospitalName.trim(),
+          contactPerson: doctorName.trim() ? doctorName.trim() : undefined,
+        }).catch((err) =>
           console.error("Auto-sync hospital to customer directory error:", err)
         );
       }

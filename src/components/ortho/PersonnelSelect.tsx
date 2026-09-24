@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Check, ChevronsUpDown, Plus, User, UserPlus, X } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Check, ChevronsUpDown, Trash2, Truck, User, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -20,10 +20,12 @@ import {
   Personnel,
   getSavedPersonnel,
   addPersonnel,
-  getAllPersonnelNames,
+  deletePersonnel,
   normalizePersonnelName,
+  isDisallowedPersonnel,
 } from "@/lib/personnelStorage";
 import { loadSavedDcs, SavedDc } from "@/lib/savedDcStorage";
+import { useToast } from "@/hooks/use-toast";
 
 interface PersonnelSelectProps {
   value: string;
@@ -39,11 +41,12 @@ interface PersonnelSelectProps {
 export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
   value,
   onChange,
-  placeholder = "Select or enter name...",
+  placeholder = "Select or enter personnel...",
   disabled = false,
   className = "",
   id,
 }) => {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [personnelList, setPersonnelList] = useState<Personnel[]>(getSavedPersonnel);
@@ -61,8 +64,18 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     // Also gather names from saved DCs
     loadSavedDcs()
       .then((dcs: SavedDc[]) => {
-        const all = getAllPersonnelNames(dcs, false);
-        setHistoricalNames(all);
+        const set = new Set<string>();
+        dcs.forEach((d) => {
+          const deliv = normalizePersonnelName(d.deliveredBy);
+          if (deliv && !isDisallowedPersonnel(deliv) && deliv.toLowerCase() !== "courier") {
+            set.add(deliv);
+          }
+          const ret = normalizePersonnelName(d.returnedBy);
+          if (ret && !isDisallowedPersonnel(ret) && ret.toLowerCase() !== "courier") {
+            set.add(ret);
+          }
+        });
+        setHistoricalNames(Array.from(set));
       })
       .catch((err) => console.error("Error loading DCs for personnel names:", err));
 
@@ -73,13 +86,14 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
 
   // Combined unique suggestions
   const suggestions = useMemo(() => {
-    const map = new Map<string, { name: string; role?: string; isOfficial: boolean }>();
+    const map = new Map<string, { id?: string; name: string; role?: string; isOfficial: boolean }>();
 
     // First add official registered personnel
     personnelList.forEach((p) => {
       const canonical = normalizePersonnelName(p.name);
-      if (p.active && canonical) {
+      if (p.active && canonical && !isDisallowedPersonnel(canonical) && canonical.toLowerCase() !== "courier") {
         map.set(canonical.toLowerCase(), {
+          id: p.id,
           name: canonical,
           role: p.role,
           isOfficial: true,
@@ -90,7 +104,7 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     // Then add historical names not already registered
     historicalNames.forEach((name) => {
       const canonical = normalizePersonnelName(name);
-      if (!canonical) return;
+      if (!canonical || isDisallowedPersonnel(canonical) || canonical.toLowerCase() === "courier") return;
       const key = canonical.toLowerCase();
       if (!map.has(key)) {
         map.set(key, {
@@ -102,7 +116,6 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     });
 
     return Array.from(map.values()).sort((a, b) => {
-      // Official first, then alphabetical
       if (a.isOfficial && !b.isOfficial) return -1;
       if (!a.isOfficial && b.isOfficial) return 1;
       return a.name.localeCompare(b.name);
@@ -117,18 +130,42 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
 
   const handleAddNew = (newName: string) => {
     const trimmed = newName.trim();
-    if (!trimmed) return;
-    addPersonnel(trimmed, { role: "Delivery Executive" });
-    onChange(trimmed);
-    setOpen(false);
-    setSearchValue("");
+    if (!trimmed || isDisallowedPersonnel(trimmed)) return;
+    try {
+      addPersonnel(trimmed, { role: "Delivery Executive" });
+      onChange(trimmed);
+      setOpen(false);
+      setSearchValue("");
+      toast({
+        title: "Personnel Added",
+        description: `"${trimmed}" saved to delivery roster.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: "Could not add",
+        description: e.message || "Invalid name",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteItem = (e: React.MouseEvent, item: { id?: string; name: string }) => {
+    e.stopPropagation();
+    deletePersonnel(item.id || item.name);
+    if (value.toLowerCase() === item.name.toLowerCase()) {
+      onChange("");
+    }
+    toast({
+      title: "Removed Personnel",
+      description: `"${item.name}" has been removed from suggestions.`,
+    });
   };
 
   const isExactMatch = useMemo(() => {
     if (!searchValue.trim()) return false;
-    return suggestions.some(
-      (s) => s.name.toLowerCase() === searchValue.trim().toLowerCase()
-    );
+    const lower = searchValue.trim().toLowerCase();
+    if (lower === "courier") return true;
+    return suggestions.some((s) => s.name.toLowerCase() === lower);
   }, [searchValue, suggestions]);
 
   return (
@@ -141,12 +178,16 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
             role="combobox"
             aria-expanded={open}
             disabled={disabled}
-            className={`w-full justify-between h-9 px-3 text-left font-normal bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900 ${
-              !value ? "text-muted-foreground" : "text-slate-900 dark:text-slate-100 font-medium"
+            className={`w-full justify-between h-9 px-3 text-left font-normal bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all ${
+              !value ? "text-muted-foreground" : "text-slate-900 dark:text-slate-100 font-semibold"
             }`}
           >
             <div className="flex items-center gap-2 truncate">
-              <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+              {value.toLowerCase() === "courier" ? (
+                <Truck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+              ) : (
+                <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+              )}
               <span className="truncate">{value || placeholder}</span>
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-1">
@@ -170,24 +211,44 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
         </PopoverTrigger>
 
         <PopoverContent
-          className="w-[280px] sm:w-[320px] p-0 z-50 shadow-xl border border-slate-200 dark:border-slate-800"
+          className="w-[var(--radix-popover-trigger-width)] min-w-[280px] max-w-[380px] p-0 z-50 shadow-xl border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"
           align="start"
         >
-          <Command shouldFilter={true}>
+          <Command shouldFilter={true} className="w-full">
             <CommandInput
               placeholder="Search or type name..."
               value={searchValue}
               onValueChange={setSearchValue}
               className="h-9 text-xs"
             />
-            <CommandList className="max-h-60 overflow-y-auto">
-              <CommandEmpty className="py-2.5 px-3 text-xs text-center text-muted-foreground">
-                No saved personnel matching "{searchValue}"
+            <CommandList className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/40">
+              <CommandEmpty className="py-3 px-3 text-xs text-center text-muted-foreground">
+                No personnel matching "{searchValue}"
               </CommandEmpty>
 
-              {/* Add typed name if not exactly matching */}
-              {searchValue.trim() && !isExactMatch && (
-                <CommandGroup heading="New Name">
+              {/* Delivery Mode options (e.g. Courier) */}
+              <CommandGroup heading="Delivery Mode">
+                <CommandItem
+                  value="Courier Logistics"
+                  onSelect={() => handleSelect("Courier")}
+                  className="flex items-center justify-between py-1.5 px-2.5 text-xs cursor-pointer hover:bg-teal-50/60 dark:hover:bg-teal-950/40"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Truck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                    <span className="font-bold text-slate-800 dark:text-slate-100">Courier</span>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="text-[9.5px] px-1.5 py-0 bg-teal-50 text-teal-700 dark:bg-teal-950/40 border-teal-200 font-semibold"
+                  >
+                    Logistics / Parcel
+                  </Badge>
+                </CommandItem>
+              </CommandGroup>
+
+              {/* Add typed name if not matching */}
+              {searchValue.trim() && !isExactMatch && !isDisallowedPersonnel(searchValue.trim()) && (
+                <CommandGroup heading="New Entry">
                   <CommandItem
                     value={`add_${searchValue.trim()}`}
                     onSelect={() => handleAddNew(searchValue)}
@@ -199,8 +260,8 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
                 </CommandGroup>
               )}
 
-              {/* Suggestions List */}
-              <CommandGroup heading="Saved Personnel">
+              {/* Saved Personnel List */}
+              <CommandGroup heading="Delivery Staff & Field Team">
                 {suggestions.map((item) => {
                   const isSelected = value?.trim().toLowerCase() === item.name.toLowerCase();
                   return (
@@ -208,9 +269,9 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
                       key={item.name}
                       value={item.name}
                       onSelect={() => handleSelect(item.name)}
-                      className="flex items-center justify-between py-1.5 px-2.5 text-xs cursor-pointer"
+                      className="group flex items-center justify-between py-1.5 px-2.5 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
                         <Check
                           className={`w-3.5 h-3.5 shrink-0 text-teal-600 ${
                             isSelected ? "opacity-100" : "opacity-0"
@@ -220,16 +281,26 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
                           {item.name}
                         </span>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={`text-[9.5px] px-1.5 py-0 shrink-0 font-normal ${
-                          item.isOfficial
-                            ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700"
-                            : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 border-amber-200"
-                        }`}
-                      >
-                        {item.role || "Staff"}
-                      </Badge>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Badge
+                          variant="outline"
+                          className={`text-[9.5px] px-1.5 py-0 shrink-0 font-normal ${
+                            item.isOfficial
+                              ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                              : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 border-amber-200"
+                          }`}
+                        >
+                          {item.role || "Staff"}
+                        </Badge>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteItem(e, item)}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 rounded text-slate-400 hover:text-rose-600 transition-opacity"
+                          title={`Delete "${item.name}"`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </CommandItem>
                   );
                 })}

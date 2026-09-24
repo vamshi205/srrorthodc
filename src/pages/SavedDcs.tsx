@@ -37,11 +37,22 @@ import {
   Sun,
   Moon,
   Loader2,
+  Phone,
+  PhoneCall,
+  Smartphone,
+  Building2,
+  Stethoscope,
+  UserCheck,
+  MapPin,
+  Copy,
+  Check,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
+import { getSavedCustomers, saveCustomer, Customer, HospitalContact } from "@/lib/customerStorage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -202,6 +213,174 @@ const SavedDcs = () => {
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
   const [paymentRemarksInput, setPaymentRemarksInput] = useState("");
   const [cashInvoices, setCashInvoices] = useState<CashInvoiceData[]>([]);
+
+  // Hospital Contacts View Modal State
+  const [customers, setCustomers] = useState<Customer[]>(() => getSavedCustomers());
+  const [viewContactModalOpen, setViewContactModalOpen] = useState(false);
+  const [selectedHospitalForContact, setSelectedHospitalForContact] = useState<{
+    hospitalName: string;
+    dc?: SavedDc;
+    customer?: Customer | null;
+  } | null>(null);
+
+  useEffect(() => {
+    const handleCustUpdate = () => {
+      setCustomers(getSavedCustomers());
+    };
+    window.addEventListener("srrortho:customers_updated", handleCustUpdate);
+    return () => window.removeEventListener("srrortho:customers_updated", handleCustUpdate);
+  }, []);
+
+  const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
+
+  const handleCopyPhone = (num: string) => {
+    if (!num) return;
+    navigator.clipboard.writeText(num);
+    setCopiedPhone(num);
+    toast({
+      title: "Number Copied",
+      description: `${num} copied to clipboard`,
+    });
+    setTimeout(() => {
+      setCopiedPhone(null);
+    }, 2000);
+  };
+
+  // Inline add contact inside View Contacts popup
+  const [isAddingContact, setIsAddingContact] = useState(false);
+  const [newContactRole, setNewContactRole] = useState<string>("OT Person");
+  const [newContactName, setNewContactName] = useState<string>("");
+  const [newContactPhone, setNewContactPhone] = useState<string>("");
+  const [isSavingContact, setIsSavingContact] = useState(false);
+
+  const getHospitalContactSummary = (hospitalName: string) => {
+    const norm = (hospitalName || "").toLowerCase().trim();
+    if (!norm) return { cust: null, hasPhone: false, primaryPhone: "", count: 0 };
+    const cust = customers.find((c) => {
+      const cNorm = c.name.toLowerCase().trim();
+      return cNorm === norm || cNorm.includes(norm) || norm.includes(cNorm);
+    }) || null;
+
+    if (!cust) return { cust: null, hasPhone: false, primaryPhone: "", count: 0 };
+
+    const validContacts = (cust.contacts || []).filter(c => c.phone && c.phone.trim());
+    const count = validContacts.length + (cust.otNumber ? 1 : 0) + (cust.hospitalNumber ? 1 : 0) + (cust.personalNumber ? 1 : 0);
+    const hasPhone = count > 0 || Boolean(cust.mobile || cust.phone);
+    const primaryPhone = cust.otNumber || cust.personalNumber || cust.hospitalNumber || validContacts[0]?.phone || cust.mobile || cust.phone || "";
+
+    return { cust, hasPhone, primaryPhone, count };
+  };
+
+  const handleOpenHospitalContact = (hospitalName: string, dc?: SavedDc, forceAdd?: boolean) => {
+    const norm = (hospitalName || "").toLowerCase().trim();
+    let cust = customers.find((c) => c.name.toLowerCase().trim() === norm) || null;
+    if (!cust && norm) {
+      cust = customers.find((c) => {
+        const cNorm = c.name.toLowerCase().trim();
+        return cNorm.includes(norm) || norm.includes(cNorm);
+      }) || null;
+    }
+
+    const hasAnyContacts = Boolean(
+      (cust?.contacts && cust.contacts.some(c => c.phone && c.phone.trim())) ||
+      cust?.otNumber ||
+      cust?.hospitalNumber ||
+      cust?.personalNumber ||
+      cust?.mobile ||
+      cust?.phone
+    );
+
+    setSelectedHospitalForContact({
+      hospitalName,
+      dc,
+      customer: cust,
+    });
+
+    // Auto-open inline add form if contacts are blank or forceAdd requested
+    setIsAddingContact(forceAdd ?? !hasAnyContacts);
+    setNewContactRole(dc?.doctorName ? "Doctor" : "OT Person");
+    setNewContactName(dc?.doctorName || "");
+    setNewContactPhone("");
+    setViewContactModalOpen(true);
+  };
+
+  const handleSaveInlineContact = async () => {
+    if (!selectedHospitalForContact?.hospitalName) return;
+    const phone = newContactPhone.trim();
+    const name = newContactName.trim();
+    if (!phone && !name) {
+      toast({
+        title: "Phone or Name Required",
+        description: "Please enter a phone number or staff name to save.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingContact(true);
+    try {
+      const hospitalName = selectedHospitalForContact.hospitalName;
+      let existingCust = selectedHospitalForContact.customer || customers.find(
+        (c) => c.name.toLowerCase().trim() === hospitalName.toLowerCase().trim()
+      );
+
+      const existingContacts: HospitalContact[] = existingCust?.contacts ? [...existingCust.contacts] : [];
+      
+      const newContactItem: HospitalContact = {
+        id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        role: newContactRole || "Others",
+        name: name || (newContactRole === "OT Person" ? "OT Desk" : newContactRole === "Doctor" ? "Doctor" : newContactRole === "Reception" ? "Reception" : newContactRole),
+        phone: phone,
+      };
+
+      existingContacts.push(newContactItem);
+
+      // Derive primary compatibility fields
+      const otNum = existingContacts.find(c => c.role === "OT Person" && c.phone)?.phone || existingCust?.otNumber || "";
+      const hospNum = existingContacts.find(c => c.role === "Reception" && c.phone)?.phone || existingCust?.hospitalNumber || "";
+      const persNum = existingContacts.find(c => c.role === "Doctor" && c.phone)?.phone || existingCust?.personalNumber || "";
+      const contactDoc = existingContacts.find(c => c.role === "Doctor")?.name || existingCust?.contactPerson || "";
+      const primaryMobile = persNum || otNum || hospNum || phone || existingCust?.mobile || "";
+
+      const updatedCustomer = await saveCustomer({
+        id: existingCust?.id,
+        name: hospitalName,
+        contacts: existingContacts,
+        otNumber: otNum,
+        hospitalNumber: hospNum,
+        personalNumber: persNum,
+        contactPerson: contactDoc,
+        mobile: primaryMobile,
+        phone: primaryMobile,
+        address: existingCust?.address || "",
+      });
+
+      const refreshed = getSavedCustomers();
+      setCustomers(refreshed);
+      setSelectedHospitalForContact(prev => prev ? {
+        ...prev,
+        customer: updatedCustomer,
+      } : null);
+
+      setNewContactPhone("");
+      setNewContactName("");
+      setIsAddingContact(false);
+
+      toast({
+        title: "Contact Number Saved!",
+        description: `Added ${newContactItem.role}: ${newContactItem.phone || newContactItem.name} to ${hospitalName}.`,
+      });
+    } catch (err: any) {
+      console.error("Failed to save contact:", err);
+      toast({
+        title: "Error saving contact",
+        description: err.message || "Failed to save number to customer profile.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingContact(false);
+    }
+  };
 
   useEffect(() => {
     const fetchDcs = async () => {
@@ -1724,8 +1903,43 @@ const SavedDcs = () => {
                                         {dc.status.charAt(0).toUpperCase() + dc.status.slice(1)}
                                       </Badge>
                                     </div>
-                                    <div className="text-sm font-semibold text-slate-900 mt-1 break-words whitespace-normal">
-                                      {dc.hospitalName}
+                                    <div className="flex items-center justify-between gap-2 mt-1">
+                                      <div className="text-sm font-semibold text-slate-900 break-words whitespace-normal">
+                                        {dc.hospitalName}
+                                      </div>
+                                      {(() => {
+                                        const summary = getHospitalContactSummary(dc.hospitalName);
+                                        if (!summary.hasPhone) {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenHospitalContact(dc.hospitalName, dc, true);
+                                              }}
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md transition-colors shrink-0 shadow-2xs"
+                                              title={`No phone number recorded for ${dc.hospitalName}. Click to add number.`}
+                                            >
+                                              <Plus className="w-3 h-3 text-amber-600" />
+                                              <span>+ Add Number</span>
+                                            </button>
+                                          );
+                                        }
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleOpenHospitalContact(dc.hospitalName, dc, false);
+                                            }}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-md transition-colors shrink-0 shadow-2xs"
+                                            title={`View contact numbers for ${dc.hospitalName}`}
+                                          >
+                                            <Phone className="w-3 h-3 text-teal-600" />
+                                            <span>Contacts</span>
+                                          </button>
+                                        );
+                                      })()}
                                     </div>
                                     <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
                                       <span className="flex items-center gap-1">
@@ -2117,16 +2331,51 @@ const SavedDcs = () => {
                                         </td>
                                       )}
                                       <td className="p-3 border-r-2 border-slate-200">
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedDcId(dc.id);
-                                            setDetailsDialogOpen(true);
-                                          }}
-                                          className="text-sm font-semibold text-slate-900 hover:text-teal-800 transition-colors text-left break-words whitespace-normal"
-                                        >
-                                          {dc.hospitalName}
-                                        </button>
+                                        <div className="space-y-1">
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedDcId(dc.id);
+                                              setDetailsDialogOpen(true);
+                                            }}
+                                            className="text-sm font-semibold text-slate-900 hover:text-teal-800 transition-colors text-left break-words whitespace-normal block"
+                                          >
+                                            {dc.hospitalName}
+                                          </button>
+                                          {(() => {
+                                            const summary = getHospitalContactSummary(dc.hospitalName);
+                                            if (!summary.hasPhone) {
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenHospitalContact(dc.hospitalName, dc, true);
+                                                  }}
+                                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-300 transition-colors shadow-2xs"
+                                                  title={`No number recorded for ${dc.hospitalName}. Click to add.`}
+                                                >
+                                                  <Plus className="w-2.5 h-2.5 text-amber-600" />
+                                                  <span>+ Add Number</span>
+                                                </button>
+                                              );
+                                            }
+                                            return (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleOpenHospitalContact(dc.hospitalName, dc, false);
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900 hover:underline cursor-pointer bg-teal-50 hover:bg-teal-100 px-2 py-0.5 rounded border border-teal-200/80 transition-colors shadow-2xs"
+                                                title={`View contact numbers for ${dc.hospitalName}`}
+                                              >
+                                                <Phone className="w-2.5 h-2.5 text-teal-600" />
+                                                <span>View Contacts</span>
+                                              </button>
+                                            );
+                                          })()}
+                                        </div>
                                       </td>
                                       <td className="p-3 text-center border-r-2 border-slate-200">
                                         <div className="flex items-center justify-center gap-1">
@@ -2820,12 +3069,42 @@ const SavedDcs = () => {
               {/* Header strip */}
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge className={`${getStatusBadgeClass(selectedDc.status)} flex items-center gap-1.5 text-xs font-medium border px-2 py-1`}>
                       {getStatusIcon(selectedDc.status)}
                       {selectedDc.status.toUpperCase()}
                     </Badge>
                     <div className="text-sm font-semibold text-slate-900 truncate">{selectedDc.hospitalName}</div>
+                    {(() => {
+                      const summary = getHospitalContactSummary(selectedDc.hospitalName);
+                      if (!summary.hasPhone) {
+                        return (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleOpenHospitalContact(selectedDc.hospitalName, selectedDc, true)}
+                            className="h-6 px-2 text-[11px] font-bold text-amber-900 border-amber-300 hover:bg-amber-100 gap-1 bg-amber-50 shadow-2xs"
+                            title="No phone number for this hospital. Click to add number."
+                          >
+                            <Plus className="w-3 h-3 text-amber-600" />
+                            <span>+ Add Number</span>
+                          </Button>
+                        );
+                      }
+                      return (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenHospitalContact(selectedDc.hospitalName, selectedDc, false)}
+                          className="h-6 px-2 text-[11px] font-bold text-teal-800 border-teal-300 hover:bg-teal-50 gap-1 bg-teal-50/60 shadow-2xs"
+                          title="View Hospital & Staff Contacts"
+                        >
+                          <PhoneCall className="w-3 h-3 text-teal-600" />
+                          <span>View Contacts</span>
+                        </Button>
+                      );
+                    })()}
                   </div>
                   <div className="mt-1 text-xs text-slate-600">
                     Date: <span className="font-medium text-slate-800">{formatDate(getDisplayDate(selectedDc))}</span>
@@ -3472,6 +3751,328 @@ const SavedDcs = () => {
                 ) : (
                   <span>Confirm Payment</span>
                 )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Hospital Contacts Modal */}
+      <Dialog open={viewContactModalOpen} onOpenChange={setViewContactModalOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0 rounded-2xl bg-white shadow-2xl border-0">
+          <div className="bg-gradient-to-r from-teal-800 via-teal-900 to-slate-900 text-white p-5 rounded-t-2xl relative">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center shrink-0 text-teal-300">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight line-clamp-1">
+                    {selectedHospitalForContact?.hospitalName || "Hospital Contacts"}
+                  </h3>
+                  {selectedHospitalForContact?.customer?.address ? (
+                    <p className="text-xs text-teal-200/80 flex items-center gap-1 mt-0.5 line-clamp-1">
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      <span>{selectedHospitalForContact.customer.address}</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-teal-200/70 mt-0.5">
+                      Direct hospital lines & operational contacts
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {selectedHospitalForContact?.dc && (
+              <div className="mt-3 pt-3 border-t border-teal-700/50 flex flex-wrap items-center gap-3 text-xs text-teal-100/90">
+                <span className="font-semibold text-white">DC: #{selectedHospitalForContact.dc.dcNo}</span>
+                {selectedHospitalForContact.dc.doctorName && (
+                  <span className="flex items-center gap-1">
+                    <Stethoscope className="w-3 h-3 text-teal-300" />
+                    Dr: {selectedHospitalForContact.dc.doctorName}
+                  </span>
+                )}
+                {selectedHospitalForContact.dc.patientName && (
+                  <span className="flex items-center gap-1">
+                    <User className="w-3 h-3 text-teal-300" />
+                    Pt: {selectedHospitalForContact.dc.patientName}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="p-5 space-y-4">
+            {(() => {
+              const cust = selectedHospitalForContact?.customer;
+              const allContacts: HospitalContact[] = [];
+
+              if (cust?.contacts && Array.isArray(cust.contacts)) {
+                cust.contacts.forEach((c) => {
+                  if (c && (c.phone?.trim() || c.name?.trim())) {
+                    allContacts.push(c);
+                  }
+                });
+              }
+
+              // Fallbacks from legacy/direct fields if not already in contacts
+              if (cust?.otNumber && !allContacts.some(c => c.phone === cust.otNumber)) {
+                allContacts.unshift({ id: "ot", role: "OT Person", name: "OT Desk / Incharge", phone: cust.otNumber });
+              }
+              if (cust?.hospitalNumber && !allContacts.some(c => c.phone === cust.hospitalNumber)) {
+                allContacts.push({ id: "hosp", role: "Reception", name: "Hospital Reception", phone: cust.hospitalNumber });
+              }
+              if ((cust?.personalNumber || cust?.mobile) && !allContacts.some(c => c.phone === (cust.personalNumber || cust.mobile))) {
+                allContacts.push({
+                  id: "doc",
+                  role: "Doctor",
+                  name: cust.contactPerson || "Doctor",
+                  phone: cust.personalNumber || cust.mobile || "",
+                });
+              }
+
+              return (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                    <span className="flex items-center gap-1.5">
+                      <PhoneCall className="w-3.5 h-3.5 text-teal-600" />
+                      Hospital Contacts {allContacts.length > 0 ? `(${allContacts.length})` : "(None)"}
+                    </span>
+                    {!isAddingContact && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsAddingContact(true)}
+                        className="h-6 px-2 text-[11px] font-bold text-teal-700 hover:text-teal-800 hover:bg-teal-50 gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Number</span>
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* List of existing contacts */}
+                  {allContacts.length > 0 && (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {allContacts.map((contact, idx) => {
+                        const roleColors: Record<string, { badge: string; border: string; bg: string }> = {
+                          "OT Person": { badge: "bg-emerald-100 text-emerald-800 border-emerald-200", border: "border-emerald-200", bg: "bg-emerald-50/40" },
+                          "Accounts": { badge: "bg-amber-100 text-amber-800 border-amber-200", border: "border-amber-200", bg: "bg-amber-50/40" },
+                          "Reception": { badge: "bg-sky-100 text-sky-800 border-sky-200", border: "border-sky-200", bg: "bg-sky-50/40" },
+                          "Doctor": { badge: "bg-purple-100 text-purple-800 border-purple-200", border: "border-purple-200", bg: "bg-purple-50/40" },
+                          "Others": { badge: "bg-slate-100 text-slate-800 border-slate-200", border: "border-slate-200", bg: "bg-slate-50/40" },
+                        };
+                        const style = roleColors[contact.role] || roleColors["Others"];
+
+                        return (
+                          <div
+                            key={contact.id || idx}
+                            className={`p-3 rounded-xl border ${style.border} ${style.bg} hover:shadow-xs transition-all flex items-center justify-between gap-2`}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${style.badge}`}>
+                                  {contact.role}
+                                </span>
+                                <span className="text-xs font-bold text-slate-900 truncate">
+                                  {contact.name || contact.role}
+                                </span>
+                              </div>
+                              <div className="text-sm font-bold text-slate-900 font-mono mt-1">
+                                {contact.phone || <span className="text-xs font-normal text-slate-400 italic">No number</span>}
+                              </div>
+                            </div>
+
+                            {contact.phone && (
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <a
+                                  href={`tel:${contact.phone.replace(/[^\d+]/g, "")}`}
+                                  className="h-8 px-2.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg inline-flex items-center gap-1 shadow-2xs transition-colors"
+                                  title={`Call ${contact.name || contact.role}`}
+                                >
+                                  <Phone className="w-3 h-3" />
+                                  <span>Call</span>
+                                </a>
+                                <a
+                                  href={`https://wa.me/${contact.phone.replace(/\D/g, "").length === 10 ? '91' + contact.phone.replace(/\D/g, "") : contact.phone.replace(/\D/g, "")}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="h-8 w-8 text-emerald-700 hover:text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg inline-flex items-center justify-center transition-colors"
+                                  title={`WhatsApp ${contact.name || contact.role}`}
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5" />
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyPhone(contact.phone)}
+                                  className="h-8 w-8 text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg inline-flex items-center justify-center transition-colors"
+                                  title="Copy Number"
+                                >
+                                  {copiedPhone === contact.phone ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Inline Add Contact Form (visible when blank or when user clicks Add Number) */}
+                  {isAddingContact && (
+                    <div className="p-4 rounded-xl border-2 border-teal-500/70 bg-teal-50/60 dark:bg-teal-950/40 shadow-sm space-y-3 mt-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-md bg-teal-600 text-white flex items-center justify-center shrink-0">
+                            <Plus className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-teal-950 dark:text-teal-100">
+                              {allContacts.length === 0 ? "Add Hospital Contact Number" : "Add Another Contact Number"}
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground">
+                              {allContacts.length === 0 
+                                ? "No number saved yet for this hospital. Enter below to save directly:"
+                                : "Add an additional direct department line or surgeon number"}
+                            </p>
+                          </div>
+                        </div>
+                        {allContacts.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingContact(false)}
+                            className="text-slate-400 hover:text-slate-600 text-xs font-semibold px-1 py-0.5"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 1. One-click role buttons */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                          Select Department / Role:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {[
+                            { role: "OT Person", label: "OT Person", icon: "🩺" },
+                            { role: "Doctor", label: "Doctor", icon: "👨‍⚕️" },
+                            { role: "Reception", label: "Reception", icon: "🏥" },
+                            { role: "Accounts", label: "Accounts", icon: "💳" },
+                            { role: "Others", label: "Others", icon: "📋" },
+                          ].map((item) => {
+                            const isSelected = newContactRole === item.role;
+                            return (
+                              <button
+                                key={item.role}
+                                type="button"
+                                onClick={() => setNewContactRole(item.role)}
+                                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center gap-1 ${
+                                  isSelected
+                                    ? "bg-teal-700 text-white border-teal-700 shadow-xs"
+                                    : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                }`}
+                              >
+                                <span>{item.icon}</span>
+                                <span>{item.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 2. Direct inputs */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                            <span>Phone Number <span className="text-red-500">*</span></span>
+                            <span className="text-[10px] text-muted-foreground font-normal">Mobile / Landline</span>
+                          </label>
+                          <Input
+                            type="tel"
+                            placeholder="e.g. 9848011223 or 040-23607777"
+                            value={newContactPhone}
+                            onChange={(e) => setNewContactPhone(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleSaveInlineContact();
+                              }
+                            }}
+                            className="h-9 text-xs font-bold bg-white dark:bg-slate-900 border-teal-300 dark:border-teal-700 focus-visible:ring-teal-600"
+                            autoFocus
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                            <span>Contact Person Name</span>
+                            <span className="text-[10px] text-muted-foreground font-normal">Optional</span>
+                          </label>
+                          <Input
+                            placeholder="e.g. Sister Sujatha / Dr. Rao"
+                            value={newContactName}
+                            onChange={(e) => setNewContactName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleSaveInlineContact();
+                              }
+                            }}
+                            className="h-9 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <Button
+                          type="button"
+                          disabled={isSavingContact || (!newContactPhone.trim() && !newContactName.trim())}
+                          onClick={handleSaveInlineContact}
+                          className="h-9 px-5 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white gap-1.5 shadow-sm"
+                        >
+                          {isSavingContact ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          )}
+                          <span>Save Number</span>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Footer action bar */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setViewContactModalOpen(false);
+                  navigate("/customers");
+                }}
+                className="text-xs font-semibold text-teal-800 border-teal-200 hover:bg-teal-50 gap-1.5"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Customer Directory</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setViewContactModalOpen(false)}
+                className="text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white px-4"
+              >
+                Close
               </Button>
             </div>
           </div>

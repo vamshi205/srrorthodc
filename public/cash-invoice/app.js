@@ -153,7 +153,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (c && c.name) existingMap.set(c.name.toLowerCase().trim(), c);
                 });
                 payload.forEach(c => {
-                    if (c && c.name) existingMap.set(c.name.toLowerCase().trim(), c);
+                    if (c && c.name) {
+                        const key = c.name.toLowerCase().trim();
+                        const existing = existingMap.get(key) || {};
+                        existingMap.set(key, { ...existing, ...c });
+                    }
                 });
                 state.customers = Array.from(existingMap.values());
                 localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
@@ -161,6 +165,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             renderCustomerList();
             populateCustomerSelector();
+            if (typeof renderDashboardCustomersList === "function") {
+                renderDashboardCustomersList();
+            }
         }
     });
 });
@@ -294,16 +301,26 @@ function loadPersistedData() {
     if (discountInput) discountInput.value = 0;
 
     // 6. Customer Directory
-    const savedCustomers = localStorage.getItem("im_saved_customers") || localStorage.getItem("im_customers");
-    if (savedCustomers) {
+    const map = new Map();
+    const tryMerge = (raw) => {
+        if (!raw) return;
         try {
-            state.customers = JSON.parse(savedCustomers);
-        } catch (e) {
-            state.customers = [];
-        }
-    } else {
-        state.customers = [];
-    }
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+                list.forEach(c => {
+                    if (c && c.name) {
+                        const key = c.name.toLowerCase().trim();
+                        const existing = map.get(key) || {};
+                        map.set(key, { ...existing, ...c });
+                    }
+                });
+            }
+        } catch (e) {}
+    };
+    tryMerge(localStorage.getItem("srrortho:customers"));
+    tryMerge(localStorage.getItem("im_saved_customers"));
+    tryMerge(localStorage.getItem("im_customers"));
+    state.customers = Array.from(map.values());
     renderCustomerList();
     populateCustomerSelector();
 
@@ -350,6 +367,34 @@ function setupEventListeners() {
     const closeCustModalBtn = document.getElementById("close-cust-modal-btn");
     const cancelCustModalBtn = document.getElementById("cancel-cust-modal-btn");
     const saveCustModalBtn = document.getElementById("save-cust-modal-btn");
+    const modalAddContactBtn = document.getElementById("modal-add-contact-btn");
+    const modalContactsContainer = document.getElementById("modal-cust-contacts-container");
+
+    const buildContactRow = (role = "OT Person", name = "", phone = "") => {
+        const row = document.createElement("div");
+        row.className = "dynamic-contact-row";
+        row.style.cssText = "display:grid; grid-template-columns: 130px 1fr 1fr 28px; gap:6px; align-items:center;";
+        row.innerHTML = `
+            <select class="contact-role-select" style="padding:6px; font-size:11px; font-weight:bold; border-radius:5px; border:1px solid #cbd5e1; background:#fff;">
+                <option value="OT Person" ${role === "OT Person" || role.toLowerCase().includes("ot") ? "selected" : ""}>🩺 OT Person</option>
+                <option value="Accounts" ${role === "Accounts" || role.toLowerCase().includes("acc") ? "selected" : ""}>💳 Accounts</option>
+                <option value="Reception" ${role === "Reception" || role.toLowerCase().includes("recept") || role.toLowerCase().includes("board") ? "selected" : ""}>🏥 Reception</option>
+                <option value="Doctor" ${role === "Doctor" || role.toLowerCase().includes("doc") || role.toLowerCase().includes("surg") ? "selected" : ""}>👨‍⚕️ Doctor</option>
+                <option value="Others" ${role === "Others" || role === "Other" ? "selected" : ""}>📋 Others</option>
+            </select>
+            <input type="text" class="contact-name-input" value="${name || ""}" placeholder="Staff / Doctor Name" style="padding:6px; font-size:11px; border-radius:5px; border:1px solid #cbd5e1;">
+            <input type="tel" class="contact-phone-input" value="${phone || ""}" placeholder="Phone / Mobile" style="padding:6px; font-size:11px; border-radius:5px; border:1px solid #cbd5e1;">
+            <button type="button" class="remove-contact-btn" style="height:28px; width:28px; border-radius:5px; border:1px solid #fecaca; background:#fef2f2; color:#ef4444; font-size:12px; cursor:pointer;" title="Remove">✕</button>
+        `;
+        row.querySelector(".remove-contact-btn").addEventListener("click", () => row.remove());
+        return row;
+    };
+
+    if (modalAddContactBtn && modalContactsContainer) {
+        modalAddContactBtn.addEventListener("click", () => {
+            modalContactsContainer.appendChild(buildContactRow("OT Person", "", ""));
+        });
+    }
 
     const openCustModal = () => {
         if (addCustModal) {
@@ -364,9 +409,17 @@ function setupEventListeners() {
             addCustModal.classList.remove("active");
             // Clear inputs
             document.getElementById("modal-cust-name").value = "";
-            document.getElementById("modal-cust-mobile").value = "";
+            const hNum = document.getElementById("modal-cust-hospital-number");
+            if (hNum) hNum.value = "";
+            const otNum = document.getElementById("modal-cust-ot-number");
+            if (otNum) otNum.value = "";
+            const pNum = document.getElementById("modal-cust-personal-number");
+            if (pNum) pNum.value = "";
+            const cp = document.getElementById("modal-cust-contact-person");
+            if (cp) cp.value = "";
             document.getElementById("modal-cust-email").value = "";
             document.getElementById("modal-cust-address").value = "";
+            if (modalContactsContainer) modalContactsContainer.innerHTML = "";
         }
     };
 
@@ -382,31 +435,72 @@ function setupEventListeners() {
 
     if (saveCustModalBtn) {
         saveCustModalBtn.addEventListener("click", () => {
-            const name = document.getElementById("modal-cust-name").value.trim();
-            const mobile = document.getElementById("modal-cust-mobile").value.trim();
-            const email = document.getElementById("modal-cust-email").value.trim();
-            const address = document.getElementById("modal-cust-address").value.trim();
+            const name = (document.getElementById("modal-cust-name")?.value || "").trim();
+            const hospitalNumber = (document.getElementById("modal-cust-hospital-number")?.value || "").trim();
+            const otNumber = (document.getElementById("modal-cust-ot-number")?.value || "").trim();
+            const personalNumber = (document.getElementById("modal-cust-personal-number")?.value || "").trim();
+            const contactPerson = (document.getElementById("modal-cust-contact-person")?.value || "").trim();
+            const email = (document.getElementById("modal-cust-email")?.value || "").trim();
+            const address = (document.getElementById("modal-cust-address")?.value || "").trim();
             
             if (!name) {
                 alert("Customer name is required!");
                 return;
             }
+
+            // Extract dynamic contacts
+            const contacts = [];
+            if (modalContactsContainer) {
+                const rows = modalContactsContainer.querySelectorAll(".dynamic-contact-row");
+                rows.forEach((r, idx) => {
+                    const rRole = r.querySelector(".contact-role-select")?.value || "Other";
+                    const rName = r.querySelector(".contact-name-input")?.value?.trim() || "";
+                    const rPhone = r.querySelector(".contact-phone-input")?.value?.trim() || "";
+                    if (rPhone || rName) {
+                        contacts.push({ id: `mc_${Date.now()}_${idx}`, role: rRole, name: rName, phone: rPhone });
+                    }
+                });
+            }
+
+            const primaryMobile = personalNumber || otNumber || hospitalNumber || (contacts[0]?.phone) || "";
             
-            const newCustomer = { name, mobile, email, address };
-            state.customers.push(newCustomer);
+            const newCustomer = {
+                id: `cust_${Date.now()}`,
+                name,
+                mobile: primaryMobile,
+                phone: hospitalNumber || primaryMobile,
+                hospitalNumber,
+                otNumber,
+                personalNumber,
+                contactPerson: contactPerson || (contacts[0]?.name) || "",
+                contacts,
+                email,
+                address,
+                createdAt: new Date().toISOString()
+            };
+
+            const existingIdx = state.customers.findIndex(c => (c.name || "").toLowerCase().trim() === name.toLowerCase().trim());
+            if (existingIdx >= 0) {
+                state.customers[existingIdx] = { ...state.customers[existingIdx], ...newCustomer, id: state.customers[existingIdx].id };
+            } else {
+                state.customers.push(newCustomer);
+            }
+
             localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
             localStorage.setItem("im_customers", JSON.stringify(state.customers));
+            localStorage.setItem("srrortho:customers", JSON.stringify(state.customers));
             syncCustomerToFirestore(newCustomer);
             
             // Re-render UI list & dropdown
             renderCustomerList();
             populateCustomerSelector();
+            if (typeof renderDashboardCustomersList === "function") renderDashboardCustomersList();
             
             // Auto preload created customer directly onto current invoice
             preloadCustomer(newCustomer);
             
             closeCustModal();
-            showStatus(`Added and loaded customer: ${name}`);
+            showStatus(`Saved customer: ${name}`);
 
             // Background Google Drive sync
             if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
@@ -574,55 +668,133 @@ function setupEventListeners() {
     const dashCustFormCard = document.getElementById("dashboard-cust-form-card");
     const dashCancelCustBtn = document.getElementById("dash-cancel-cust-btn");
     const dashSaveCustBtn = document.getElementById("dash-save-cust-btn");
+    const dashAddContactBtn = document.getElementById("dash-add-contact-btn");
+    const dashContactsContainer = document.getElementById("dash-contacts-container");
+
+    const clearDashCustForm = () => {
+        const idEl = document.getElementById("dash-cust-id");
+        if (idEl) idEl.value = "";
+        const titleEl = document.getElementById("dash-cust-form-title");
+        if (titleEl) titleEl.innerText = "🏥 Add New Hospital / Customer";
+        const nameEl = document.getElementById("dash-cust-name");
+        if (nameEl) nameEl.value = "";
+        const hospEl = document.getElementById("dash-cust-hospital-number");
+        if (hospEl) hospEl.value = "";
+        const otEl = document.getElementById("dash-cust-ot-number");
+        if (otEl) otEl.value = "";
+        const persEl = document.getElementById("dash-cust-personal-number");
+        if (persEl) persEl.value = "";
+        const cpEl = document.getElementById("dash-cust-contact-person");
+        if (cpEl) cpEl.value = "";
+        const addrEl = document.getElementById("dash-cust-address");
+        if (addrEl) addrEl.value = "";
+        const emailEl = document.getElementById("dash-cust-email");
+        if (emailEl) emailEl.value = "";
+        const notesEl = document.getElementById("dash-cust-notes");
+        if (notesEl) notesEl.value = "";
+        if (dashContactsContainer) dashContactsContainer.innerHTML = "";
+    };
+
+    if (dashAddContactBtn && dashContactsContainer) {
+        dashAddContactBtn.addEventListener("click", () => {
+            dashContactsContainer.appendChild(buildContactRow("OT Person", "", ""));
+        });
+    }
 
     if (dashAddCustBtn && dashCustFormCard) {
         dashAddCustBtn.addEventListener("click", () => {
-            dashCustFormCard.style.display = dashCustFormCard.style.display === "none" ? "block" : "none";
-            if (dashCustFormCard.style.display === "block") {
-                const nameInput = document.getElementById("dash-cust-name");
-                if (nameInput) nameInput.focus();
-            }
+            clearDashCustForm();
+            dashCustFormCard.style.display = "block";
+            const nameInput = document.getElementById("dash-cust-name");
+            if (nameInput) nameInput.focus();
         });
     }
 
     if (dashCancelCustBtn && dashCustFormCard) {
         dashCancelCustBtn.addEventListener("click", () => {
             dashCustFormCard.style.display = "none";
+            clearDashCustForm();
         });
     }
 
     if (dashSaveCustBtn) {
         dashSaveCustBtn.addEventListener("click", () => {
+            const custId = (document.getElementById("dash-cust-id")?.value || "").trim();
             const name = (document.getElementById("dash-cust-name")?.value || "").trim();
-            const mobile = (document.getElementById("dash-cust-mobile")?.value || "").trim();
-            const email = (document.getElementById("dash-cust-email")?.value || "").trim();
+            const hospitalNumber = (document.getElementById("dash-cust-hospital-number")?.value || "").trim();
+            const otNumber = (document.getElementById("dash-cust-ot-number")?.value || "").trim();
+            const personalNumber = (document.getElementById("dash-cust-personal-number")?.value || "").trim();
+            const contactPerson = (document.getElementById("dash-cust-contact-person")?.value || "").trim();
             const address = (document.getElementById("dash-cust-address")?.value || "").trim();
+            const email = (document.getElementById("dash-cust-email")?.value || "").trim();
+            const notes = (document.getElementById("dash-cust-notes")?.value || "").trim();
 
             if (!name) {
-                alert("Customer name is required!");
+                alert("Hospital / Customer name is required!");
                 return;
             }
 
-            const newCust = { name, mobile, email, address };
-            state.customers.push(newCust);
+            // Extract dynamic contacts
+            const contacts = [];
+            if (dashContactsContainer) {
+                const rows = dashContactsContainer.querySelectorAll(".dynamic-contact-row");
+                rows.forEach((r, idx) => {
+                    const rRole = r.querySelector(".contact-role-select")?.value || "Other";
+                    const rName = r.querySelector(".contact-name-input")?.value?.trim() || "";
+                    const rPhone = r.querySelector(".contact-phone-input")?.value?.trim() || "";
+                    if (rPhone || rName) {
+                        contacts.push({ id: `dc_${Date.now()}_${idx}`, role: rRole, name: rName, phone: rPhone });
+                    }
+                });
+            }
+
+            const primaryMobile = personalNumber || otNumber || hospitalNumber || (contacts[0]?.phone) || "";
+
+            const customerRecord = {
+                id: custId || `cust_${Date.now()}`,
+                name,
+                mobile: primaryMobile,
+                phone: hospitalNumber || primaryMobile,
+                hospitalNumber,
+                otNumber,
+                personalNumber,
+                contactPerson: contactPerson || (contacts[0]?.name) || "",
+                contacts,
+                address,
+                email,
+                notes,
+                updatedAt: new Date().toISOString()
+            };
+
+            const existingIdx = state.customers.findIndex(c => 
+                (custId && c.id === custId) || ((c.name || "").toLowerCase().trim() === name.toLowerCase().trim())
+            );
+
+            if (existingIdx >= 0) {
+                state.customers[existingIdx] = { 
+                    ...state.customers[existingIdx], 
+                    ...customerRecord,
+                    id: state.customers[existingIdx].id || customerRecord.id 
+                };
+            } else {
+                customerRecord.createdAt = new Date().toISOString();
+                state.customers.push(customerRecord);
+            }
+
             localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
             localStorage.setItem("im_customers", JSON.stringify(state.customers));
-            syncCustomerToFirestore(newCust);
+            localStorage.setItem("srrortho:customers", JSON.stringify(state.customers));
+            syncCustomerToFirestore(customerRecord);
 
             renderDashboardCustomersList();
             renderCustomerList();
             populateCustomerSelector();
 
-            // Clear inputs & hide form card
-            document.getElementById("dash-cust-name").value = "";
-            document.getElementById("dash-cust-mobile").value = "";
-            document.getElementById("dash-cust-email").value = "";
-            document.getElementById("dash-cust-address").value = "";
             if (dashCustFormCard) dashCustFormCard.style.display = "none";
+            clearDashCustForm();
 
-            showStatus(`Added customer: ${name}`);
+            showStatus(`Saved customer: ${name}`);
 
-            // Background Google Drive sync
             if (state.gdriveAccessToken && Date.now() < state.gdriveTokenExpiry) {
                 syncCustomersWithGDrive(true);
             }
@@ -1065,12 +1237,28 @@ function setupEventListeners() {
         targetWin.postMessage({
             action: "SAVE_CASH_CUSTOMER",
             payload: {
-                id: cust.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'),
+                id: cust.id || cust.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'),
                 name: cust.name.trim(),
-                mobile: cust.mobile || "",
+                mobile: cust.mobile || cust.personalNumber || cust.otNumber || cust.hospitalNumber || "",
+                phone: cust.phone || cust.hospitalNumber || cust.personalNumber || "",
                 email: cust.email || "",
-                address: cust.address || ""
+                address: cust.address || "",
+                contactPerson: cust.contactPerson || "",
+                otNumber: cust.otNumber || "",
+                hospitalNumber: cust.hospitalNumber || "",
+                personalNumber: cust.personalNumber || "",
+                contacts: cust.contacts || [],
+                notes: cust.notes || "",
             }
+        }, "*");
+    };
+
+    const syncDeleteCustomerToFirestore = (idOrName) => {
+        if (!idOrName) return;
+        const targetWin = (window.parent && window.parent !== window) ? window.parent : window;
+        targetWin.postMessage({
+            action: "DELETE_CASH_CUSTOMER",
+            payload: idOrName
         }, "*");
     };
 
@@ -2933,9 +3121,10 @@ function populateCustomerSelector() {
 
 // Load chosen customer directory info into active billing fields and preview sheet
 function preloadCustomer(cust) {
+    const primaryPhone = cust.mobile || cust.personalNumber || cust.otNumber || cust.hospitalNumber || (cust.contacts && cust.contacts[0] ? cust.contacts[0].phone : "") || "";
     state.clientInfo.name = cust.name || "";
     state.clientInfo.address = cust.address || "";
-    state.clientInfo.mobile = cust.mobile || "";
+    state.clientInfo.mobile = primaryPhone;
     state.clientInfo.email = cust.email || "";
     
     const setVal = (id, val) => {
@@ -2944,12 +3133,12 @@ function preloadCustomer(cust) {
     };
     setVal("client-name", cust.name || "");
     setVal("client-address", cust.address || "");
-    setVal("client-mobile", cust.mobile || "");
+    setVal("client-mobile", primaryPhone);
     setVal("client-email", cust.email || "");
     
     document.getElementById("preview-client-name").innerText = cust.name || "";
     document.getElementById("preview-client-address").innerText = cust.address || "";
-    document.getElementById("preview-client-mobile").innerText = cust.mobile || "";
+    document.getElementById("preview-client-mobile").innerText = primaryPhone;
     document.getElementById("preview-client-email").innerText = cust.email || "";
     
     localStorage.setItem("im_client_info", JSON.stringify(state.clientInfo));
@@ -4100,15 +4289,28 @@ function renderDashboardCustomersList(filterText = "") {
     if (!tbody) return;
 
     const filter = filterText.toLowerCase().trim();
-    const filtered = state.customers.filter(c => 
-        (c.name && c.name.toLowerCase().includes(filter)) ||
-        (c.mobile && c.mobile.includes(filter)) ||
-        (c.address && c.address.toLowerCase().includes(filter)) ||
-        (c.email && c.email.toLowerCase().includes(filter))
-    );
+    const filtered = state.customers.filter(c => {
+        if (!filter) return true;
+        if (c.name && c.name.toLowerCase().includes(filter)) return true;
+        if (c.otNumber && c.otNumber.includes(filter)) return true;
+        if (c.hospitalNumber && c.hospitalNumber.includes(filter)) return true;
+        if (c.personalNumber && c.personalNumber.includes(filter)) return true;
+        if (c.mobile && c.mobile.includes(filter)) return true;
+        if (c.phone && c.phone.includes(filter)) return true;
+        if (c.contactPerson && c.contactPerson.toLowerCase().includes(filter)) return true;
+        if (c.address && c.address.toLowerCase().includes(filter)) return true;
+        if (c.email && c.email.toLowerCase().includes(filter)) return true;
+        if (c.notes && c.notes.toLowerCase().includes(filter)) return true;
+        if (Array.isArray(c.contacts) && c.contacts.some(item => 
+            (item.name && item.name.toLowerCase().includes(filter)) ||
+            (item.phone && item.phone.includes(filter)) ||
+            (item.role && item.role.toLowerCase().includes(filter))
+        )) return true;
+        return false;
+    });
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="empty-msg" style="text-align:center; padding: 25px 0; color:#6b7280;">${state.customers.length === 0 ? 'No saved customers found. Click "+ Add New Customer" to create one.' : 'No matching customers found.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-msg" style="text-align:center; padding: 30px 0; color:#6b7280;">${state.customers.length === 0 ? 'No saved hospitals or customers found. Click "+ Add New Customer" to register one.' : 'No matching hospitals or numbers found.'}</td></tr>`;
         return;
     }
 
@@ -4116,33 +4318,94 @@ function renderDashboardCustomersList(filterText = "") {
     filtered.forEach(cust => {
         const outstanding = getCustomerOutstanding(cust.name);
         const outstandingHtml = outstanding > 0 
-            ? `<span style="color:#ef4444; font-weight:700;">₹${outstanding.toFixed(2)}</span>` 
-            : `<span style="color:#10b981; font-weight:600;">₹0.00</span>`;
+            ? `<span style="color:#ef4444; font-weight:800; font-family:'Outfit', sans-serif;">₹${outstanding.toFixed(2)}</span>` 
+            : `<span style="color:#10b981; font-weight:700; font-family:'Outfit', sans-serif;">₹0.00</span>`;
+
+        // Assemble Numbers HTML
+        const numbersList = [];
+        if (cust.otNumber) {
+            numbersList.push(`
+                <div style="display:flex; align-items:center; gap:5px; margin-bottom:4px;">
+                    <span style="font-size:10px; font-weight:800; background:#ccfbf1; color:#0f766e; padding:1.5px 6px; border-radius:4px; border:1px solid #99f6e4;">OT</span>
+                    <a href="tel:${cust.otNumber}" style="color:#0f766e; font-weight:700; text-decoration:none; font-size:12px;">${cust.otNumber}</a>
+                    <a href="https://wa.me/${cust.otNumber.replace(/[^0-9]/g, '')}" target="_blank" style="text-decoration:none; font-size:11px;" title="WhatsApp OT">💬</a>
+                </div>
+            `);
+        }
+        if (cust.hospitalNumber) {
+            numbersList.push(`
+                <div style="display:flex; align-items:center; gap:5px; margin-bottom:4px;">
+                    <span style="font-size:10px; font-weight:800; background:#e0f2fe; color:#0369a1; padding:1.5px 6px; border-radius:4px; border:1px solid #bae6fd;">HOSP</span>
+                    <a href="tel:${cust.hospitalNumber}" style="color:#0369a1; font-weight:700; text-decoration:none; font-size:12px;">${cust.hospitalNumber}</a>
+                </div>
+            `);
+        }
+        if (cust.personalNumber) {
+            numbersList.push(`
+                <div style="display:flex; align-items:center; gap:5px; margin-bottom:4px;">
+                    <span style="font-size:10px; font-weight:800; background:#f3e8ff; color:#7c3aed; padding:1.5px 6px; border-radius:4px; border:1px solid #ddd6fe;">PERS</span>
+                    <a href="tel:${cust.personalNumber}" style="color:#7c3aed; font-weight:700; text-decoration:none; font-size:12px;">${cust.personalNumber}</a>
+                    <a href="https://wa.me/${cust.personalNumber.replace(/[^0-9]/g, '')}" target="_blank" style="text-decoration:none; font-size:11px;" title="WhatsApp Personal">💬</a>
+                </div>
+            `);
+        }
+        if (cust.mobile && !cust.otNumber && !cust.hospitalNumber && !cust.personalNumber) {
+            numbersList.push(`
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <span style="font-size:10px; font-weight:800; background:#f1f5f9; color:#475569; padding:1.5px 6px; border-radius:4px; border:1px solid #cbd5e1;">MOB</span>
+                    <a href="tel:${cust.mobile}" style="color:#334155; font-weight:700; text-decoration:none; font-size:12px;">${cust.mobile}</a>
+                </div>
+            `);
+        }
+        const numbersHtml = numbersList.length > 0 ? numbersList.join('') : '<span style="color:#94a3b8; font-size:11.5px;">No numbers listed</span>';
+
+        // Assemble Staff & Contacts HTML
+        const contactsList = [];
+        if (cust.contactPerson) {
+            contactsList.push(`<div style="font-weight:700; color:#1e293b; font-size:12px; margin-bottom:2px;">👤 ${cust.contactPerson}</div>`);
+        }
+        if (Array.isArray(cust.contacts) && cust.contacts.length > 0) {
+            cust.contacts.forEach(c => {
+                if (c && (c.name || c.phone)) {
+                    contactsList.push(`
+                        <div style="font-size:11px; color:#475569; margin-top:2px; display:flex; align-items:center; gap:4px;">
+                            <span style="font-size:9.5px; font-weight:700; background:#f8fafc; border:1px solid #cbd5e1; border-radius:3px; padding:0 4px; color:#64748b;">${c.role || 'Staff'}</span>
+                            <span>${c.name ? c.name + ': ' : ''}</span>
+                            ${c.phone ? `<a href="tel:${c.phone}" style="color:#0f766e; text-decoration:none; font-weight:600;">${c.phone}</a>` : ''}
+                        </div>
+                    `);
+                }
+            });
+        }
+        const contactsHtml = contactsList.length > 0 ? contactsList.join('') : '<span style="color:#94a3b8; font-size:11.5px;">-</span>';
 
         const tr = document.createElement("tr");
-        tr.style.borderBottom = "1px solid #f3f4f6";
-        tr.onmouseenter = () => tr.style.background = "#f0fdf4";
+        tr.style.borderBottom = "1px solid #f1f5f9";
+        tr.onmouseenter = () => tr.style.background = "#f8fafc";
         tr.onmouseleave = () => tr.style.background = "";
         
         tr.innerHTML = `
-            <td style="padding:12px 16px; font-weight:700; color:#111827; font-size:13px;">${cust.name || 'Unnamed Customer'}</td>
-            <td style="padding:12px 16px; color:#6b7280; font-size:12px;">
-                ${cust.mobile ? `<div>📞 ${cust.mobile}</div>` : ''}
-                ${cust.email ? `<div>✉️ ${cust.email}</div>` : ''}
-                ${!cust.mobile && !cust.email ? '-' : ''}
+            <td style="padding:12px 16px; font-weight:700; color:#0f172a; font-size:13px; vertical-align:top;">
+                <div style="font-weight:800; color:#0f766e; font-size:13.5px;">${cust.name || 'Unnamed Hospital'}</div>
+                ${cust.email ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">✉️ ${cust.email}</div>` : ''}
+                ${cust.notes ? `<div style="font-size:10.5px; color:#0369a1; background:#f0f9ff; padding:2px 6px; border-radius:4px; margin-top:4px; display:inline-block;">📌 ${cust.notes}</div>` : ''}
             </td>
-            <td style="padding:12px 16px; color:#6b7280; font-size:12px;">${cust.address || '-'}</td>
-            <td style="padding:12px 16px; text-align:right;">${outstandingHtml}</td>
-            <td style="padding:12px 16px; text-align:center;">
-                <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
-                    <button type="button" class="load-cust-btn" style="padding:5px 10px; border-radius:6px; border:1px solid #2a9d8f; background:#2a9d8f; color:#fff; font-size:11px; cursor:pointer; font-weight:600;">⚡ Load to Invoice</button>
-                    <button type="button" class="ledger-cust-btn" style="padding:5px 10px; border-radius:6px; border:1px solid #3b82f6; background:#eff6ff; color:#2563eb; font-size:11px; cursor:pointer; font-weight:600;" title="View Customer Transaction Ledger">📊 Ledger</button>
-                    <button type="button" class="delete-cust-btn" style="padding:5px 8px; border-radius:6px; border:1px solid #fca5a5; background:#fff; color:#ef4444; font-size:13px; cursor:pointer;" title="Delete Customer">✕</button>
+            <td style="padding:12px 16px; vertical-align:top; min-width:180px;">${numbersHtml}</td>
+            <td style="padding:12px 16px; vertical-align:top; min-width:180px;">${contactsHtml}</td>
+            <td style="padding:12px 16px; color:#475569; font-size:12px; vertical-align:top; max-width:200px;">${cust.address || '-'}</td>
+            <td style="padding:12px 16px; text-align:right; vertical-align:top;">${outstandingHtml}</td>
+            <td style="padding:12px 16px; text-align:center; vertical-align:top;">
+                <div style="display:flex; gap:5px; justify-content:center; align-items:center; flex-wrap:wrap;">
+                    <button type="button" class="load-cust-btn" style="padding:5px 9px; border-radius:6px; border:1px solid #0f766e; background:#0f766e; color:#fff; font-size:11px; cursor:pointer; font-weight:700;" title="Load into Invoice">⚡ Load</button>
+                    <button type="button" class="edit-cust-btn" style="padding:5px 9px; border-radius:6px; border:1px solid #0284c7; background:#f0f9ff; color:#0284c7; font-size:11px; cursor:pointer; font-weight:700;" title="Edit Hospital &amp; Numbers">✏️ Edit</button>
+                    <button type="button" class="ledger-cust-btn" style="padding:5px 9px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; color:#475569; font-size:11px; cursor:pointer; font-weight:600;" title="View Customer Transaction Ledger">📊 Ledger</button>
+                    <button type="button" class="delete-cust-btn" style="padding:5px 8px; border-radius:6px; border:1px solid #fecaca; background:#fff; color:#ef4444; font-size:12px; cursor:pointer;" title="Delete Customer">✕</button>
                 </div>
             </td>
         `;
 
         const loadBtn = tr.querySelector(".load-cust-btn");
+        const editBtn = tr.querySelector(".edit-cust-btn");
         const ledgerBtn = tr.querySelector(".ledger-cust-btn");
         const deleteBtn = tr.querySelector(".delete-cust-btn");
 
@@ -4151,6 +4414,39 @@ function renderDashboardCustomersList(filterText = "") {
                 preloadCustomer(cust);
                 closeInvoicesDashboard();
                 showStatus(`Loaded customer: ${cust.name}`);
+            });
+        }
+
+        if (editBtn) {
+            editBtn.addEventListener("click", () => {
+                const formCard = document.getElementById("dashboard-cust-form-card");
+                if (!formCard) return;
+
+                document.getElementById("dash-cust-id").value = cust.id || cust.name;
+                document.getElementById("dash-cust-form-title").innerText = `✏️ Edit Hospital: ${cust.name}`;
+                document.getElementById("dash-cust-name").value = cust.name || "";
+                document.getElementById("dash-cust-hospital-number").value = cust.hospitalNumber || "";
+                document.getElementById("dash-cust-ot-number").value = cust.otNumber || "";
+                document.getElementById("dash-cust-personal-number").value = cust.personalNumber || cust.mobile || "";
+                document.getElementById("dash-cust-contact-person").value = cust.contactPerson || "";
+                document.getElementById("dash-cust-address").value = cust.address || "";
+                document.getElementById("dash-cust-email").value = cust.email || "";
+                document.getElementById("dash-cust-notes").value = cust.notes || "";
+
+                // Populate dynamic contacts
+                const contactsContainer = document.getElementById("dash-contacts-container");
+                if (contactsContainer) {
+                    contactsContainer.innerHTML = "";
+                    if (Array.isArray(cust.contacts)) {
+                        cust.contacts.forEach(c => {
+                            if (c) contactsContainer.appendChild(buildContactRow(c.role || "OT Person", c.name || "", c.phone || ""));
+                        });
+                    }
+                }
+
+                formCard.style.display = "block";
+                formCard.scrollIntoView({ behavior: "smooth", block: "start" });
+                document.getElementById("dash-cust-name")?.focus();
             });
         }
 
@@ -4163,10 +4459,13 @@ function renderDashboardCustomersList(filterText = "") {
         if (deleteBtn) {
             deleteBtn.addEventListener("click", () => {
                 promptAdminPassword(() => {
-                    const idx = state.customers.findIndex(c => c.name === cust.name && c.mobile === cust.mobile);
+                    const idx = state.customers.findIndex(c => c.name === cust.name);
                     if (idx !== -1) {
-                        state.customers.splice(idx, 1);
+                        const removed = state.customers.splice(idx, 1)[0];
                         localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
+                        localStorage.setItem("im_customers", JSON.stringify(state.customers));
+                        localStorage.setItem("srrortho:customers", JSON.stringify(state.customers));
+                        syncDeleteCustomerToFirestore(removed.id || removed.name);
                         renderDashboardCustomersList(filterText);
                         renderCustomerList();
                         populateCustomerSelector();
