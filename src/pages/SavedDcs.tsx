@@ -47,6 +47,7 @@ import {
   Copy,
   Check,
   MessageCircle,
+  ShoppingBag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +79,8 @@ import { AppLoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { auth } from "@/firebase";
 import html2pdf from "html2pdf.js";
 import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore, type CashInvoiceData } from "@/services/cashInvoiceFirebaseService";
+import { CashInvoicePreview } from "@/components/cash-invoice/CashInvoicePreview";
+import { printCashMemo } from "@/lib/cashInvoicePrint";
 import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotifications";
 import { CollectPaymentsScroller } from "@/components/ortho/CollectPaymentsScroller";
 import { PersonnelSelect, TRANSPORT_MODES, getTransportMode, renderTransportIcon } from "@/components/ortho/PersonnelSelect";
@@ -191,7 +194,7 @@ const SavedDcs = () => {
     }
   }, [queueParam]);
   const [actionDialog, setActionDialog] = useState<{
-    type: "return" | "invoice" | "cash" | "cancel" | null;
+    type: "return" | "invoice" | "cash" | "cancel" | "purchase" | null;
     dc: SavedDc | null;
   }>({ type: null, dc: null });
   const [returnedByInput, setReturnedByInput] = useState("");
@@ -216,6 +219,24 @@ const SavedDcs = () => {
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
   const [paymentRemarksInput, setPaymentRemarksInput] = useState("");
   const [cashInvoices, setCashInvoices] = useState<CashInvoiceData[]>([]);
+
+  const activeViewingCashMemo = useMemo(() => {
+    if (!viewingCashMemoRef) return null;
+    const clean = viewingCashMemoRef.trim().toLowerCase();
+    return cashInvoices.find(
+      (i) =>
+        (i.invNumber && i.invNumber.trim().toLowerCase() === clean) ||
+        (i.dcNumber && i.dcNumber.trim().toLowerCase() === clean)
+    ) || null;
+  }, [viewingCashMemoRef, cashInvoices]);
+
+  useEffect(() => {
+    if (cashMemoModalOpen && viewingCashMemoRef) {
+      fetchCashInvoicesFromFirestore().then((invs) => {
+        setCashInvoices(invs);
+      });
+    }
+  }, [cashMemoModalOpen, viewingCashMemoRef]);
 
   // Hospital Contacts View Modal State
   const [customers, setCustomers] = useState<Customer[]>(() => getSavedCustomers());
@@ -1086,7 +1107,7 @@ const SavedDcs = () => {
     return <CheckCircle2 className="h-3.5 w-3.5" />;
   };
 
-  const openActionDialog = (type: "return" | "invoice" | "cash" | "cancel", dc: SavedDc) => {
+  const openActionDialog = (type: "return" | "invoice" | "cash" | "cancel" | "purchase", dc: SavedDc) => {
     // Close details modal so we don't see it behind the action dialog
     setDetailsDialogOpen(false);
     setActionDialog({ type, dc });
@@ -1158,6 +1179,7 @@ const SavedDcs = () => {
     }
     setIsActionLoading(true);
     try {
+      const isFromPending = dc.status === "pending";
       await transitionSavedDc(dc.id, {
         toStatus: "completed",
         action: dc.status === "cash" ? "MOVE_CASH_TO_COMPLETED" : "LINK_INVOICE",
@@ -1168,12 +1190,22 @@ const SavedDcs = () => {
           invoiceUrl: invoiceUrl || undefined,
           invoiceRemarks: invoiceRemarksInput.trim() || "",
           isTaxInvoice: true,
+          ...(isFromPending ? { isPurchase: true } : {}),
         },
       });
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
       closeActionDialog();
-      toast({ title: "Invoice linked. Moved to Completed." });
+      if (isFromPending) {
+        setActiveQueue("completed");
+        setSearchParams({ queue: "completed" });
+        toast({
+          title: "Purchase Completed",
+          description: `DC ${dc.dcNo} purchased via GoGSTBill (${invoiceRef}). Moved to Completed.`,
+        });
+      } else {
+        toast({ title: "Invoice linked. Moved to Completed." });
+      }
     } catch (error) {
       console.error('Error linking invoice:', error);
       toast({
@@ -1198,6 +1230,7 @@ const SavedDcs = () => {
 
     setIsActionLoading(true);
     try {
+      const isFromPending = dc.status === "pending";
       await transitionSavedDc(dc.id, {
         toStatus: "cash",
         action: "MOVE_TO_CASH",
@@ -1207,11 +1240,16 @@ const SavedDcs = () => {
           billedAmount: !isNaN(billed) && billed > 0 ? billed : undefined,
           hospitalMargin: hospitalMargin,
           cashRemarks: cashRemarksInput.trim() || (hasHikedBill ? `Hiked Bill: ₹${billed.toLocaleString('en-IN')} | Hospital Cut: ₹${hospitalMargin!.toLocaleString('en-IN')} | Net Cash: ₹${amount.toLocaleString('en-IN')}` : ""),
+          ...(isFromPending ? { isPurchase: true } : {}),
         },
       });
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
       closeActionDialog();
+      if (isFromPending) {
+        setActiveQueue("cash");
+        setSearchParams({ queue: "cash" });
+      }
       toast({
         title: "Moved to Cash queue",
         description: hasHikedBill
@@ -1250,6 +1288,9 @@ const SavedDcs = () => {
       sessionStorage.setItem('prefill_cash_dc_no', dc.dcNo || '');
       sessionStorage.setItem('prefill_cash_client_name', dc.hospitalName || '');
       sessionStorage.setItem('from_dc_tracker', 'true');
+      if (dc.status === 'pending' || dc.isPurchase) {
+        sessionStorage.setItem('is_purchase_dc', 'true');
+      }
       closeActionDialog();
       navigate(`/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || '')}&client=${encodeURIComponent(dc.hospitalName || '')}`);
     } catch (err) {
@@ -1861,13 +1902,56 @@ const SavedDcs = () => {
                         </Button>
 
                         {selectedDc.status === "pending" && (
-                          <Button
-                            size="sm"
-                            className="h-7 text-xs font-bold bg-teal-500 hover:bg-teal-400 text-slate-950 gap-1 px-2.5"
-                            onClick={() => openActionDialog("return", selectedDc)}
-                          >
-                            <User className="h-3.5 w-3.5" /> Mark Returned
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs font-bold bg-teal-500 hover:bg-teal-400 text-slate-950 gap-1 px-2.5"
+                              onClick={() => openActionDialog("return", selectedDc)}
+                            >
+                              <User className="h-3.5 w-3.5" /> Mark Returned
+                            </Button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 gap-1 px-2.5 shadow-xs"
+                                >
+                                  <ShoppingBag className="h-3.5 w-3.5" /> Purchase
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-[100]">
+                                <DropdownMenuItem
+                                  onClick={() => handleCreateCashMemoForDc(selectedDc)}
+                                  className="gap-2.5 py-2 cursor-pointer font-medium hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                                >
+                                  <Receipt className="h-4 w-4 text-blue-600" />
+                                  <div>
+                                    <div className="font-semibold text-slate-900 dark:text-slate-100">Cash Invoice</div>
+                                    <div className="text-[11px] text-slate-500">Prefilled cash memo editor</div>
+                                  </div>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => openActionDialog("invoice", selectedDc)}
+                                  className="gap-2.5 py-2 cursor-pointer font-medium hover:bg-purple-50 dark:hover:bg-purple-950/40"
+                                >
+                                  <FileText className="h-4 w-4 text-purple-600" />
+                                  <div>
+                                    <div className="font-semibold text-slate-900 dark:text-slate-100">Go GST Bill</div>
+                                    <div className="text-[11px] text-slate-500">Link GoGSTBill tax invoice</div>
+                                  </div>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => openActionDialog("purchase", selectedDc)}
+                                  className="gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
+                                >
+                                  <Eye className="h-3.5 w-3.5 text-amber-600" />
+                                  View Purchase Options
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </>
                         )}
 
                         {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
@@ -2187,10 +2271,33 @@ const SavedDcs = () => {
                                           Mark as Returned
                                         </DropdownMenuItem>
                                         {dc.status === "pending" && (
-                                          <DropdownMenuItem onClick={() => openActionDialog("cancel", dc)} className="gap-2 text-orange-600">
-                                            <AlertCircle className="h-4 w-4" />
-                                            Cancel Case
-                                          </DropdownMenuItem>
+                                          <>
+                                            <DropdownMenuItem
+                                              onClick={() => openActionDialog("purchase", dc)}
+                                              className="gap-2 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30 cursor-pointer"
+                                            >
+                                              <ShoppingBag className="h-4 w-4 text-amber-600" />
+                                              Purchase (Direct Sale)
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              onClick={() => handleCreateCashMemoForDc(dc)}
+                                              className="gap-2 pl-7 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 cursor-pointer font-medium"
+                                            >
+                                              <Receipt className="h-3.5 w-3.5 text-blue-600" />
+                                              &bull; Cash Invoice
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              onClick={() => openActionDialog("invoice", dc)}
+                                              className="gap-2 pl-7 text-xs text-purple-700 hover:bg-purple-50 dark:text-purple-400 cursor-pointer font-medium"
+                                            >
+                                              <FileText className="h-3.5 w-3.5 text-purple-600" />
+                                              &bull; Go GST Bill
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => openActionDialog("cancel", dc)} className="gap-2 text-orange-600">
+                                              <AlertCircle className="h-4 w-4" />
+                                              Cancel Case
+                                            </DropdownMenuItem>
+                                          </>
                                         )}
                                         {dc.status === "cancelled" && (
                                           <DropdownMenuItem onClick={() => restoreFromCancelled(dc)} className="gap-2">
@@ -2692,10 +2799,33 @@ const SavedDcs = () => {
                                               Mark as Returned
                                             </DropdownMenuItem>
                                             {dc.status === "pending" && (
-                                              <DropdownMenuItem onClick={() => openActionDialog("cancel", dc)} className="gap-2 text-orange-600">
-                                                <AlertCircle className="h-4 w-4" />
-                                                Cancel Case
-                                              </DropdownMenuItem>
+                                              <>
+                                                <DropdownMenuItem
+                                                  onClick={() => openActionDialog("purchase", dc)}
+                                                  className="gap-2 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30 cursor-pointer"
+                                                >
+                                                  <ShoppingBag className="h-4 w-4 text-amber-600" />
+                                                  Purchase (Direct Sale)
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                  onClick={() => handleCreateCashMemoForDc(dc)}
+                                                  className="gap-2 pl-7 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 cursor-pointer font-medium"
+                                                >
+                                                  <Receipt className="h-3.5 w-3.5 text-blue-600" />
+                                                  &bull; Cash Invoice
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                  onClick={() => openActionDialog("invoice", dc)}
+                                                  className="gap-2 pl-7 text-xs text-purple-700 hover:bg-purple-50 dark:text-purple-400 cursor-pointer font-medium"
+                                                >
+                                                  <FileText className="h-3.5 w-3.5 text-purple-600" />
+                                                  &bull; Go GST Bill
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => openActionDialog("cancel", dc)} className="gap-2 text-orange-600">
+                                                  <AlertCircle className="h-4 w-4" />
+                                                  Cancel Case
+                                                </DropdownMenuItem>
+                                              </>
                                             )}
                                             {dc.status === "cancelled" && (
                                               <DropdownMenuItem onClick={() => restoreFromCancelled(dc)} className="gap-2">
@@ -2825,8 +2955,16 @@ const SavedDcs = () => {
           <DialogHeader>
             <DialogTitle>
               {actionDialog.type === "return" && "Mark as Returned"}
-              {actionDialog.type === "invoice" && (actionDialog.dc?.invoiceRef ? "Update Linked Invoice" : "Link Invoice")}
-              {actionDialog.type === "cash" && "Move to Cash Queue"}
+              {actionDialog.type === "invoice" && (
+                actionDialog.dc?.status === "pending"
+                  ? "Purchase: Link GoGSTBill Invoice"
+                  : (actionDialog.dc?.invoiceRef ? "Update Linked Invoice" : "Link Invoice / GoGSTBill")
+              )}
+              {actionDialog.type === "cash" && (
+                actionDialog.dc?.status === "pending" ? "Purchase: Move to Cash Queue" : "Move to Cash Queue"
+              )}
+              {actionDialog.type === "purchase" && "Purchase DC (Direct Sale)"}
+              {actionDialog.type === "cancel" && "Cancel Case"}
             </DialogTitle>
             <DialogDescription className="sr-only">
               Update the selected delivery challan status and related fields.
@@ -3109,25 +3247,166 @@ const SavedDcs = () => {
               </div>
             </div>
           )}
+          {actionDialog.type === "purchase" && actionDialog.dc && (
+            <div className="space-y-4 pt-2">
+              <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 dark:bg-amber-950/20 dark:border-amber-900/40 p-3.5 flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 shrink-0">
+                  <ShoppingBag className="h-5 w-5" />
+                </div>
+                <div className="text-xs text-amber-950 dark:text-amber-200 min-w-0">
+                  <div className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <span>DC #{actionDialog.dc.dcNo}</span>
+                    <Badge variant="outline" className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300">
+                      Direct Purchase
+                    </Badge>
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-300 font-medium mt-0.5 truncate">
+                    {actionDialog.dc.hospitalName}
+                  </div>
+                  <div className="text-amber-800 dark:text-amber-300/90 mt-1">
+                    Direct purchase workflow: material is sold directly. <strong>No material return step required.</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Select Billing Option:
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Option 1: Cash Invoice */}
+                <div
+                  onClick={() => {
+                    handleCreateCashMemoForDc(actionDialog.dc!);
+                  }}
+                  className="group relative flex flex-col justify-between p-4 rounded-xl border-2 border-blue-200 dark:border-blue-900/60 hover:border-blue-500 dark:hover:border-blue-500 bg-gradient-to-br from-blue-50/70 to-white dark:from-blue-950/30 dark:to-slate-900 hover:shadow-md transition-all duration-200 cursor-pointer text-left"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="p-2.5 rounded-lg bg-blue-600 text-white shadow-xs group-hover:scale-105 transition-transform">
+                        <Receipt className="h-5 w-5" />
+                      </div>
+                      <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 hover:bg-blue-100 border-blue-300 text-[11px] font-bold">
+                        Cash Memo
+                      </Badge>
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                        Cash Invoice
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                        Open Cash Invoice editor with all items & hospital prefilled from this DC.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-2.5 border-t border-blue-100 dark:border-blue-900/40 flex items-center justify-between text-xs font-bold text-blue-600 dark:text-blue-400">
+                    <span>Create Cash Invoice</span>
+                    <span className="text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
+                  </div>
+                </div>
+
+                {/* Option 2: Go GST Bill */}
+                <div
+                  onClick={() => {
+                    openActionDialog("invoice", actionDialog.dc!);
+                  }}
+                  className="group relative flex flex-col justify-between p-4 rounded-xl border-2 border-purple-200 dark:border-purple-900/60 hover:border-purple-500 dark:hover:border-purple-500 bg-gradient-to-br from-purple-50/70 to-white dark:from-purple-950/30 dark:to-slate-900 hover:shadow-md transition-all duration-200 cursor-pointer text-left"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="p-2.5 rounded-lg bg-purple-600 text-white shadow-xs group-hover:scale-105 transition-transform">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 hover:bg-purple-100 border-purple-300 text-[11px] font-bold">
+                        GoGSTBill
+                      </Badge>
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                        Go GST Bill
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                        Link GoGSTBill tax invoice number and URL directly to complete this purchase.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-2.5 border-t border-purple-100 dark:border-purple-900/40 flex items-center justify-between text-xs font-bold text-purple-600 dark:text-purple-400">
+                    <span>Link Go GST Bill</span>
+                    <span className="text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => openActionDialog("cash", actionDialog.dc!)}
+                  className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 gap-1 h-8 px-2"
+                >
+                  <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
+                  Quick Cash Entry without Invoice Editor
+                </Button>
+                <Button variant="outline" size="sm" onClick={closeActionDialog} className="h-8 text-xs">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
       {/* Cash Memo Viewer Modal Popup */}
       <Dialog open={cashMemoModalOpen} onOpenChange={setCashMemoModalOpen}>
-        <DialogContent className="w-[95vw] max-w-6xl h-[92vh] p-0 flex flex-col overflow-hidden bg-slate-900 border-slate-700" aria-describedby={undefined}>
-          <DialogHeader className="p-3 sm:p-4 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-slate-800">
-            <DialogTitle className="flex items-center gap-2 text-base font-bold text-white">
-              <Receipt className="h-5 w-5 text-blue-400" />
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border" aria-describedby={undefined}>
+          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Receipt className="h-5 w-5 text-teal-700" />
               Cash Memo Details — {viewingCashMemoRef}
             </DialogTitle>
+            <div className="flex items-center gap-2">
+              {activeViewingCashMemo && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const validItems = (activeViewingCashMemo.items || []).filter(
+                      (i) => (i.description || "").trim().length > 0
+                    );
+                    if (validItems.length === 0) {
+                      toast.error("At least one item must be added to save or print the cash invoice.");
+                      return;
+                    }
+                    printCashMemo(activeViewingCashMemo);
+                  }}
+                  className="bg-teal-700 hover:bg-teal-800 text-white font-bold gap-1.5 h-8 text-xs rounded-md"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Print / PDF
+                </Button>
+              )}
+            </div>
           </DialogHeader>
-          <div className="flex-1 w-full h-full bg-slate-950">
-            {viewingCashMemoRef && (
-              <iframe
-                src={`/cash-invoice/index.html?viewInv=${encodeURIComponent(viewingCashMemoRef)}`}
-                className="w-full h-full border-0"
-                title={`Cash Memo ${viewingCashMemoRef}`}
+          <div className="py-2">
+            {activeViewingCashMemo ? (
+              <CashInvoicePreview
+                invoice={activeViewingCashMemo}
+                onPrint={() => printCashMemo(activeViewingCashMemo)}
+                showPrintButton={false}
               />
+            ) : (
+              <div className="p-8 text-center text-muted-foreground text-sm space-y-3">
+                <p>Loading or locating Cash Memo "{viewingCashMemoRef}"...</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/cash-invoice?viewInv=${encodeURIComponent(viewingCashMemoRef || "")}`)}
+                  className="text-xs font-semibold gap-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Open in Cash Invoices Suite
+                </Button>
+              </div>
             )}
           </div>
         </DialogContent>
@@ -3509,20 +3788,79 @@ const SavedDcs = () => {
                         <div className="mt-2 text-[10px] sm:text-xs text-slate-600">
                           <span className="block sm:inline">Created: <span className="font-medium text-slate-800">{formatDateTime(selectedDc.savedAt)}</span></span>
                           <span className="hidden sm:inline mx-2 text-slate-300">|</span>
-                          <span className="block sm:inline mt-0.5 sm:mt-0">Returned: <span className="font-medium text-slate-800">{selectedDc.returnedAt ? formatDateTime(selectedDc.returnedAt) : "-"}</span></span>
+                          <span className="block sm:inline mt-0.5 sm:mt-0">
+                            {selectedDc.isPurchase ? (
+                              <span className="font-semibold text-amber-700 dark:text-amber-400">Direct Purchase (No Return)</span>
+                            ) : (
+                              <>Returned: <span className="font-medium text-slate-800">{selectedDc.returnedAt ? formatDateTime(selectedDc.returnedAt) : "-"}</span></>
+                            )}
+                          </span>
                         </div>
                       </div>
 
                       <div className="flex flex-wrap gap-1.5 sm:gap-2">
                         {selectedDc.status === "pending" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800"
-                            onClick={() => openActionDialog("return", selectedDc)}
-                          >
-                            <User className="h-3 w-3 sm:h-4 sm:w-4" /> Return
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800"
+                              onClick={() => openActionDialog("return", selectedDc)}
+                            >
+                              <User className="h-3 w-3 sm:h-4 sm:w-4" /> Return
+                            </Button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800 font-bold"
+                                >
+                                  <ShoppingBag className="h-3 w-3 sm:h-4 sm:w-4 text-amber-600" /> Purchase
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-[100]">
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    handleCreateCashMemoForDc(selectedDc);
+                                  }}
+                                  className="gap-2.5 py-2 cursor-pointer font-medium hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                                >
+                                  <Receipt className="h-4 w-4 text-blue-600" />
+                                  <div>
+                                    <div className="font-semibold text-slate-900 dark:text-slate-100">Cash Invoice</div>
+                                    <div className="text-[11px] text-slate-500">Prefilled cash memo editor</div>
+                                  </div>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    openActionDialog("invoice", selectedDc);
+                                  }}
+                                  className="gap-2.5 py-2 cursor-pointer font-medium hover:bg-purple-50 dark:hover:bg-purple-950/40"
+                                >
+                                  <FileText className="h-4 w-4 text-purple-600" />
+                                  <div>
+                                    <div className="font-semibold text-slate-900 dark:text-slate-100">Go GST Bill</div>
+                                    <div className="text-[11px] text-slate-500">Link GoGSTBill tax invoice</div>
+                                  </div>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    openActionDialog("purchase", selectedDc);
+                                  }}
+                                  className="gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
+                                >
+                                  <Eye className="h-3.5 w-3.5 text-amber-600" />
+                                  View Purchase Options
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </>
                         )}
                         {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
                           <Button
@@ -3936,6 +4274,11 @@ const SavedDcs = () => {
               <Label>Password</Label>
               <Input
                 type="password"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter password"
@@ -3972,6 +4315,11 @@ const SavedDcs = () => {
               <Input
                 id="admin-pass"
                 type="password"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
                 placeholder="Manager password"
@@ -4472,6 +4820,15 @@ const SavedDcs = () => {
                   value={editDcNo}
                   onChange={(e) => setEditDcNo(e.target.value)}
                   placeholder="DC Number"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
+                  aria-autocomplete="none"
                   className="mt-1 h-9 text-xs font-semibold"
                 />
               </div>

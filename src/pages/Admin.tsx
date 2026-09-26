@@ -237,6 +237,11 @@ const Admin = () => {
               <Input
                 id="admin-access-password"
                 type="password"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
                 autoFocus
                 value={adminPassword}
                 onChange={(event) => {

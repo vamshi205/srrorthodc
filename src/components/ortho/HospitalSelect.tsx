@@ -457,6 +457,14 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
           disabled={disabled}
           autoFocus={autoFocus}
           autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-bwignore="true"
+          data-form-type="other"
+          aria-autocomplete="none"
           placeholder={placeholder}
           onFocus={() => setOpen(true)}
           onChange={(e) => {

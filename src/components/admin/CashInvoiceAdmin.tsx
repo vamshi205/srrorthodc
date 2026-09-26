@@ -768,6 +768,11 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                     <Input 
                       id="gdrive-client" 
                       type="password" 
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-bwignore="true"
+                      data-form-type="other"
                       placeholder="Enter Client ID..." 
                       value={gdriveClientId} 
                       onChange={e => setGdriveClientId(e.target.value)} 

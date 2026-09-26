@@ -3898,12 +3898,12 @@ function getPrintableInvoiceHTML(inv) {
         <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px;border:1px solid #cbd5e1;">
             <thead>
                 <tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;">
-                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:5%;">#</th>
-                    <th style="padding:6px 8px;text-align:left;color:#334155;font-weight:700;width:40%;">ITEM DESCRIPTION</th>
-                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:15%;">SIZE</th>
-                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:10%;">QTY</th>
-                    <th style="padding:6px 8px;text-align:right;color:#334155;font-weight:700;width:15%;">RATE (₹)</th>
-                    <th style="padding:6px 8px;text-align:right;color:#334155;font-weight:700;width:15%;">AMOUNT (₹)</th>
+                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:4%;">#</th>
+                    <th style="padding:6px 8px;text-align:left;color:#334155;font-weight:700;width:45%;">ITEM DESCRIPTION</th>
+                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:25%;">SIZE</th>
+                    <th style="padding:6px 8px;text-align:center;color:#334155;font-weight:700;width:6%;">QTY</th>
+                    <th style="padding:6px 8px;text-align:right;color:#334155;font-weight:700;width:10%;">RATE (₹)</th>
+                    <th style="padding:6px 8px;text-align:right;color:#334155;font-weight:700;width:10%;">AMOUNT (₹)</th>
                 </tr>
             </thead>
             <tbody>${itemRows}</tbody>

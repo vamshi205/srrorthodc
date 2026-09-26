@@ -30,7 +30,8 @@ export type SavedDcHistoryEvent = {
   | "MOVE_BACK_TO_RETURNED"
   | "MOVE_CASH_TO_COMPLETED"
   | "CANCEL_CASE"
-  | "RESTORE_FROM_CANCELLED";
+  | "RESTORE_FROM_CANCELLED"
+  | "PURCHASE";
   fromStatus?: SavedDcStatus;
   toStatus: SavedDcStatus;
   meta?: Record<string, unknown>;
@@ -57,6 +58,7 @@ export type SavedDc = {
   invoiceRemarks?: string;
   invoiceUrl?: string;
   isTaxInvoice?: boolean;
+  isPurchase?: boolean;
   cashAt?: string;
   cashAmount?: number;
   billedAmount?: number;

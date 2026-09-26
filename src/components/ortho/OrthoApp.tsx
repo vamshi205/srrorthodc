@@ -1127,6 +1127,15 @@ export default function OrthoApp() {
                             value={dcNo}
                             onChange={(e) => setDcNo(e.target.value)}
                             placeholder="Enter DC No."
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            data-bwignore="true"
+                            data-form-type="other"
+                            aria-autocomplete="none"
                             className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
                           />
                         </div>
@@ -1215,6 +1224,15 @@ export default function OrthoApp() {
                           value={dcNo}
                           onChange={(e) => setDcNo(e.target.value)}
                           placeholder="Enter DC No."
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          spellCheck={false}
+                          data-lpignore="true"
+                          data-1p-ignore="true"
+                          data-bwignore="true"
+                          data-form-type="other"
+                          aria-autocomplete="none"
                           className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
                         />
                       </div>
@@ -1847,7 +1865,7 @@ export default function OrthoApp() {
                 />
               </div>
             </div>
-            <div><Label>DC Number</Label><Input value={dcNo} onChange={(e) => setDcNo(e.target.value)} placeholder="Enter DC number" className="mt-1" /></div>
+            <div><Label>DC Number</Label><Input value={dcNo} onChange={(e) => setDcNo(e.target.value)} placeholder="Enter DC number" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" aria-autocomplete="none" className="mt-1" /></div>
             <div>
               <Label className="text-xs font-bold">Delivered By *</Label>
               <div className="mt-1">

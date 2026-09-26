@@ -100,6 +100,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             size="sm"
             onClick={(e) => {
               e.stopPropagation();
+              if (pathname === '/cash-invoice' && searchParams.get('tab') && searchParams.get('tab') !== 'editor') {
+                navigate('/cash-invoice');
+                return;
+              }
               navigate(-1);
             }}
             className="h-8 sm:h-9 px-2 sm:px-3 rounded-lg sm:rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs flex items-center gap-1.5 border border-white/25 shadow-xs transition-all active:scale-95 shrink-0"
@@ -280,7 +284,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                       <Button
                         variant="ghost"
                         className="w-full justify-start gap-3 h-10 text-sm font-bold rounded-lg text-slate-200 hover:text-white hover:bg-white/10 border border-white/15"
-                        onClick={() => navigate(-1)}
+                        onClick={() => {
+                          if (pathname === '/cash-invoice' && searchParams.get('tab') && searchParams.get('tab') !== 'editor') {
+                            navigate('/cash-invoice');
+                            return;
+                          }
+                          navigate(-1);
+                        }}
                       >
                         <ArrowLeft className="w-4 h-4 text-sky-400" /> Go Back
                       </Button>

@@ -2097,6 +2097,11 @@ export default function Customers() {
                       </Label>
                       <Input
                         type="password"
+                        autoComplete="off"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-bwignore="true"
+                        data-form-type="other"
                         placeholder="Enter password (e.g. srrortho)"
                         value={deletePassword}
                         onChange={(e) => setDeletePassword(e.target.value)}
@@ -2133,6 +2138,11 @@ export default function Customers() {
                     </Label>
                     <Input
                       type="password"
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-bwignore="true"
+                      data-form-type="other"
                       placeholder="Enter password (e.g. srrortho)"
                       value={deletePassword}
                       onChange={(e) => setDeletePassword(e.target.value)}

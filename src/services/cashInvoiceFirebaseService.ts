@@ -25,6 +25,8 @@ export interface CashInvoiceData {
     description: string;
     sku?: string;
     size?: string;
+    note?: string;
+    subDescription?: string;
     qty: number;
     rate: number;
     amount?: number;
@@ -57,7 +59,27 @@ export async function fetchCashInvoicesFromFirestore(): Promise<CashInvoiceData[
     const querySnapshot = await getDocs(collection(db, CASH_INVOICES_COLLECTION));
     const invoices: CashInvoiceData[] = [];
     querySnapshot.forEach((docSnap) => {
-      invoices.push(docSnap.data() as CashInvoiceData);
+      const data = docSnap.data();
+      const rawList = Array.isArray(data.items) && data.items.length > 0
+        ? data.items
+        : Array.isArray(data.invoiceItems)
+          ? data.invoiceItems
+          : [];
+      
+      const normalizedItems = rawList.map((it: any) => ({
+        description: it.description || it.name || "",
+        sku: it.sku || "",
+        size: it.size || "",
+        qty: Number(it.qty) || 1,
+        rate: Number(it.rate) || 0,
+        amount: Number(it.amount) || (Number(it.qty) || 1) * (Number(it.rate) || 0),
+      }));
+
+      invoices.push({
+        ...data,
+        items: normalizedItems,
+        invoiceItems: normalizedItems,
+      } as CashInvoiceData);
     });
     // Sort manually in memory by savedAt descending
     invoices.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
@@ -76,6 +98,13 @@ export async function saveCashInvoiceToFirestore(invoice: CashInvoiceData): Prom
     const docId = invoice.invNumber ? invoice.invNumber.replace(/\//g, '_') : `INV_${Date.now()}`;
     const ref = doc(db, CASH_INVOICES_COLLECTION, docId);
     const sanitized = JSON.parse(JSON.stringify(invoice));
+    // Ensure both items and invoiceItems exist for legacy and native compatibility
+    if (sanitized.items && !sanitized.invoiceItems) {
+      sanitized.invoiceItems = sanitized.items;
+    }
+    if (sanitized.invoiceItems && !sanitized.items) {
+      sanitized.items = sanitized.invoiceItems;
+    }
     await setDoc(ref, sanitized);
     return true;
   } catch (error) {

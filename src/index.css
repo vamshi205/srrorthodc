@@ -592,3 +592,21 @@
   animation-play-state: paused !important;
 }
 
+/* Cash Memo Creator: Square inputs and buttons strictly for the Cash Memo / Bill editor */
+.cash-memo-square button,
+.cash-memo-square input,
+.cash-memo-square select,
+.cash-memo-square textarea {
+  border-radius: 0px !important;
+}
+
+.cash-memo-square {
+  --radius: 0px !important;
+}
+
+/* Ensure Cash Invoice module adheres to the exact same font as the rest of the application */
+.cash-invoice-module {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+
