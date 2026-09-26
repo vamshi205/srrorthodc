@@ -59,6 +59,8 @@ export type SavedDc = {
   isTaxInvoice?: boolean;
   cashAt?: string;
   cashAmount?: number;
+  billedAmount?: number;
+  hospitalMargin?: number;
   cashRemarks?: string;
   cancelledAt?: string;
   cancelledRemarks?: string;

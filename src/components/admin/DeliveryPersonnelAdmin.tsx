@@ -678,6 +678,18 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
+            id="personnel-search-input"
+            name="personnel_search_query"
+            type="search"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-bwignore="true"
+            data-form-type="other"
+            aria-autocomplete="none"
             placeholder="Search person, hospital, item or DC#..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

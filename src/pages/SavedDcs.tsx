@@ -202,6 +202,7 @@ const SavedDcs = () => {
   const [cashRemarksInput, setCashRemarksInput] = useState("");
   const [cancelledRemarksInput, setCancelledRemarksInput] = useState("");
   const [cashAmountInput, setCashAmountInput] = useState("");
+  const [billedAmountInput, setBilledAmountInput] = useState("");
   const [selectedDcId, setSelectedDcId] = useState<string | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [dcDocumentModalOpen, setDcDocumentModalOpen] = useState(false);
@@ -585,6 +586,12 @@ const SavedDcs = () => {
     if (!paymentDialog.dc) return;
     const dc = paymentDialog.dc;
     const paidAmount = parseFloat(paymentAmountInput) || (dc.cashAmount || 0);
+    const hasHiked = dc.billedAmount && dc.billedAmount > paidAmount;
+    const margin = hasHiked ? Math.round((dc.billedAmount! - paidAmount) * 100) / 100 : dc.hospitalMargin;
+    const defaultRemark = hasHiked
+      ? `Paid ₹${paidAmount.toLocaleString('en-IN')} (Hiked Bill ₹${dc.billedAmount!.toLocaleString('en-IN')}, Hospital Cut ₹${margin!.toLocaleString('en-IN')})`
+      : `Payment recorded: ₹${paidAmount.toLocaleString('en-IN')}`;
+
     setIsActionLoading(true);
     try {
       setLoadingDcIds(prev => new Set(prev).add(dc.id));
@@ -593,12 +600,15 @@ const SavedDcs = () => {
         action: "MOVE_CASH_TO_COMPLETED",
         updates: {
           cashAmount: paidAmount,
-          cashRemarks: paymentRemarksInput.trim() || `Payment recorded: ₹${paidAmount}`,
+          hospitalMargin: margin,
+          cashRemarks: paymentRemarksInput.trim() || defaultRemark,
         },
         meta: {
           paidAt: new Date().toISOString(),
           paidAmount,
-          remarks: paymentRemarksInput.trim() || `Payment recorded: ₹${paidAmount}`,
+          billedAmount: dc.billedAmount,
+          hospitalMargin: margin,
+          remarks: paymentRemarksInput.trim() || defaultRemark,
         }
       });
       // Sync payment status to Firestore Cash Invoice
@@ -1087,6 +1097,8 @@ const SavedDcs = () => {
     setInvoiceRemarksInput(dc.invoiceRemarks || "");
     setCashRemarksInput(dc.cashRemarks || "");
     setCancelledRemarksInput(dc.cancelledRemarks || "");
+    setCashAmountInput(dc.cashAmount ? String(dc.cashAmount) : "");
+    setBilledAmountInput(dc.billedAmount ? String(dc.billedAmount) : "");
   };
 
   const closeActionDialog = () => {
@@ -1099,6 +1111,7 @@ const SavedDcs = () => {
     setCashRemarksInput("");
     setCancelledRemarksInput("");
     setCashAmountInput("");
+    setBilledAmountInput("");
   };
 
   const handleConfirmReturn = async (dc: SavedDc) => {
@@ -1179,6 +1192,10 @@ const SavedDcs = () => {
       toast({ title: "Valid cash amount is required" });
       return;
     }
+    const billed = parseFloat(billedAmountInput);
+    const hasHikedBill = !isNaN(billed) && billed > amount;
+    const hospitalMargin = hasHikedBill ? Math.round((billed - amount) * 100) / 100 : undefined;
+
     setIsActionLoading(true);
     try {
       await transitionSavedDc(dc.id, {
@@ -1187,13 +1204,20 @@ const SavedDcs = () => {
         updates: {
           cashAt: new Date().toISOString(),
           cashAmount: amount,
-          cashRemarks: cashRemarksInput.trim() || "",
+          billedAmount: !isNaN(billed) && billed > 0 ? billed : undefined,
+          hospitalMargin: hospitalMargin,
+          cashRemarks: cashRemarksInput.trim() || (hasHikedBill ? `Hiked Bill: ₹${billed.toLocaleString('en-IN')} | Hospital Cut: ₹${hospitalMargin!.toLocaleString('en-IN')} | Net Cash: ₹${amount.toLocaleString('en-IN')}` : ""),
         },
       });
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
       closeActionDialog();
-      toast({ title: "Moved to Cash queue" });
+      toast({
+        title: "Moved to Cash queue",
+        description: hasHikedBill
+          ? `Expected cash: ₹${amount.toLocaleString('en-IN')} (Printed Bill: ₹${billed.toLocaleString('en-IN')})`
+          : `Amount: ₹${amount.toLocaleString('en-IN')}`,
+      });
     } catch (error) {
       console.error('Error moving to cash:', error);
       toast({
@@ -1553,6 +1577,18 @@ const SavedDcs = () => {
                         <div className="relative flex-1 min-w-[240px]">
                           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                           <Input
+                            id="dc-tracker-search-input"
+                            name="dc_tracker_search_query"
+                            type="search"
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            data-bwignore="true"
+                            data-form-type="other"
+                            aria-autocomplete="none"
                             value={filterText}
                             onChange={(e) => setFilterText(e.target.value)}
                             placeholder="Search Party, DC No, or Personnel..."
@@ -2418,14 +2454,35 @@ const SavedDcs = () => {
                                                          ? "bg-amber-100 text-amber-800 border-amber-300"
                                                          : "bg-blue-50 text-blue-700 border-blue-200"
                                                      }`}
-                                                     title={`Unpaid for ${getCashMemoAgingDays(dc)} days`}
+                                                     title={
+                                                       dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0)
+                                                         ? `Our Expected Cash: ₹${(dc.cashAmount || 0).toLocaleString('en-IN')} (Printed Bill: ₹${dc.billedAmount.toLocaleString('en-IN')} | Hospital Cut: ₹${(dc.hospitalMargin || (dc.billedAmount - (dc.cashAmount || 0))).toLocaleString('en-IN')}) • Unpaid for ${getCashMemoAgingDays(dc)} days`
+                                                         : `Unpaid for ${getCashMemoAgingDays(dc)} days`
+                                                     }
                                                    >
                                                      ● UNPAID {dc.cashAmount ? `₹${dc.cashAmount}` : ''} ({getCashMemoAgingDays(dc)}d)
+                                                     {dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0) && (
+                                                       <span className="text-[8px] font-extrabold text-amber-800 bg-amber-200/90 px-1 py-0.2 rounded ml-0.5" title={`Printed Hiked Bill: ₹${dc.billedAmount}`}>
+                                                         Hiked
+                                                       </span>
+                                                     )}
                                                    </span>
                                                  )}
                                                 {dc.status === "completed" && dc.cashAmount && (
-                                                  <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full whitespace-nowrap" title="Cash Memo Paid">
+                                                  <span 
+                                                    className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full whitespace-nowrap" 
+                                                    title={
+                                                      dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0)
+                                                        ? `Paid Cash: ₹${dc.cashAmount} (Printed Bill: ₹${dc.billedAmount} | Hospital Cut: ₹${dc.hospitalMargin || (dc.billedAmount - (dc.cashAmount || 0))})`
+                                                        : "Cash Memo Paid"
+                                                    }
+                                                  >
                                                     ✓ PAID ₹{dc.cashAmount}
+                                                    {dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0) && (
+                                                      <span className="text-[8px] font-bold text-emerald-950 bg-emerald-200 px-1 rounded ml-0.5">
+                                                        Hiked
+                                                      </span>
+                                                    )}
                                                   </span>
                                                 )}
                                               </div>
@@ -2926,24 +2983,66 @@ const SavedDcs = () => {
               <p className="text-sm text-muted-foreground">
                 This will move the DC to the Cash queue.
               </p>
-              <div>
-                <Label className="flex items-center gap-2">
-                  <IndianRupee className="h-4 w-4 text-blue-700" />
-                  Cash Amount *
-                </Label>
-                <div className="mt-1 flex items-center rounded-md border border-slate-300 bg-slate-50 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/30">
-                  <span className="px-3 text-sm font-medium text-slate-600">₹</span>
-                  <Input
-                    type="number"
-                    value={cashAmountInput}
-                    onChange={(e) => setCashAmountInput(e.target.value)}
-                    placeholder="0.00"
-                    className="h-9 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
-                    min="0"
-                    step="0.01"
-                  />
+              <div className="space-y-3">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                      <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
+                      Our Actual Cash to Collect *
+                    </Label>
+                    <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Amount we get
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center rounded-md border border-slate-300 bg-white focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20">
+                    <span className="px-3 text-sm font-bold text-slate-600">₹</span>
+                    <Input
+                      type="number"
+                      value={cashAmountInput}
+                      onChange={(e) => setCashAmountInput(e.target.value)}
+                      placeholder="e.g. 32000"
+                      className="h-9 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 font-semibold text-slate-900"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">What our recovery staff will actually collect from the hospital.</p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">Required to move the DC to Cash queue.</p>
+
+                {/* Hiked Bill / Hospital Printed Amount (Optional) */}
+                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-1.5 font-semibold text-amber-900 text-xs">
+                      <Receipt className="h-3.5 w-3.5 text-amber-600" />
+                      Hospital Hiked Bill / Printed Total (Optional)
+                    </Label>
+                    <span className="text-[10px] text-amber-700 bg-amber-100/70 px-1.5 py-0.5 rounded font-medium">
+                      Hospital Paper
+                    </span>
+                  </div>
+                  <div className="flex items-center rounded-md border border-amber-300/80 bg-white focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20">
+                    <span className="px-3 text-sm font-bold text-amber-700">₹</span>
+                    <Input
+                      type="number"
+                      value={billedAmountInput}
+                      onChange={(e) => setBilledAmountInput(e.target.value)}
+                      placeholder="e.g. 50000 (if bill was hiked)"
+                      className="h-9 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-xs font-medium"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+
+                  {/* Live Calculation of Margin */}
+                  {parseFloat(billedAmountInput) > (parseFloat(cashAmountInput) || 0) && (
+                    <div className="mt-1.5 pt-1.5 border-t border-amber-200 text-xs flex items-center justify-between text-amber-900 font-medium">
+                      <span>Hospital Cut / Markup:</span>
+                      <span className="font-bold text-amber-800">
+                        ₹{(parseFloat(billedAmountInput) - (parseFloat(cashAmountInput) || 0)).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <Label>Cash Remarks</Label>
@@ -3600,14 +3699,34 @@ const SavedDcs = () => {
                           </div>
                         )}
                         {!selectedIsTaxInvoice && (
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">Cash Amount</span>
-                            <span className="font-semibold text-green-700">
-                              {typeof (selectedDc as any).cashAmount === "number"
-                                ? `₹${(selectedDc as any).cashAmount.toFixed(2)}`
-                                : "-"}
-                            </span>
-                          </div>
+                          <>
+                            {Boolean((selectedDc as any).billedAmount && (selectedDc as any).billedAmount > ((selectedDc as any).cashAmount || 0)) && (
+                              <>
+                                <div className="flex items-center justify-between gap-3 text-xs">
+                                  <span className="text-slate-500">Printed Bill (Hiked)</span>
+                                  <span className="font-semibold text-slate-600 line-through">
+                                    ₹{(selectedDc as any).billedAmount.toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3 text-xs">
+                                  <span className="text-amber-700 font-medium">Hospital Cut / Margin</span>
+                                  <span className="font-bold text-amber-700">
+                                    - ₹{((selectedDc as any).hospitalMargin || ((selectedDc as any).billedAmount - ((selectedDc as any).cashAmount || 0))).toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-500">
+                                {(selectedDc as any).billedAmount ? "Our Net Cash Due" : "Cash Amount"}
+                              </span>
+                              <span className="font-bold text-green-700">
+                                {typeof (selectedDc as any).cashAmount === "number"
+                                  ? `₹${(selectedDc as any).cashAmount.toLocaleString('en-IN')}`
+                                  : "-"}
+                              </span>
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
@@ -3896,8 +4015,45 @@ const SavedDcs = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            {/* If Hiked Bill */}
+            {paymentDialog.dc?.billedAmount && paymentDialog.dc.billedAmount > (paymentDialog.dc.cashAmount || 0) && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950 space-y-1.5">
+                <div className="font-bold flex items-center justify-between text-amber-900">
+                  <span className="flex items-center gap-1.5">
+                    <Receipt className="w-3.5 h-3.5 text-amber-600" />
+                    Hiked Bill Settlement Notice
+                  </span>
+                  <span className="text-[10px] bg-amber-200/80 px-1.5 py-0.5 rounded font-semibold text-amber-900">
+                    Hospital Margin Active
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Printed Bill (on paper):</span>
+                  <span className="font-semibold line-through">₹{paymentDialog.dc.billedAmount.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between text-amber-800">
+                  <span>Hospital Margin / Cut:</span>
+                  <span className="font-semibold">- ₹{(paymentDialog.dc.hospitalMargin || (paymentDialog.dc.billedAmount - (paymentDialog.dc.cashAmount || 0))).toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between font-bold text-emerald-800 pt-1 border-t border-amber-200 text-sm">
+                  <span>Actual Cash to Collect:</span>
+                  <span>₹{(paymentDialog.dc.cashAmount || 0).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
-              <Label htmlFor="payment-amount">Paid Amount (INR)</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="payment-amount">Paid Amount (INR) *</Label>
+                {paymentDialog.dc?.cashAmount && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentAmountInput(String(paymentDialog.dc?.cashAmount || ''))}
+                    className="text-[11px] text-emerald-700 hover:text-emerald-900 font-semibold underline cursor-pointer"
+                  >
+                    Fill Due: ₹{paymentDialog.dc.cashAmount.toLocaleString('en-IN')}
+                  </button>
+                )}
+              </div>
               <Input
                 id="payment-amount"
                 type="number"

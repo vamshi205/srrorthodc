@@ -91,7 +91,11 @@ export default function CashInvoice() {
             if (matchingDc) {
               const grandTotal = parseFloat(payload.grandTotal) || 0;
               const paymentReceived = parseFloat(payload.paymentReceived) || 0;
-              const isFullyPaid = grandTotal > 0 && paymentReceived >= grandTotal;
+              const actualReceivable = parseFloat(payload.actualReceivable) || 0;
+              const hasHiked = actualReceivable > 0 && actualReceivable < grandTotal;
+              const effectiveAmount = hasHiked ? actualReceivable : grandTotal;
+              const margin = hasHiked ? Math.round((grandTotal - actualReceivable) * 100) / 100 : undefined;
+              const isFullyPaid = effectiveAmount > 0 && paymentReceived >= effectiveAmount;
 
               if (isFullyPaid) {
                 // When Cash Memo is fully paid -> move DC status to 'completed' queue
@@ -100,13 +104,17 @@ export default function CashInvoice() {
                   action: "MOVE_CASH_TO_COMPLETED",
                   updates: {
                     invoiceRef: payload.invNumber,
-                    cashAmount: grandTotal,
-                    cashRemarks: `Linked Cash Memo ${payload.invNumber} Paid (₹${grandTotal})`,
+                    cashAmount: effectiveAmount,
+                    billedAmount: hasHiked ? grandTotal : undefined,
+                    hospitalMargin: margin,
+                    cashRemarks: `Linked Cash Memo ${payload.invNumber} Paid (₹${effectiveAmount}${hasHiked ? `, Hiked: ₹${grandTotal}` : ''})`,
                   },
                   meta: {
                     invoiceRef: payload.invNumber,
-                    cashAmount: grandTotal,
-                    cashRemarks: `Linked Cash Memo ${payload.invNumber} Paid (₹${grandTotal})`
+                    cashAmount: effectiveAmount,
+                    billedAmount: hasHiked ? grandTotal : undefined,
+                    hospitalMargin: margin,
+                    cashRemarks: `Linked Cash Memo ${payload.invNumber} Paid (₹${effectiveAmount}${hasHiked ? `, Hiked: ₹${grandTotal}` : ''})`
                   }
                 });
               } else {
@@ -117,14 +125,18 @@ export default function CashInvoice() {
                   updates: {
                     invoiceRef: payload.invNumber,
                     cashAt: new Date().toISOString(),
-                    cashAmount: grandTotal,
-                    cashRemarks: `Linked Cash Memo ${payload.invNumber} (Unpaid)`,
+                    cashAmount: effectiveAmount,
+                    billedAmount: hasHiked ? grandTotal : undefined,
+                    hospitalMargin: margin,
+                    cashRemarks: `Linked Cash Memo ${payload.invNumber} (${hasHiked ? `Expected Cash: ₹${effectiveAmount}, Hiked: ₹${grandTotal}` : 'Unpaid'})`,
                   },
                   meta: {
                     invoiceRef: payload.invNumber,
                     cashAt: new Date().toISOString(),
-                    cashAmount: grandTotal,
-                    cashRemarks: `Linked Cash Memo ${payload.invNumber} (Unpaid)`
+                    cashAmount: effectiveAmount,
+                    billedAmount: hasHiked ? grandTotal : undefined,
+                    hospitalMargin: margin,
+                    cashRemarks: `Linked Cash Memo ${payload.invNumber} (${hasHiked ? `Expected Cash: ₹${effectiveAmount}, Hiked: ₹${grandTotal}` : 'Unpaid'})`
                   }
                 });
               }

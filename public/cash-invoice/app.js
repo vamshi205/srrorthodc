@@ -1430,6 +1430,10 @@ function setupEventListeners() {
         });
         const flatDiscount = parseFloat(document.getElementById("discount-flat-input").value) || 0;
         const grandTotal = Math.round(subtotal - flatDiscount);
+        const isHiked = document.getElementById("is-hiked-bill-check")?.checked || false;
+        const actualRecVal = parseFloat(document.getElementById("actual-receivable-input")?.value) || 0;
+        const actualReceivable = isHiked && actualRecVal > 0 ? actualRecVal : grandTotal;
+        const hospitalMargin = isHiked && actualRecVal > 0 && grandTotal > actualRecVal ? grandTotal - actualRecVal : 0;
 
         const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === (state.clientInfo.invNumber || getNextInvoiceNumber()));
         const existingPayment = existingIdx !== -1 ? (parseFloat(state.savedInvoices[existingIdx].paymentReceived) || 0) : 0;
@@ -1446,6 +1450,9 @@ function setupEventListeners() {
             invoiceItems: JSON.parse(JSON.stringify(state.invoiceItems.filter(item => (item.description || "").trim() !== ""))),
             discount: flatDiscount,
             grandTotal: grandTotal,
+            isHikedBill: isHiked,
+            actualReceivable: actualReceivable,
+            hospitalMargin: hospitalMargin,
             paymentReceived: existingPayment,
             savedAt: new Date().getTime()
         };
@@ -1511,6 +1518,10 @@ function setupEventListeners() {
         });
         const flatDiscount = parseFloat(document.getElementById("discount-flat-input").value) || 0;
         const grandTotal = Math.round(subtotal - flatDiscount);
+        const isHiked = document.getElementById("is-hiked-bill-check")?.checked || false;
+        const actualRecVal = parseFloat(document.getElementById("actual-receivable-input")?.value) || 0;
+        const actualReceivable = isHiked && actualRecVal > 0 ? actualRecVal : grandTotal;
+        const hospitalMargin = isHiked && actualRecVal > 0 && grandTotal > actualRecVal ? grandTotal - actualRecVal : 0;
         
         const existingIdx = state.savedInvoices.findIndex(inv => inv.invNumber === (state.clientInfo.invNumber || getNextInvoiceNumber()));
         const existingPayment = existingIdx !== -1 ? (parseFloat(state.savedInvoices[existingIdx].paymentReceived) || 0) : 0;
@@ -1527,6 +1538,9 @@ function setupEventListeners() {
             invoiceItems: JSON.parse(JSON.stringify(state.invoiceItems.filter(item => (item.description || "").trim() !== ""))),
             discount: flatDiscount,
             grandTotal: grandTotal,
+            isHikedBill: isHiked,
+            actualReceivable: actualReceivable,
+            hospitalMargin: hospitalMargin,
             paymentReceived: existingPayment,
             savedAt: new Date().getTime()
         };
@@ -1606,14 +1620,38 @@ function setupEventListeners() {
 
     // Flat Discount Input
     const discountFlatInput = document.getElementById("discount-flat-input");
-    discountFlatInput.addEventListener("input", () => {
-        updateCalculations();
-    });
+    if (discountFlatInput) {
+        discountFlatInput.addEventListener("input", () => {
+            updateCalculations();
+        });
+    }
+
+    // Hiked Bill listeners
+    const isHikedCheck = document.getElementById("is-hiked-bill-check");
+    if (isHikedCheck) {
+        isHikedCheck.addEventListener("change", () => {
+            updateCalculations();
+        });
+    }
+    const actualRecInput = document.getElementById("actual-receivable-input");
+    if (actualRecInput) {
+        actualRecInput.addEventListener("input", () => {
+            updateCalculations();
+        });
+    }
 
     const clearActiveInvoiceData = () => {
         state.invoiceItems = [{ description: "", subDescription: "", sku: "", size: "", qty: 1, rate: 0 }];
         const discountInput = document.getElementById("discount-flat-input");
         if (discountInput) discountInput.value = 0;
+        
+        // Reset hiked bill inputs
+        const hikedCheck = document.getElementById("is-hiked-bill-check");
+        if (hikedCheck) hikedCheck.checked = false;
+        const actualRec = document.getElementById("actual-receivable-input");
+        if (actualRec) actualRec.value = "";
+        const hikedContainer = document.getElementById("hiked-bill-container");
+        if (hikedContainer) hikedContainer.style.display = "none";
         
         // Clear customer details
         state.clientInfo = {
@@ -2731,6 +2769,25 @@ function updateCalculations() {
 
     // Regenerate QR Sync
     updateUpiQrCode(roundedGrandTotal);
+
+    // Hiked Bill live margin calculation
+    const isHikedCheck = document.getElementById("is-hiked-bill-check");
+    const hikedContainer = document.getElementById("hiked-bill-container");
+    const actualRecInput = document.getElementById("actual-receivable-input");
+    const marginText = document.getElementById("hiked-margin-text");
+    if (isHikedCheck && hikedContainer) {
+        hikedContainer.style.display = isHikedCheck.checked ? "block" : "none";
+        if (isHikedCheck.checked && actualRecInput && marginText) {
+            const actualRec = parseFloat(actualRecInput.value) || 0;
+            if (actualRec > 0 && roundedGrandTotal > actualRec) {
+                const margin = roundedGrandTotal - actualRec;
+                marginText.style.display = "block";
+                marginText.innerText = `Hospital Cut / Margin: ₹${margin.toFixed(2)}`;
+            } else {
+                marginText.style.display = "none";
+            }
+        }
+    }
 }
 
 // Convert Number to English Words (INR Format: Rupees and Paisa)
@@ -3335,6 +3392,15 @@ function loadSavedInvoice(inv) {
     }
     
     document.getElementById("discount-flat-input").value = inv.discount || 0;
+
+    // Restore Hiked Bill info if present
+    const isHiked = Boolean(inv.isHikedBill || (inv.actualReceivable && inv.actualReceivable < inv.grandTotal));
+    const hikedCheck = document.getElementById("is-hiked-bill-check");
+    if (hikedCheck) hikedCheck.checked = isHiked;
+    const actualRec = document.getElementById("actual-receivable-input");
+    if (actualRec) actualRec.value = isHiked ? (inv.actualReceivable || "") : "";
+    const hikedContainer = document.getElementById("hiked-bill-container");
+    if (hikedContainer) hikedContainer.style.display = isHiked ? "block" : "none";
     
     localStorage.setItem("im_client_info", JSON.stringify(state.clientInfo));
     saveItemsToDraft();
