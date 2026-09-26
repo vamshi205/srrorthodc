@@ -769,6 +769,7 @@ function setupEventListeners() {
             const existingIdx = state.customers.findIndex(c => 
                 (custId && c.id === custId) || ((c.name || "").toLowerCase().trim() === name.toLowerCase().trim())
             );
+            const oldName = existingIdx >= 0 ? (state.customers[existingIdx]?.name || "") : "";
 
             if (existingIdx >= 0) {
                 state.customers[existingIdx] = { 
@@ -781,10 +782,21 @@ function setupEventListeners() {
                 state.customers.push(customerRecord);
             }
 
+            if (oldName && oldName.toLowerCase().trim() !== name.toLowerCase().trim()) {
+                if (Array.isArray(state.invoices)) {
+                    state.invoices.forEach(inv => {
+                        if ((inv.customer || "").trim().toLowerCase() === oldName.trim().toLowerCase()) {
+                            inv.customer = name;
+                        }
+                    });
+                    localStorage.setItem("im_saved_invoices", JSON.stringify(state.invoices));
+                }
+            }
+
             localStorage.setItem("im_saved_customers", JSON.stringify(state.customers));
             localStorage.setItem("im_customers", JSON.stringify(state.customers));
             localStorage.setItem("srrortho:customers", JSON.stringify(state.customers));
-            syncCustomerToFirestore(customerRecord);
+            syncCustomerToFirestore(customerRecord, oldName);
 
             renderDashboardCustomersList();
             renderCustomerList();
@@ -1231,7 +1243,7 @@ function setupEventListeners() {
         return true;
     };
 
-    const syncCustomerToFirestore = (cust) => {
+    const syncCustomerToFirestore = (cust, previousName = "") => {
         if (!cust || !cust.name) return;
         const targetWin = (window.parent && window.parent !== window) ? window.parent : window;
         targetWin.postMessage({
@@ -1239,6 +1251,7 @@ function setupEventListeners() {
             payload: {
                 id: cust.id || cust.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'),
                 name: cust.name.trim(),
+                previousName: previousName || cust.previousName || "",
                 mobile: cust.mobile || cust.personalNumber || cust.otNumber || cust.hospitalNumber || "",
                 phone: cust.phone || cust.hospitalNumber || cust.personalNumber || "",
                 email: cust.email || "",

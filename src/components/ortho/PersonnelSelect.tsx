@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Check, ChevronsUpDown, Trash2, Truck, User, UserPlus, X } from "lucide-react";
+import { Bike, Car, Check, ChevronsUpDown, Package, Trash2, Truck, User, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -23,9 +23,56 @@ import {
   deletePersonnel,
   normalizePersonnelName,
   isDisallowedPersonnel,
+  isTransportLogisticsName,
 } from "@/lib/personnelStorage";
 import { loadSavedDcs, SavedDc } from "@/lib/savedDcStorage";
 import { useToast } from "@/hooks/use-toast";
+
+export interface TransportModeOption {
+  name: string;
+  badge: string;
+  category: string;
+  keywords: string;
+  iconName: "truck" | "bike" | "car" | "package";
+}
+
+export const TRANSPORT_MODES: TransportModeOption[] = [
+  {
+    name: "Courier (Rapido/Ola/Uber/Porter etc)",
+    badge: "Logistics / Parcel / Cab",
+    category: "Courier & On-Demand Transport",
+    keywords: "courier rapido ola uber porter parcel logistics cab bike tempo dunzo delivery transport parcel runner pickup speedpost dhl bluedart dtdc",
+    iconName: "truck",
+  },
+];
+
+export const getTransportMode = (val?: string): TransportModeOption | null => {
+  if (!val) return null;
+  const lower = val.trim().toLowerCase();
+  if (
+    lower.startsWith("courier") ||
+    lower.includes("rapido") ||
+    lower.includes("porter") ||
+    lower.includes("uber") ||
+    lower.includes("ola")
+  ) {
+    return TRANSPORT_MODES[0];
+  }
+  return null;
+};
+
+export const renderTransportIcon = (iconName?: string, className = "w-3.5 h-3.5 text-teal-600 shrink-0") => {
+  switch (iconName) {
+    case "bike":
+      return <Bike className={className} />;
+    case "car":
+      return <Car className={className} />;
+    case "package":
+      return <Package className={className} />;
+    default:
+      return <Truck className={className} />;
+  }
+};
 
 interface PersonnelSelectProps {
   value: string;
@@ -67,11 +114,11 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
         const set = new Set<string>();
         dcs.forEach((d) => {
           const deliv = normalizePersonnelName(d.deliveredBy);
-          if (deliv && !isDisallowedPersonnel(deliv) && deliv.toLowerCase() !== "courier") {
+          if (deliv && !isDisallowedPersonnel(deliv) && !isTransportLogisticsName(deliv)) {
             set.add(deliv);
           }
           const ret = normalizePersonnelName(d.returnedBy);
-          if (ret && !isDisallowedPersonnel(ret) && ret.toLowerCase() !== "courier") {
+          if (ret && !isDisallowedPersonnel(ret) && !isTransportLogisticsName(ret)) {
             set.add(ret);
           }
         });
@@ -91,7 +138,7 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     // First add official registered personnel
     personnelList.forEach((p) => {
       const canonical = normalizePersonnelName(p.name);
-      if (p.active && canonical && !isDisallowedPersonnel(canonical) && canonical.toLowerCase() !== "courier") {
+      if (p.active && canonical && !isDisallowedPersonnel(canonical) && !isTransportLogisticsName(canonical)) {
         map.set(canonical.toLowerCase(), {
           id: p.id,
           name: canonical,
@@ -104,7 +151,7 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     // Then add historical names not already registered
     historicalNames.forEach((name) => {
       const canonical = normalizePersonnelName(name);
-      if (!canonical || isDisallowedPersonnel(canonical) || canonical.toLowerCase() === "courier") return;
+      if (!canonical || isDisallowedPersonnel(canonical) || isTransportLogisticsName(canonical)) return;
       const key = canonical.toLowerCase();
       if (!map.has(key)) {
         map.set(key, {
@@ -130,7 +177,7 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
 
   const handleAddNew = (newName: string) => {
     const trimmed = newName.trim();
-    if (!trimmed || isDisallowedPersonnel(trimmed)) return;
+    if (!trimmed || isDisallowedPersonnel(trimmed) || isTransportLogisticsName(trimmed)) return;
     try {
       addPersonnel(trimmed, { role: "Delivery Executive" });
       onChange(trimmed);
@@ -161,10 +208,14 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     });
   };
 
+  const matchedTransport = useMemo(() => {
+    return getTransportMode(value);
+  }, [value]);
+
   const isExactMatch = useMemo(() => {
     if (!searchValue.trim()) return false;
     const lower = searchValue.trim().toLowerCase();
-    if (lower === "courier") return true;
+    if (TRANSPORT_MODES.some((m) => m.name.toLowerCase() === lower)) return true;
     return suggestions.some((s) => s.name.toLowerCase() === lower);
   }, [searchValue, suggestions]);
 
@@ -183,8 +234,8 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
             }`}
           >
             <div className="flex items-center gap-2 truncate">
-              {value.toLowerCase() === "courier" ? (
-                <Truck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+              {matchedTransport ? (
+                renderTransportIcon(matchedTransport.iconName)
               ) : (
                 <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
               )}
@@ -211,12 +262,12 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
         </PopoverTrigger>
 
         <PopoverContent
-          className="w-[var(--radix-popover-trigger-width)] min-w-[280px] max-w-[380px] p-0 z-50 shadow-xl border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"
+          className="w-[var(--radix-popover-trigger-width)] min-w-[300px] max-w-[400px] p-0 z-50 shadow-xl border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"
           align="start"
         >
           <Command shouldFilter={true} className="w-full">
             <CommandInput
-              placeholder="Search or type name..."
+              placeholder="Search staff or Courier (Rapido/Ola/Uber/Porter)..."
               value={searchValue}
               onValueChange={setSearchValue}
               className="h-9 text-xs"
@@ -226,28 +277,35 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
                 No personnel matching "{searchValue}"
               </CommandEmpty>
 
-              {/* Delivery Mode options (e.g. Courier) */}
-              <CommandGroup heading="Delivery Mode">
-                <CommandItem
-                  value="Courier Logistics"
-                  onSelect={() => handleSelect("Courier")}
-                  className="flex items-center justify-between py-1.5 px-2.5 text-xs cursor-pointer hover:bg-teal-50/60 dark:hover:bg-teal-950/40"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Truck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                    <span className="font-bold text-slate-800 dark:text-slate-100">Courier</span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="text-[9.5px] px-1.5 py-0 bg-teal-50 text-teal-700 dark:bg-teal-950/40 border-teal-200 font-semibold"
-                  >
-                    Logistics / Parcel
-                  </Badge>
-                </CommandItem>
+              {/* Delivery / Transport Mode: Courier (Rapido/Ola/Uber/Porter etc) */}
+              <CommandGroup heading="Delivery & Transport Mode">
+                {TRANSPORT_MODES.map((mode) => {
+                  const isSelected = value?.trim().toLowerCase() === mode.name.toLowerCase();
+                  return (
+                    <CommandItem
+                      key={mode.name}
+                      value={`${mode.name} ${mode.category} ${mode.badge} ${mode.keywords}`}
+                      onSelect={() => handleSelect(mode.name)}
+                      className="flex items-center justify-between py-1.5 px-2.5 text-xs cursor-pointer hover:bg-teal-50/60 dark:hover:bg-teal-950/40"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {renderTransportIcon(mode.iconName)}
+                        <span className="font-bold text-slate-800 dark:text-slate-100">{mode.name}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-teal-600 shrink-0 ml-1" />}
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className="text-[9.5px] px-1.5 py-0 bg-teal-50 text-teal-700 dark:bg-teal-950/40 border-teal-200 font-semibold shrink-0"
+                      >
+                        {mode.badge}
+                      </Badge>
+                    </CommandItem>
+                  );
+                })}
               </CommandGroup>
 
               {/* Add typed name if not matching */}
-              {searchValue.trim() && !isExactMatch && !isDisallowedPersonnel(searchValue.trim()) && (
+              {searchValue.trim() && !isExactMatch && !isDisallowedPersonnel(searchValue.trim()) && !isTransportLogisticsName(searchValue.trim()) && (
                 <CommandGroup heading="New Entry">
                   <CommandItem
                     value={`add_${searchValue.trim()}`}

@@ -47,6 +47,24 @@ export const DISALLOWED_PERSONNEL_NAMES = new Set([
   '--',
 ]);
 
+export const LOGISTICS_TRANSPORT_NAMES = [
+  'courier',
+  'rapido',
+  'porter',
+  'uber',
+  'ola',
+  'dunzo',
+  'swiggy genie',
+];
+
+export const isTransportLogisticsName = (rawName?: string): boolean => {
+  if (!rawName) return false;
+  const lower = rawName.trim().toLowerCase();
+  return LOGISTICS_TRANSPORT_NAMES.some(
+    name => lower === name || lower.startsWith(`${name} `) || lower.startsWith(`${name}-`) || lower.startsWith(`${name}/`)
+  );
+};
+
 const IGNORED_STORAGE_KEY = 'srrortho:ignored_personnel';
 
 export const getIgnoredPersonnel = (): Set<string> => {
@@ -363,7 +381,7 @@ export const syncPersonnelFromDcs = (dcs: Array<{ deliveredBy?: string; returned
       if (isDisallowedPersonnel(rawName)) return;
       const clean = normalizePersonnelName(rawName);
       if (!clean) return;
-      if (clean.toLowerCase() === 'courier') return; // Do not register Courier as a staff person
+      if (clean.toLowerCase() === 'courier' || isTransportLogisticsName(clean)) return; // Do not register transport/courier modes as staff
       if (!nameSet.has(clean.toLowerCase())) {
         nameSet.add(clean.toLowerCase());
         additions.push({

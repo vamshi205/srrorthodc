@@ -216,6 +216,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
       const saved = await saveCustomer({
         id: editingCust?.id,
         name: custName.trim(),
+        previousName: editingCust?.name,
         mobile: (custMobile || custPersonalNumber || custOtNumber || custHospitalNumber || cleanContacts[0]?.phone || "").trim(),
         hospitalNumber: custHospitalNumber.trim(),
         otNumber: custOtNumber.trim(),

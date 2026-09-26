@@ -46,6 +46,21 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem("srrortho:theme", "light");
     document.documentElement.classList.remove("dark");
+
+    // Prefetch Quotation HTML during browser idle time for instant loading
+    if (typeof window !== "undefined") {
+      const schedulePrefetch = window.requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1000));
+      schedulePrefetch(() => {
+        try {
+          const link = document.createElement("link");
+          link.rel = "prefetch";
+          link.href = "/quotation/index.html";
+          document.head.appendChild(link);
+        } catch (e) {
+          // ignore
+        }
+      });
+    }
   }, []);
 
   return (

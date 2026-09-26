@@ -11,11 +11,11 @@ import EmailHistoryView from './components/EmailHistoryView';
 import { EmailSentTooltip } from './components/HistoryView';
 import LoadingSpinner from './components/LoadingSpinner';
 import { sendEmailWithResend } from './utils/emailService';
-import { saveDatabase, loadDatabase, saveTemplate, deleteTemplate, saveHistoryItem, saveCompanyData, saveEmailHistoryItem, syncItem } from './utils/databaseService';
+import { saveDatabase, loadDatabase, saveTemplate, deleteTemplate, saveHistoryItem, saveCompanyData, saveEmailHistoryItem, syncItem, getCachedDatabase, updateQuotationAudit, getQuotationAudit } from './utils/databaseService';
 import { auth, db, storage, hasFirebaseConfig } from './firebase';
 import { onAuthStateChanged, signOut, signInAnonymously } from 'firebase/auth';
 import { ref, getBlob } from 'firebase/storage';
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy, limit, writeBatch } from 'firebase/firestore';
 import { validateFile } from './utils/fileValidation';
 import { uploadFile, deleteFile, saveFileMetadata, deleteFileMetadata, getFileData, getFileMetadataFromStorage } from './utils/storageService';
 import logoImg from './assets/logo.png';
@@ -49,6 +49,7 @@ import {
   HardDrive,
   FolderOpen,
   Folder,
+  FolderPlus,
   Award,
   FileCheck,
   Mail,
@@ -61,7 +62,9 @@ import {
   History,
   Clock,
   Layers,
-  MoreVertical
+  MoreVertical,
+  Lock,
+  Unlock
 } from 'lucide-react';
 
 function App() {
@@ -258,29 +261,83 @@ function App() {
     }
   };
 
-  const [formData, setFormData] = useState({
-    hospitalName: '',
-    doctorName: '',
-    address: '',
-    subject: '',
-    date: new Date().toLocaleDateString('en-GB'),
-    referenceNumber: '',
-    priceListId: '',
-    payment: '30 days',
-    gst: '5%',
-    validity: '',
-    warranty: '',
-    make: '',
-    delivery: '',
-    selectedTemplateId: '',
-    lineSpacing: 'compact'
+  // ── Cache & Active Draft Initialization ──
+  const initialCachedDbRef = useRef(getCachedDatabase());
+  const initialCachedDb = initialCachedDbRef.current;
+
+  const [formData, setFormData] = useState(() => {
+    const defaultForm = {
+      hospitalName: '',
+      doctorName: '',
+      address: '',
+      subject: '',
+      date: new Date().toLocaleDateString('en-GB'),
+      referenceNumber: '',
+      priceListId: '',
+      payment: '30 days',
+      gst: '5%',
+      validity: '',
+      warranty: '',
+      make: '',
+      delivery: '',
+      selectedTemplateId: '',
+      lineSpacing: 'compact'
+    };
+    try {
+      const savedDraft = localStorage.getItem('srr_quotation_active_draft');
+      if (savedDraft) {
+        const parsed = JSON.parse(savedDraft);
+        if (parsed?.formData) {
+          return { ...defaultForm, ...parsed.formData };
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to parse cached active draft:", e);
+    }
+    return defaultForm;
   });
 
-  const [draftContent, setDraftContent] = useState([]);
+  const [draftContent, setDraftContent] = useState(() => {
+    try {
+      const savedDraft = localStorage.getItem('srr_quotation_active_draft');
+      if (savedDraft) {
+        const parsed = JSON.parse(savedDraft);
+        if (Array.isArray(parsed?.draftContent) && parsed.draftContent.length > 0) {
+          return parsed.draftContent;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to parse cached draft content:", e);
+    }
+    return [];
+  });
   const [showPreview, setShowPreview] = useState(true);
 
-  // Persistent Storage
+  // Auto-save active draft to localStorage so switching tabs never loses work
+  useEffect(() => {
+    try {
+      const hasMeaningfulContent = Boolean(
+        (formData.hospitalName && formData.hospitalName.trim()) ||
+        (formData.doctorName && formData.doctorName.trim()) ||
+        (formData.address && formData.address.trim()) ||
+        (draftContent && draftContent.length > 0)
+      );
+
+      if (hasMeaningfulContent) {
+        localStorage.setItem('srr_quotation_active_draft', JSON.stringify({
+          formData,
+          draftContent,
+          timestamp: Date.now()
+        }));
+      }
+    } catch (e) {
+      // Ignore quota or parsing errors
+    }
+  }, [formData, draftContent]);
+
+  // Persistent Storage initialized with instant cache retrieval
   const [companyData, setCompanyData] = useState(() => {
+    if (initialCachedDb?.companyData) return initialCachedDb.companyData;
     const saved = localStorage.getItem('srr_company_data');
     const defaultData = {
       name: 'Sri Raja Rajeshwari Ortho Plus',
@@ -304,20 +361,48 @@ function App() {
   });
 
   const [priceLists, setPriceLists] = useState(() => {
+    if (initialCachedDb?.priceLists && Array.isArray(initialCachedDb.priceLists) && initialCachedDb.priceLists.length > 0) {
+      return initialCachedDb.priceLists;
+    }
     const saved = localStorage.getItem('srr_price_lists');
     const parsed = saved ? JSON.parse(saved) : [];
     // CRITICAL: Filter out any legacy Google Drive links or truncated data
     return parsed.filter(a => a.data && a.data.startsWith('http') && !a.data.includes('drive.google.com') && !a.data.includes('googleusercontent'));
   });
 
-  const [templates, setTemplates] = useState([]);
+  const [templates, setTemplates] = useState(() => {
+    if (initialCachedDb?.templates && Array.isArray(initialCachedDb.templates) && initialCachedDb.templates.length > 0) {
+      return initialCachedDb.templates;
+    }
+    const saved = localStorage.getItem('srr_templates');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
 
   const [quotationHistory, setQuotationHistory] = useState(() => {
+    if (initialCachedDb?.history && Array.isArray(initialCachedDb.history) && initialCachedDb.history.length > 0) {
+      return initialCachedDb.history;
+    }
     const saved = localStorage.getItem('srr_history');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [emailHistory, setEmailHistory] = useState(() => {
+    if (initialCachedDb?.emailHistory && Array.isArray(initialCachedDb.emailHistory)) {
+      return initialCachedDb.emailHistory;
+    }
+    return [];
   });
 
   const [driveFiles, setDriveFiles] = useState(() => {
+    if (initialCachedDb?.driveFiles) return initialCachedDb.driveFiles;
     const saved = localStorage.getItem('srr_drive');
     const parsed = saved ? JSON.parse(saved) : { srr: [], vendor: [], personal: [], personalFolders: [] };
     // Only filter out legacy TRUNCATED data, keep firebasestorage URLs
@@ -345,6 +430,7 @@ function App() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [isManagementActive, setIsManagementActive] = useState(false);
   const ADMIN_PASSWORD = "2025";
+  const isRefreshingRef = useRef(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -353,7 +439,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Silent auth & Auto-load Firestore database data on startup
+    // Silent auth & Auto-load Firestore database data on startup (stale-while-revalidate)
+    let isSubscribed = true;
+
     const initAuthAndData = async () => {
       if (hasFirebaseConfig && !auth.currentUser) {
         try {
@@ -362,27 +450,121 @@ function App() {
           console.warn("Silent auth fallback note:", e);
         }
       }
-      await refreshData(auth.currentUser || DEFAULT_USER);
+      if (isSubscribed) {
+        await refreshData(auth.currentUser || DEFAULT_USER);
+      }
     };
 
     initAuthAndData();
 
     if (hasFirebaseConfig) {
       const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-        if (currentUser) {
+        if (currentUser && isSubscribed) {
           setUser(currentUser);
-          await refreshData(currentUser);
+          if (!isRefreshingRef.current) {
+            await refreshData(currentUser);
+          }
         }
       });
-      return () => unsubscribe();
+      return () => {
+        isSubscribed = false;
+        unsubscribe();
+      };
     }
   }, []);
+
+  const lastDriveAuditRef = useRef(0);
 
   useEffect(() => {
     setPreviewingItem(null);
     setPreviewPriceListUrl(null);
     setPreviewScale(1);
     setShowEmailComposer(false);
+
+    if (view === 'history') {
+      // Always fetch fresh history from Firestore when entering History tab
+      (async () => {
+        try {
+          let historySnap;
+          try {
+            const q = query(collection(db, 'history'), orderBy('id', 'desc'), limit(100));
+            historySnap = await getDocs(q);
+          } catch (err) {
+            historySnap = await getDocs(collection(db, 'history'));
+          }
+          if (historySnap && historySnap.docs) {
+            const freshHistory = historySnap.docs.map(doc => {
+              const data = doc.data();
+              let parsedContent = [];
+              try {
+                parsedContent = typeof data.content === 'string' ? JSON.parse(data.content) : (data.content || []);
+              } catch (e) {
+                parsedContent = data.content || [];
+              }
+              return {
+                id: data.id || doc.id,
+                hospital: data.hospital || data.formData?.hospitalName || 'Unnamed Hospital',
+                ref: data.ref || data.formData?.referenceNumber || 'SRR/QUOT/000000',
+                templateName: data.templateName || 'Standard Template',
+                date: data.date || data.formData?.date || '',
+                formData: data.formData || null,
+                content: parsedContent,
+                isEmailed: data.isEmailed || false,
+                lastEmailedTo: data.lastEmailedTo || '',
+                lastEmailedAt: data.lastEmailedAt || '',
+                parentRef: data.parentRef || data.formData?.parentRef || null,
+                originalRef: data.originalRef || data.formData?.originalRef || null,
+                revisionCount: data.revisionCount ?? data.formData?.revisionCount ?? 0,
+                modificationHistory: data.modificationHistory || data.formData?.modificationHistory || []
+              };
+            });
+            setQuotationHistory(freshHistory);
+          }
+        } catch (e) {
+          console.warn("History live fetch error:", e);
+        }
+      })();
+    }
+
+    if (view === 'drive') {
+      // Check Drive audit to see if recache is needed
+      (async () => {
+        try {
+          const audit = await getQuotationAudit();
+          if (audit?.driveUpdatedAt && audit.driveUpdatedAt > lastDriveAuditRef.current) {
+            lastDriveAuditRef.current = audit.driveUpdatedAt;
+            const [dfSnap, foldersSnap] = await Promise.all([
+              getDocs(collection(db, 'driveFiles')),
+              getDocs(collection(db, 'driveFolders'))
+            ]);
+            const driveFilesData = dfSnap.docs.map(d => d.data());
+            const allFolders = foldersSnap.docs.map(d => d.data());
+            const srr = driveFilesData.filter(f => f.type === 'drive_srr');
+            const personal = driveFilesData.filter(f => f.type === 'drive_personal');
+            const vendorMap = {};
+            const personalMap = {};
+            driveFilesData.forEach(file => {
+              if (file.type === 'drive_vendor_files') {
+                if (!vendorMap[file.folderId]) vendorMap[file.folderId] = [];
+                vendorMap[file.folderId].push(file);
+              } else if (file.type === 'drive_personal_files') {
+                if (!personalMap[file.folderId]) personalMap[file.folderId] = [];
+                personalMap[file.folderId].push(file);
+              }
+            });
+            const vendorFolders = allFolders
+              .filter(f => f.type === 'drive_folders' || !f.type)
+              .map(folder => ({ ...folder, files: vendorMap[folder.id] || [] }));
+            const personalFolders = allFolders
+              .filter(f => f.type === 'drive_personal_folders')
+              .map(folder => ({ ...folder, files: personalMap[folder.id] || [] }));
+            setDriveFiles({ srr, vendor: vendorFolders, personal, personalFolders });
+          }
+        } catch (e) {
+          console.warn("Drive audit check error:", e);
+        }
+      })();
+    }
   }, [view]);
 
   useEffect(() => {
@@ -402,6 +584,8 @@ function App() {
   }, [previewingItem, priceLists]);
 
   const refreshData = async (currentUser = user || DEFAULT_USER) => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     setSyncStatus('syncing');
     setIsDataLoading(true);
     try {
@@ -412,8 +596,8 @@ function App() {
         // 1. Templates: Always trust the backend.
         if (data.templates && data.templates.length > 0) {
           setTemplates(data.templates);
-        } else {
-          // If Firestore is empty, seed it with a professional default template
+        } else if (!templates || templates.length === 0) {
+          // If Firestore is empty and no local templates exist, seed default
           const defaultTemplate = {
             id: 'default-' + Date.now(),
             name: 'Standard Implants',
@@ -446,6 +630,7 @@ function App() {
       setSyncStatus('error');
     } finally {
       setIsDataLoading(false);
+      isRefreshingRef.current = false;
     }
   };
 
@@ -526,7 +711,6 @@ function App() {
 
 
 
-  const [emailHistory, setEmailHistory] = useState([]);
   const [resendEmailForm, setResendEmailForm] = useState(null);
 
   const handleResendEmail = (item) => {
@@ -714,12 +898,38 @@ function App() {
   };
 
   const downloadFolderAsZip = async (folder) => {
-    if (!folder.files || folder.files.length === 0) return showAlert('Empty Folder', 'This folder does not contain any files to download.', 'error');
     const zip = new JSZip();
-    for (const file of folder.files) {
-      const base64 = file.data.includes('base64,') ? file.data.split(',')[1] : file.data;
-      zip.file(file.fileName, base64, { base64: true });
-    }
+    let fileCount = 0;
+
+    const addFolderToZip = async (zipFolder, currentF) => {
+      for (const file of (currentF.files || [])) {
+        try {
+          const fileData = file.data;
+          if (typeof fileData === 'string' && fileData.startsWith('http')) {
+            const resp = await fetch(fileData);
+            const arrayBuffer = await resp.arrayBuffer();
+            zipFolder.file(file.fileName, arrayBuffer);
+            fileCount++;
+          } else if (fileData) {
+            const base64 = fileData.includes('base64,') ? fileData.split(',')[1] : fileData;
+            zipFolder.file(file.fileName, base64, { base64: true });
+            fileCount++;
+          }
+        } catch (e) {
+          console.warn('Error adding file to zip:', file.fileName, e);
+        }
+      }
+      // Recursively include child subfolders for personal folders
+      const children = (driveFiles.personalFolders || []).filter(cf => cf.parentId === currentF.id);
+      for (const child of children) {
+        const subZip = zipFolder.folder(child.name);
+        await addFolderToZip(subZip, child);
+      }
+    };
+
+    await addFolderToZip(zip, folder);
+
+    if (fileCount === 0) return showAlert('Empty Folder', 'This folder does not contain any files to download.', 'error');
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `${folder.name}.zip`; link.click();
@@ -1225,19 +1435,161 @@ Website: srrorthoplus.com`;
 
   const handleDeleteFolder = (folder, colName = 'drive_folders') => {
     confirmDelete(async () => {
-      const fileType = colName === 'drive_folders' ? 'drive_vendor_files' : 'drive_personal_files';
-      for (const file of (folder.files || [])) {
-        await syncItem(fileType, file, true);
-      }
-      const success = await syncItem(colName, folder, true);
-      if (success) {
-        if (colName === 'drive_folders') {
+      if (colName === 'drive_personal_folders') {
+        const foldersToDelete = [folder];
+        const allPersonal = driveFiles.personalFolders || [];
+        const findDescendants = (parentId) => {
+          const children = allPersonal.filter(f => f.parentId === parentId);
+          children.forEach(child => {
+            foldersToDelete.push(child);
+            findDescendants(child.id);
+          });
+        };
+        findDescendants(folder.id);
+
+        for (const f of foldersToDelete) {
+          for (const file of (f.files || [])) {
+            await syncItem('drive_personal_files', file, true);
+          }
+          await syncItem('drive_personal_folders', f, true);
+        }
+
+        const idsToDelete = new Set(foldersToDelete.map(f => f.id));
+        setDriveFiles(prev => ({
+          ...prev,
+          personalFolders: (prev.personalFolders || []).filter(f => !idsToDelete.has(f.id))
+        }));
+        if (openPersonalFolder && idsToDelete.has(openPersonalFolder)) {
+          setOpenPersonalFolder(folder.parentId || null);
+        }
+      } else {
+        for (const file of (folder.files || [])) {
+          await syncItem('drive_vendor_files', file, true);
+        }
+        const success = await syncItem(colName, folder, true);
+        if (success) {
           setDriveFiles(prev => ({ ...prev, vendor: prev.vendor.filter(f => f.id !== folder.id) }));
-        } else {
-          setDriveFiles(prev => ({ ...prev, personalFolders: prev.personalFolders.filter(f => f.id !== folder.id) }));
+          if (openVendorFolder === folder.id) {
+            setOpenVendorFolder(null);
+          }
         }
       }
     });
+  };
+
+  const handleRenameDriveFile = (colName, file, folderId = null) => {
+    const currentDisplayName = file.label || file.fileName || 'Document';
+    showPrompt(
+      'Rename File',
+      `Enter new name for "${currentDisplayName}":`,
+      async (newName) => {
+        if (!newName || !newName.trim() || newName.trim() === currentDisplayName) return;
+        const trimmed = newName.trim();
+        let finalFileName = trimmed;
+        const extMatch = file.fileName ? file.fileName.match(/\.[0-9a-z]+$/i) : null;
+        if (extMatch && !trimmed.toLowerCase().endsWith(extMatch[0].toLowerCase())) {
+          finalFileName = `${trimmed}${extMatch[0]}`;
+        }
+
+        const updatedFile = {
+          ...file,
+          label: trimmed,
+          fileName: finalFileName
+        };
+
+        const success = await syncItem(colName, updatedFile);
+        if (success) {
+          if (colName === 'drive_srr') {
+            setDriveFiles(prev => ({
+              ...prev,
+              srr: (prev.srr || []).map(f => f.id === file.id ? updatedFile : f)
+            }));
+          } else if (colName === 'drive_personal') {
+            setDriveFiles(prev => ({
+              ...prev,
+              personal: (prev.personal || []).map(f => f.id === file.id ? updatedFile : f)
+            }));
+          } else if (colName === 'drive_vendor_files') {
+            setDriveFiles(prev => ({
+              ...prev,
+              vendor: (prev.vendor || []).map(folder => {
+                if (folderId && folder.id !== folderId) return folder;
+                return {
+                  ...folder,
+                  files: (folder.files || []).map(f => f.id === file.id ? updatedFile : f)
+                };
+              })
+            }));
+          } else if (colName === 'drive_personal_files') {
+            setDriveFiles(prev => ({
+              ...prev,
+              personalFolders: (prev.personalFolders || []).map(folder => {
+                if (folderId && folder.id !== folderId) return folder;
+                return {
+                  ...folder,
+                  files: (folder.files || []).map(f => f.id === file.id ? updatedFile : f)
+                };
+              })
+            }));
+          }
+          showAlert('File Renamed', `File renamed to "${trimmed}".`, 'success');
+        } else {
+          showAlert('Rename Failed', 'Could not update file name.', 'error');
+        }
+      },
+      'prompt',
+      'Save Name',
+      'Cancel'
+    );
+  };
+
+  const handleRenameFolder = (folder, colName = 'drive_folders') => {
+    if (folder.isPrivate) {
+      showPrompt(
+        'Private Folder Verification',
+        `Enter password to rename "${folder.name}":`,
+        (enteredPin) => {
+          const expectedPin = folder.password || ADMIN_PASSWORD;
+          if (enteredPin && (enteredPin === expectedPin || enteredPin === ADMIN_PASSWORD)) {
+            promptRenameFolder(folder, colName);
+          } else {
+            showAlert('Access Denied', 'Incorrect password.', 'error');
+          }
+        }
+      );
+    } else {
+      promptRenameFolder(folder, colName);
+    }
+  };
+
+  const promptRenameFolder = (folder, colName) => {
+    showPrompt(
+      'Rename Folder',
+      `Enter new name for folder "${folder.name}":`,
+      async (newName) => {
+        if (!newName || !newName.trim() || newName.trim() === folder.name) return;
+        const trimmed = newName.trim();
+        const updatedFolder = { ...folder, name: trimmed };
+        const success = await syncItem(colName, updatedFolder);
+        if (success) {
+          if (colName === 'drive_folders') {
+            setDriveFiles(prev => ({
+              ...prev,
+              vendor: (prev.vendor || []).map(f => f.id === folder.id ? updatedFolder : f)
+            }));
+          } else {
+            setDriveFiles(prev => ({
+              ...prev,
+              personalFolders: (prev.personalFolders || []).map(f => f.id === folder.id ? updatedFolder : f)
+            }));
+          }
+          showAlert('Folder Renamed', `Folder renamed to "${trimmed}".`, 'success');
+        }
+      },
+      'prompt',
+      'Save Name',
+      'Cancel'
+    );
   };
 
   const syncLegacyStorageSizes = async () => {
@@ -1377,6 +1729,9 @@ Website: srrorthoplus.com`;
 
     const result = await generatePDF();
     if (result) {
+      try {
+        localStorage.removeItem('srr_quotation_active_draft');
+      } catch (e) {}
       setView('history');
       setPostSaveModal({
         item: result.historyItem,
@@ -1408,13 +1763,157 @@ Website: srrorthoplus.com`;
     }
   };
 
-  if (isAuthLoading || (isDataLoading && syncStatus === 'syncing')) {
+  const hasCachedContent = Boolean(
+    (templates && templates.length > 0) ||
+    (initialCachedDb?.templates && initialCachedDb.templates.length > 0)
+  );
+
+  if (isAuthLoading || (isDataLoading && syncStatus === 'syncing' && !hasCachedContent)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center w-full font-sans">
         <LoadingSpinner message="Refreshing Files & Database..." subtext="Fetching latest documents from Google Drive & Cloud storage" />
       </div>
     );
   }
+
+  const handleOpenPersonalFolder = (folder) => {
+    if (folder.isPrivate && !openPersonalFolder) {
+      showPrompt(
+        'Private Folder Access',
+        `Enter password to open "${folder.name}":`,
+        (enteredPin) => {
+          const expectedPin = folder.password || ADMIN_PASSWORD;
+          if (enteredPin && (enteredPin === expectedPin || enteredPin === ADMIN_PASSWORD)) {
+            setOpenPersonalFolder(folder.id);
+          } else {
+            showAlert('Access Denied', 'Incorrect password. Access to this private folder is restricted.', 'error');
+          }
+        },
+        'prompt',
+        'Unlock & Open',
+        'Cancel'
+      );
+    } else if (folder.isPrivate && folder.password && folder.password !== ADMIN_PASSWORD && openPersonalFolder !== folder.parentId) {
+      showPrompt(
+        'Private Subfolder Access',
+        `Enter password to open "${folder.name}":`,
+        (enteredPin) => {
+          if (enteredPin && (enteredPin === folder.password || enteredPin === ADMIN_PASSWORD)) {
+            setOpenPersonalFolder(folder.id);
+          } else {
+            showAlert('Access Denied', 'Incorrect password.', 'error');
+          }
+        },
+        'prompt',
+        'Unlock & Open',
+        'Cancel'
+      );
+    } else {
+      setOpenPersonalFolder(folder.id);
+    }
+  };
+
+  const handleCreatePersonalSubfolder = (parentFolder) => {
+    showPrompt(
+      'New Subfolder',
+      `Enter subfolder name inside "${parentFolder.name}":`,
+      async (name) => {
+        if (!name || !name.trim()) return;
+        const trimmed = name.trim();
+        const newSubfolder = {
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 4),
+          name: trimmed,
+          parentId: parentFolder.id,
+          type: 'drive_personal_folders',
+          createdAt: new Date().toLocaleDateString('en-GB'),
+          files: [],
+          isPrivate: !!parentFolder.isPrivate,
+          password: parentFolder.password || ''
+        };
+        setDriveFiles(prev => ({
+          ...prev,
+          personalFolders: [...(prev.personalFolders || []), newSubfolder]
+        }));
+        await syncItem('drive_personal_folders', newSubfolder);
+        showAlert('Subfolder Created', `Subfolder "${trimmed}" created successfully.`, 'success');
+      },
+      'prompt',
+      'Create Subfolder',
+      'Cancel'
+    );
+  };
+
+  const handleToggleFolderPrivacy = (folder) => {
+    if (folder.isPrivate) {
+      showPrompt(
+        'Remove Folder Privacy',
+        `Enter current password to remove protection from "${folder.name}":`,
+        async (enteredPin) => {
+          const expectedPin = folder.password || ADMIN_PASSWORD;
+          if (enteredPin && (enteredPin === expectedPin || enteredPin === ADMIN_PASSWORD)) {
+            const allPersonal = driveFiles.personalFolders || [];
+            const affectedIds = new Set([folder.id]);
+            const findChildren = (pid) => {
+              allPersonal.filter(f => f.parentId === pid).forEach(child => {
+                affectedIds.add(child.id);
+                findChildren(child.id);
+              });
+            };
+            findChildren(folder.id);
+
+            const updatedFolders = allPersonal.map(f => {
+              if (affectedIds.has(f.id)) {
+                return { ...f, isPrivate: false, password: '' };
+              }
+              return f;
+            });
+            setDriveFiles(prev => ({ ...prev, personalFolders: updatedFolders }));
+            for (const f of updatedFolders.filter(f => affectedIds.has(f.id))) {
+              await syncItem('drive_personal_folders', f);
+            }
+            showAlert('Protection Removed', `"${folder.name}" is now public and unlocked.`, 'success');
+          } else {
+            showAlert('Access Denied', 'Incorrect password. Cannot remove protection.', 'error');
+          }
+        },
+        'prompt',
+        'Remove Lock',
+        'Cancel'
+      );
+    } else {
+      showPrompt(
+        'Make Folder Private',
+        `Set a password for "${folder.name}" (or leave blank to use default PIN ${ADMIN_PASSWORD}):`,
+        async (pin) => {
+          const passwordToSet = pin && pin.trim() ? pin.trim() : ADMIN_PASSWORD;
+          const allPersonal = driveFiles.personalFolders || [];
+          const affectedIds = new Set([folder.id]);
+          const findChildren = (pid) => {
+            allPersonal.filter(f => f.parentId === pid).forEach(child => {
+              affectedIds.add(child.id);
+              findChildren(child.id);
+            });
+          };
+          findChildren(folder.id);
+
+          const updatedFolders = allPersonal.map(f => {
+            if (affectedIds.has(f.id)) {
+              return { ...f, isPrivate: true, password: passwordToSet };
+            }
+            return f;
+          });
+          setDriveFiles(prev => ({ ...prev, personalFolders: updatedFolders }));
+          for (const f of updatedFolders.filter(f => affectedIds.has(f.id))) {
+            await syncItem('drive_personal_folders', f);
+          }
+          showAlert('Folder Locked', `"${folder.name}" is now private. Password will be required to open it.`, 'success');
+        },
+        'prompt',
+        'Lock Folder',
+        'Cancel'
+      );
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen text-[var(--apple-black)] font-sans overflow-hidden bg-[var(--apple-bg)] relative">
@@ -1634,7 +2133,7 @@ Website: srrorthoplus.com`;
               {/* Templates Grid */}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {isDataLoading ? (
+                {isDataLoading && templates.length === 0 ? (
                   <div className="col-span-full py-8">
                     <LoadingSpinner message="Fetching Templates & Database..." subtext="Synchronizing from Cloud Firestore" />
                   </div>
@@ -3072,6 +3571,13 @@ Website: srrorthoplus.com`;
                           <a href={file.data} download={file.fileName} className="w-8 h-8 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-[var(--emerald)] rounded-lg transition-colors" title="Download">
                             <Download size={15} />
                           </a>
+                          <button
+                            onClick={() => handleRenameDriveFile('drive_srr', file)}
+                            className="w-8 h-8 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-indigo-600 rounded-lg transition-colors"
+                            title="Rename File"
+                          >
+                            <Edit2 size={14} />
+                          </button>
                           {isManagementActive && (
                             <button onClick={() => confirmDelete(async () => {
                               setDriveFiles(prev => ({ ...prev, srr: prev.srr.filter(f => f.id !== file.id) }));
@@ -3101,11 +3607,12 @@ Website: srrorthoplus.com`;
                   </div>
                   {!openVendorFolder && (
                     <button onClick={async () => {
-                      const name = prompt('Enter vendor/folder name:');
-                      if (!name) return;
-                      const newFolder = { id: Date.now().toString(), name, createdAt: new Date().toLocaleDateString('en-GB'), files: [] };
-                      setDriveFiles(prev => ({ ...prev, vendor: [...(prev.vendor || []), newFolder] }));
-                      await syncItem('drive_folders', newFolder);
+                      showPrompt('New Vendor Folder', 'Enter vendor/folder name:', async (name) => {
+                        if (!name || !name.trim()) return;
+                        const newFolder = { id: Date.now().toString(), name: name.trim(), createdAt: new Date().toLocaleDateString('en-GB'), files: [] };
+                        setDriveFiles(prev => ({ ...prev, vendor: [...(prev.vendor || []), newFolder] }));
+                        await syncItem('drive_folders', newFolder);
+                      });
                     }} className="btn-outline !text-[13px] !py-2 !px-4">
                       <Plus size={16} /> New Folder
                     </button>
@@ -3128,6 +3635,16 @@ Website: srrorthoplus.com`;
                             <p className="text-[11px] text-[var(--apple-gray-4)] mt-1">{(folder.files || []).length} files</p>
                           </div>
                           <div className="flex items-center justify-center gap-1 mt-3 pt-3 border-t border-[var(--apple-gray-2)]">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRenameFolder(folder, 'drive_folders');
+                              }}
+                              className="w-8 h-8 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-indigo-600 rounded-lg transition-colors"
+                              title="Rename folder"
+                            >
+                              <Edit2 size={14} />
+                            </button>
                             <button onClick={(e) => { e.stopPropagation(); downloadFolderAsZip(folder); }} className="w-8 h-8 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-[var(--apple-black)] rounded-lg transition-colors" title="Download folder as ZIP">
                               <Download size={14} />
                             </button>
@@ -3168,11 +3685,22 @@ Website: srrorthoplus.com`;
                           </div>
                         </div>
 
-                        <div className="apple-card p-5 mb-4 flex items-center gap-3 bg-amber-50/50 border-amber-200">
-                          <Folder size={28} className="text-amber-400" fill="currentColor" />
-                          <div>
-                            <p className="text-[17px] font-bold">{folder.name}</p>
-                            <p className="text-[12px] text-[var(--apple-gray-5)]">{(folder.files || []).length} files • Created {folder.createdAt}</p>
+                        <div className="apple-card p-5 mb-4 flex items-center justify-between bg-amber-50/50 border-amber-200">
+                          <div className="flex items-center gap-3">
+                            <Folder size={28} className="text-amber-400" fill="currentColor" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-[17px] font-bold">{folder.name}</p>
+                                <button
+                                  onClick={() => handleRenameFolder(folder, 'drive_folders')}
+                                  className="w-6 h-6 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-indigo-600 rounded transition-colors"
+                                  title="Rename folder"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                              </div>
+                              <p className="text-[12px] text-[var(--apple-gray-5)]">{(folder.files || []).length} files • Created {folder.createdAt}</p>
+                            </div>
                           </div>
                         </div>
 
@@ -3225,6 +3753,13 @@ Website: srrorthoplus.com`;
                                   <a href={file.data} download={file.fileName} className="w-8 h-8 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-[var(--apple-black)] rounded-lg transition-colors" title="Download">
                                     <Download size={15} />
                                   </a>
+                                  <button
+                                    onClick={() => handleRenameDriveFile('drive_vendor_files', file, folder.id)}
+                                    className="w-8 h-8 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-indigo-600 rounded-lg transition-colors"
+                                    title="Rename File"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
                                   {isManagementActive && (
                                     <button onClick={() => confirmDelete(async () => {
                                       setDriveFiles(prev => ({ ...prev, vendor: prev.vendor.map(f => f.id === folder.id ? { ...f, files: f.files.filter(fi => fi.id !== file.id) } : f) }));
@@ -3259,12 +3794,14 @@ Website: srrorthoplus.com`;
                       </div>
                       <div className="flex flex-wrap items-center gap-3">
                         {!openPersonalFolder && (
-                          <button onClick={async () => {
-                            const name = prompt('Enter folder name:');
-                            if (!name) return;
-                            const newFolder = { id: Date.now().toString(), name, type: 'drive_personal_folders', createdAt: new Date().toLocaleDateString('en-GB'), files: [] };
-                            setDriveFiles(prev => ({ ...prev, personalFolders: [...(prev.personalFolders || []), newFolder] }));
-                            await syncItem('drive_personal_folders', newFolder);
+                          <button onClick={() => {
+                            showPrompt('New Folder', 'Enter folder name for Personal Space:', async (name) => {
+                              if (!name || !name.trim()) return;
+                              const trimmed = name.trim();
+                              const newFolder = { id: Date.now().toString(), name: trimmed, type: 'drive_personal_folders', createdAt: new Date().toLocaleDateString('en-GB'), files: [] };
+                              setDriveFiles(prev => ({ ...prev, personalFolders: [...(prev.personalFolders || []), newFolder] }));
+                              await syncItem('drive_personal_folders', newFolder);
+                            });
                           }} className="btn-outline !text-indigo-600 !border-indigo-200 !bg-indigo-50/50 !py-2 !px-4 hover:!bg-indigo-100 transition-all text-[13px]">
                             <Plus size={16} /> New Folder
                           </button>
@@ -3279,40 +3816,193 @@ Website: srrorthoplus.com`;
 
                   {/* Personal Folders Grid */}
                   {!openPersonalFolder ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
-                      {(driveFiles.personalFolders || []).map(folder => (
-                        <div key={folder.id} className="apple-card p-5 cursor-pointer border-indigo-100 hover:border-indigo-400 transition-all group" onClick={() => setOpenPersonalFolder(folder.id)}>
-                          <div className="flex flex-col items-center text-center">
-                            <Folder size={44} className="text-indigo-400 mb-3 group-hover:scale-110 transition-transform" fill="currentColor" />
-                            <p className="text-[14px] font-semibold text-indigo-900 truncate w-full">{folder.name}</p>
-                            <p className="text-[11px] text-indigo-400 mt-1">{(folder.files || []).length} files</p>
-                          </div>
-                          <div className="flex items-center justify-center gap-1 mt-3 pt-3 border-t border-indigo-50">
-                            <button onClick={(e) => { e.stopPropagation(); downloadFolderAsZip(folder); }} className="w-8 h-8 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors" title="Download ZIP">
-                              <Download size={14} />
-                            </button>
-                            <button onClick={(e) => {
-                              e.stopPropagation(); handleDeleteFolder(folder, 'drive_personal_folders');
-                            }} className="w-8 h-8 flex items-center justify-center text-indigo-200 hover:text-red-500 rounded-lg transition-colors" title="Delete folder">
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    (driveFiles.personalFolders || []).filter(f => !f.parentId).length === 0 ? (
+                      <div className="text-center py-10 border border-dashed border-indigo-200 rounded-xl mb-8">
+                        <p className="text-[14px] text-indigo-300">No personal folders yet. Click "+ New Folder" to create one.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
+                        {(driveFiles.personalFolders || []).filter(f => !f.parentId).map(folder => {
+                          const childSubfolderCount = (driveFiles.personalFolders || []).filter(cf => cf.parentId === folder.id).length;
+                          return (
+                            <div
+                              key={folder.id}
+                              className={`apple-card p-5 cursor-pointer transition-all group relative ${
+                                folder.isPrivate
+                                  ? 'border-purple-300 hover:border-purple-500 bg-gradient-to-b from-purple-50/60 to-white shadow-xs'
+                                  : 'border-indigo-100 hover:border-indigo-400'
+                              }`}
+                              onClick={() => handleOpenPersonalFolder(folder)}
+                            >
+                              {/* Private Badge */}
+                              {folder.isPrivate && (
+                                <div className="absolute top-2.5 right-2.5 flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-bold border border-purple-200">
+                                  <Lock size={10} />
+                                  <span>Private</span>
+                                </div>
+                              )}
+
+                              <div className="flex flex-col items-center text-center">
+                                <div className="relative mb-3 group-hover:scale-110 transition-transform">
+                                  <Folder
+                                    size={44}
+                                    className={folder.isPrivate ? "text-purple-500" : "text-indigo-400"}
+                                    fill="currentColor"
+                                  />
+                                  {folder.isPrivate && (
+                                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                                      <Lock size={11} />
+                                    </div>
+                                  )}
+                                </div>
+                                <p className="text-[14px] font-semibold text-indigo-900 truncate w-full flex items-center justify-center gap-1">
+                                  {folder.name}
+                                </p>
+                                <p className="text-[11px] text-indigo-400 mt-1">
+                                  {(folder.files || []).length} files {childSubfolderCount > 0 ? `• ${childSubfolderCount} subfolders` : ''} {folder.isPrivate ? "• 🔒 Protected" : ""}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center justify-center gap-1 mt-3 pt-3 border-t border-indigo-50">
+                                {/* 1-Click Privacy Toggle */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleFolderPrivacy(folder);
+                                  }}
+                                  className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+                                    folder.isPrivate
+                                      ? 'text-purple-600 bg-purple-100/80 hover:bg-purple-200'
+                                      : 'text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50'
+                                  }`}
+                                  title={folder.isPrivate ? "Private Folder (Click to unlock / remove password)" : "Make Folder Private (1-Click)"}
+                                >
+                                  {folder.isPrivate ? <Lock size={14} /> : <Unlock size={14} />}
+                                </button>
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRenameFolder(folder, 'drive_personal_folders');
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors"
+                                  title="Rename folder"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (folder.isPrivate) {
+                                      showPrompt(
+                                        'Private Folder Access',
+                                        `Enter password to download "${folder.name}":`,
+                                        (enteredPin) => {
+                                          const expectedPin = folder.password || ADMIN_PASSWORD;
+                                          if (enteredPin && (enteredPin === expectedPin || enteredPin === ADMIN_PASSWORD)) {
+                                            downloadFolderAsZip(folder);
+                                          } else {
+                                            showAlert('Access Denied', 'Incorrect password.', 'error');
+                                          }
+                                        }
+                                      );
+                                    } else {
+                                      downloadFolderAsZip(folder);
+                                    }
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors"
+                                  title="Download ZIP"
+                                >
+                                  <Download size={14} />
+                                </button>
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (folder.isPrivate) {
+                                      showPrompt(
+                                        'Private Folder Access',
+                                        `Enter password to delete "${folder.name}":`,
+                                        (enteredPin) => {
+                                          const expectedPin = folder.password || ADMIN_PASSWORD;
+                                          if (enteredPin && (enteredPin === expectedPin || enteredPin === ADMIN_PASSWORD)) {
+                                            handleDeleteFolder(folder, 'drive_personal_folders');
+                                          } else {
+                                            showAlert('Access Denied', 'Incorrect password.', 'error');
+                                          }
+                                        }
+                                      );
+                                    } else {
+                                      handleDeleteFolder(folder, 'drive_personal_folders');
+                                    }
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center text-indigo-200 hover:text-red-500 rounded-lg transition-colors"
+                                  title="Delete folder"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )
                   ) : (
                     /* Inside Personal Folder */
                     (() => {
                       const folder = (driveFiles.personalFolders || []).find(f => f.id === openPersonalFolder);
                       if (!folder) { setOpenPersonalFolder(null); return null; }
+
+                      const subfolders = (driveFiles.personalFolders || []).filter(f => f.parentId === folder.id);
+
+                      const crumbs = [];
+                      let curr = folder;
+                      while (curr) {
+                        crumbs.unshift(curr);
+                        curr = curr.parentId ? (driveFiles.personalFolders || []).find(f => f.id === curr.parentId) : null;
+                      }
+
                       return (
                         <div className="mb-8 animate-in fade-in slide-in-from-left-4 duration-300">
-                          <div className="flex items-center justify-between mb-4">
-                            <button onClick={() => setOpenPersonalFolder(null)} className="flex items-center gap-1 text-[13px] font-semibold text-indigo-600 hover:opacity-80">
-                              <ChevronLeft size={16} /> Back to Space
-                            </button>
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => downloadFolderAsZip(folder)} className="btn-outline !text-indigo-600 !border-indigo-200 !py-1.5 !px-3">
+                          {/* Breadcrumb Navigation & Action Toolbar */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                            <div className="flex items-center gap-1.5 text-[13px] font-medium text-indigo-600 flex-wrap">
+                              <button 
+                                onClick={() => setOpenPersonalFolder(null)} 
+                                className="flex items-center gap-1 hover:text-indigo-900 font-semibold"
+                              >
+                                <Folder size={14} /> Personal Space
+                              </button>
+                              {crumbs.map((crumb, idx) => (
+                                <React.Fragment key={crumb.id}>
+                                  <ChevronRight size={13} className="text-indigo-300" />
+                                  {idx === crumbs.length - 1 ? (
+                                    <span className="font-bold text-indigo-950 flex items-center gap-1">
+                                      {crumb.isPrivate && <Lock size={12} className="text-purple-600" />}
+                                      {crumb.name}
+                                    </span>
+                                  ) : (
+                                    <button 
+                                      onClick={() => setOpenPersonalFolder(crumb.id)} 
+                                      className="hover:underline text-indigo-700"
+                                    >
+                                      {crumb.name}
+                                    </button>
+                                  )}
+                                </React.Fragment>
+                              ))}
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button 
+                                onClick={() => handleCreatePersonalSubfolder(folder)} 
+                                className="btn-outline !text-indigo-700 !border-indigo-200 !bg-indigo-50/70 hover:!bg-indigo-100 !py-1.5 !px-3 !text-[12px] flex items-center gap-1.5"
+                                title="Create folder inside this folder"
+                              >
+                                <FolderPlus size={14} /> New Subfolder
+                              </button>
+                              <button onClick={() => downloadFolderAsZip(folder)} className="btn-outline !text-indigo-600 !border-indigo-200 !py-1.5 !px-3 !text-[12px]">
                                 <Download size={14} /> Download All
                               </button>
                               <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={(e) => handleDriveUpload(e, 'drive_personal_files', folder.id)} className="hidden" id="personal-folder-upload" />
@@ -3322,18 +4012,162 @@ Website: srrorthoplus.com`;
                             </div>
                           </div>
 
-                          <div className="apple-card p-5 mb-4 flex items-center gap-3 bg-indigo-50/50 border-indigo-200">
-                            <Folder size={28} className="text-indigo-400" fill="currentColor" />
-                            <div>
-                              <p className="text-[17px] font-bold text-indigo-900">{folder.name}</p>
-                              <p className="text-[12px] text-indigo-500">{(folder.files || []).length} files • Created {folder.createdAt}</p>
+                          {/* Current Folder Info Card */}
+                          <div className="apple-card p-5 mb-4 flex items-center justify-between bg-indigo-50/50 border-indigo-200">
+                            <div className="flex items-center gap-3">
+                              <Folder size={28} className={folder.isPrivate ? "text-purple-500" : "text-indigo-400"} fill="currentColor" />
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-[17px] font-bold text-indigo-900">{folder.name}</p>
+                                  <button
+                                    onClick={() => handleRenameFolder(folder, 'drive_personal_folders')}
+                                    className="w-6 h-6 flex items-center justify-center text-indigo-400 hover:text-indigo-700 rounded transition-colors"
+                                    title="Rename folder"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                  {folder.isPrivate && (
+                                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200 flex items-center gap-1">
+                                      <Lock size={10} /> Private
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[12px] text-indigo-500">
+                                  {(folder.files || []).length} files {subfolders.length > 0 ? `• ${subfolders.length} subfolders` : ''} • Created {folder.createdAt}
+                                </p>
+                              </div>
                             </div>
                           </div>
 
-                          {(folder.files || []).length === 0 ? (
-                            <div className="text-center py-10 border border-dashed border-indigo-200 rounded-xl">
-                              <p className="text-[14px] text-indigo-300">This folder is empty. Add files above.</p>
+                          {/* Subfolders Grid */}
+                          {subfolders.length > 0 && (
+                            <div className="mb-6">
+                              <div className="flex items-center justify-between mb-3 px-1">
+                                <h4 className="text-[12px] font-bold text-indigo-900/60 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Folder size={14} className="text-indigo-500" />
+                                  Folders Inside ({subfolders.length})
+                                </h4>
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                {subfolders.map(sub => (
+                                  <div
+                                    key={sub.id}
+                                    className={`apple-card p-4 cursor-pointer transition-all group relative border ${
+                                      sub.isPrivate
+                                        ? 'border-purple-200 hover:border-purple-400 bg-gradient-to-b from-purple-50/50 to-white shadow-2xs'
+                                        : 'border-indigo-100 hover:border-indigo-300 bg-white'
+                                    }`}
+                                    onClick={() => handleOpenPersonalFolder(sub)}
+                                  >
+                                    {sub.isPrivate && (
+                                      <div className="absolute top-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-[9px] font-bold border border-purple-200">
+                                        <Lock size={9} />
+                                      </div>
+                                    )}
+                                    <div className="flex flex-col items-center text-center">
+                                      <div className="relative mb-2 group-hover:scale-105 transition-transform">
+                                        <Folder
+                                          size={36}
+                                          className={sub.isPrivate ? "text-purple-500" : "text-indigo-400"}
+                                          fill="currentColor"
+                                        />
+                                      </div>
+                                      <p className="text-[13px] font-semibold text-indigo-900 truncate w-full flex items-center justify-center gap-1">
+                                        {sub.name}
+                                      </p>
+                                      <p className="text-[11px] text-indigo-400 mt-0.5">
+                                        {(sub.files || []).length} files
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center justify-center gap-1 mt-2.5 pt-2 border-t border-indigo-50">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleToggleFolderPrivacy(sub);
+                                        }}
+                                        className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${
+                                          sub.isPrivate
+                                            ? 'text-purple-600 bg-purple-100/80 hover:bg-purple-200'
+                                            : 'text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50'
+                                        }`}
+                                        title={sub.isPrivate ? "Unlock folder" : "Lock folder"}
+                                      >
+                                        {sub.isPrivate ? <Lock size={12} /> : <Unlock size={12} />}
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRenameFolder(sub, 'drive_personal_folders');
+                                        }}
+                                        className="w-7 h-7 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors"
+                                        title="Rename subfolder"
+                                      >
+                                        <Edit2 size={12} />
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (sub.isPrivate) {
+                                            showPrompt(
+                                              'Private Folder Access',
+                                              `Enter password to download "${sub.name}":`,
+                                              (enteredPin) => {
+                                                const expectedPin = sub.password || ADMIN_PASSWORD;
+                                                if (enteredPin && (enteredPin === expectedPin || enteredPin === ADMIN_PASSWORD)) {
+                                                  downloadFolderAsZip(sub);
+                                                } else {
+                                                  showAlert('Access Denied', 'Incorrect password.', 'error');
+                                                }
+                                              }
+                                            );
+                                          } else {
+                                            downloadFolderAsZip(sub);
+                                          }
+                                        }}
+                                        className="w-7 h-7 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors"
+                                        title="Download ZIP"
+                                      >
+                                        <Download size={12} />
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (sub.isPrivate) {
+                                            showPrompt(
+                                              'Private Folder Access',
+                                              `Enter password to delete "${sub.name}":`,
+                                              (enteredPin) => {
+                                                const expectedPin = sub.password || ADMIN_PASSWORD;
+                                                if (enteredPin && (enteredPin === expectedPin || enteredPin === ADMIN_PASSWORD)) {
+                                                  handleDeleteFolder(sub, 'drive_personal_folders');
+                                                } else {
+                                                  showAlert('Access Denied', 'Incorrect password.', 'error');
+                                                }
+                                              }
+                                            );
+                                          } else {
+                                            handleDeleteFolder(sub, 'drive_personal_folders');
+                                          }
+                                        }}
+                                        className="w-7 h-7 flex items-center justify-center text-indigo-200 hover:text-red-500 rounded-lg transition-colors"
+                                        title="Delete subfolder"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
+                          )}
+
+                          {/* Direct Files Section */}
+                          {(folder.files || []).length === 0 ? (
+                            subfolders.length === 0 ? (
+                              <div className="text-center py-10 border border-dashed border-indigo-200 rounded-xl">
+                                <p className="text-[14px] text-indigo-300">This folder is empty. Create a subfolder or add files above.</p>
+                              </div>
+                            ) : null
                           ) : (
                             <div className="apple-card overflow-hidden border-indigo-100">
                               {(folder.files || []).map(file => (
@@ -3379,6 +4213,13 @@ Website: srrorthoplus.com`;
                                     <a href={file.data} download={file.fileName} className="w-8 h-8 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors" title="Download">
                                       <Download size={15} />
                                     </a>
+                                    <button
+                                      onClick={() => handleRenameDriveFile('drive_personal_files', file, folder.id)}
+                                      className="w-8 h-8 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors"
+                                      title="Rename File"
+                                    >
+                                      <Edit2 size={14} />
+                                    </button>
                                     <button onClick={() => handleDeleteDriveFile('drive_personal_files', file)} className="w-8 h-8 flex items-center justify-center text-indigo-200 hover:text-red-500 rounded-lg transition-colors" title="Delete">
                                       <Trash2 size={15} />
                                     </button>
@@ -3447,6 +4288,13 @@ Website: srrorthoplus.com`;
                                 <a href={file.data} download={file.fileName} className="w-8 h-8 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors" title="Download">
                                   <Download size={15} />
                                 </a>
+                                <button
+                                  onClick={() => handleRenameDriveFile('drive_personal', file)}
+                                  className="w-8 h-8 flex items-center justify-center text-indigo-300 hover:text-indigo-600 rounded-lg transition-colors"
+                                  title="Rename File"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
                                 <button onClick={() => confirmDelete(async () => {
                                   setDriveFiles(prev => ({ ...prev, personal: prev.personal.filter(f => f.id !== file.id) }));
                                   await syncItem('drive_personal', file, true);
@@ -3749,19 +4597,14 @@ Website: srrorthoplus.com`;
         {/* VIEW: EMAILER */}
         {view === 'emailer' && (
           <div className="h-full w-full overflow-y-auto relative">
-            <button
-              onClick={() => refreshData()}
-              className="absolute top-6 right-8 z-10 flex items-center gap-2 px-4 py-2 bg-white border border-[var(--apple-gray-3)] rounded-full text-[13px] font-bold text-[var(--apple-gray-6)] hover:bg-[var(--apple-gray-1)] transition-all shadow-sm"
-            >
-              <ArrowRight className={syncStatus === 'syncing' ? 'animate-spin' : ''} size={16} />
-              {syncStatus === 'syncing' ? 'Refreshing...' : 'Refresh Files'}
-            </button>
             <EmailerView 
               driveFiles={driveFiles} 
               priceLists={priceLists} 
               emailHistory={emailHistory}
               quotationHistory={quotationHistory}
               initialForm={resendEmailForm}
+              onRefreshFiles={() => refreshData()}
+              isRefreshing={syncStatus === 'syncing'}
               onEmailSent={async (item) => {
                 setEmailHistory(prev => [item, ...prev]);
                 await saveEmailHistoryItem(item);
@@ -3995,6 +4838,8 @@ Website: srrorthoplus.com`;
                 priceLists={priceLists}
                 emailHistory={emailHistory}
                 quotationHistory={quotationHistory}
+                onRefreshFiles={() => refreshData()}
+                isRefreshing={syncStatus === 'syncing'}
                 onEmailSent={async (item) => {
                   setEmailHistory(prev => [item, ...prev]);
                   await saveEmailHistoryItem(item);
@@ -4569,15 +5414,28 @@ Website: srrorthoplus.com`;
           <div className="apple-card relative w-full max-w-[400px] !bg-[var(--apple-surface)]/95 backdrop-blur-2xl rounded-[32px] shadow-2xl border border-[var(--apple-gray-3)]/60 overflow-hidden animate-in zoom-in-95 fade-in duration-300 z-10">
             <div className="p-8 md:p-10">
               <div className="flex flex-col items-center text-center gap-6 mb-8">
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 ring-4 ${
-                  alertModal.type === 'success' ? 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/5' :
-                  alertModal.type === 'error' ? 'bg-rose-500/10 text-rose-600 ring-rose-500/5' :
-                  'bg-indigo-500/10 text-indigo-600 ring-indigo-500/5'
-                }`}>
-                  {alertModal.type === 'success' ? <FileCheck size={32} strokeWidth={1.5} /> :
-                   alertModal.type === 'error' ? <Plus className="rotate-45" size={32} strokeWidth={1.5} /> :
-                   <Mail size={32} strokeWidth={1.5} />}
-                </div>
+                {(() => {
+                  const isPasswordModal = alertModal.title?.toLowerCase().includes('admin') || 
+                    alertModal.title?.toLowerCase().includes('verification') ||
+                    alertModal.title?.toLowerCase().includes('password') ||
+                    alertModal.title?.toLowerCase().includes('private') ||
+                    alertModal.title?.toLowerCase().includes('lock') ||
+                    alertModal.title?.toLowerCase().includes('access');
+
+                  return (
+                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 ring-4 ${
+                      isPasswordModal ? 'bg-purple-500/10 text-purple-600 ring-purple-500/10' :
+                      alertModal.type === 'success' ? 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/5' :
+                      alertModal.type === 'error' ? 'bg-rose-500/10 text-rose-600 ring-rose-500/5' :
+                      'bg-indigo-500/10 text-indigo-600 ring-indigo-500/5'
+                    }`}>
+                      {isPasswordModal ? <Lock size={30} strokeWidth={1.7} /> :
+                       alertModal.type === 'success' ? <FileCheck size={32} strokeWidth={1.5} /> :
+                       alertModal.type === 'error' ? <Plus className="rotate-45" size={32} strokeWidth={1.5} /> :
+                       <Mail size={32} strokeWidth={1.5} />}
+                    </div>
+                  );
+                })()}
                 
                 <div>
                   <h3 className="text-[22px] font-bold text-[var(--apple-black)] tracking-tight mb-2">
@@ -4589,32 +5447,41 @@ Website: srrorthoplus.com`;
                 </div>
               </div>
 
-              {alertModal.showInput && (
-                <div className="mb-8">
-                  <label className="text-[11px] font-bold text-[var(--apple-gray-4)] uppercase tracking-widest block mb-2 px-1">
-                    {alertModal.title?.toLowerCase().includes('admin') || alertModal.title?.toLowerCase().includes('verification') ? 'Verification Required' : 'Input Required'}
-                  </label>
-                  <input 
-                    id="admin-verification-input"
-                    type={alertModal.title?.toLowerCase().includes('admin') || alertModal.title?.toLowerCase().includes('verification') ? 'password' : 'text'}
-                    placeholder={alertModal.title?.toLowerCase().includes('admin') || alertModal.title?.toLowerCase().includes('verification') ? 'Enter Admin Password' : 'Enter a name/label...'}
-                    autoComplete="off"
-                    autoFocus
-                    className={`apple-input w-full text-center p-4 focus:!bg-white ${
-                      alertModal.title?.toLowerCase().includes('admin') || alertModal.title?.toLowerCase().includes('verification')
-                        ? 'font-mono text-lg font-bold tracking-[0.3em] !bg-white/40' 
-                        : '!bg-white/90 text-sm font-semibold'
-                    }`}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = e.target.value;
-                        setAlertModal(null);
-                        alertModal.onInput(val);
-                      }
-                    }}
-                  />
-                </div>
-              )}
+              {alertModal.showInput && (() => {
+                const isPasswordModal = alertModal.title?.toLowerCase().includes('admin') || 
+                  alertModal.title?.toLowerCase().includes('verification') ||
+                  alertModal.title?.toLowerCase().includes('password') ||
+                  alertModal.title?.toLowerCase().includes('private') ||
+                  alertModal.title?.toLowerCase().includes('lock') ||
+                  alertModal.title?.toLowerCase().includes('access');
+
+                return (
+                  <div className="mb-8">
+                    <label className="text-[11px] font-bold text-[var(--apple-gray-4)] uppercase tracking-widest block mb-2 px-1">
+                      {isPasswordModal ? 'Security Verification' : 'Input Required'}
+                    </label>
+                    <input 
+                      id="admin-verification-input"
+                      type={isPasswordModal ? 'password' : 'text'}
+                      placeholder={isPasswordModal ? 'Enter Password (e.g. 2025)' : 'Enter name/label...'}
+                      autoComplete="off"
+                      autoFocus
+                      className={`apple-input w-full text-center p-4 focus:!bg-white ${
+                        isPasswordModal
+                          ? 'font-mono text-lg font-bold tracking-[0.3em] !bg-white/40' 
+                          : '!bg-white/90 text-sm font-semibold'
+                      }`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = e.target.value;
+                          setAlertModal(null);
+                          alertModal.onInput(val);
+                        }
+                      }}
+                    />
+                  </div>
+                );
+              })()}
 
               <div className="flex flex-col gap-3">
                 <button 

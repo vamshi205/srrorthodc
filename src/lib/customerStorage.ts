@@ -42,6 +42,7 @@ const CASH_STORAGE_KEY = "im_saved_customers";
 const CASH_LEGACY_KEY = "im_customers";
 const EVENT_KEY = "srrortho:customers_updated";
 const DELETED_CUSTOMERS_KEY = "srrortho:deleted_customers";
+const RENAMED_CUSTOMERS_KEY = "srrortho:renamed_customers";
 
 export const getDeletedCustomers = (): string[] => {
   try {
@@ -70,6 +71,35 @@ export const removeDeletedCustomer = (name: string): void => {
   const lower = name.toLowerCase().trim();
   const filtered = current.filter((item) => item !== lower);
   localStorage.setItem(DELETED_CUSTOMERS_KEY, JSON.stringify(filtered));
+};
+
+export const getRenamedCustomers = (): string[] => {
+  try {
+    const raw = localStorage.getItem(RENAMED_CUSTOMERS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+export const addRenamedCustomer = (name: string): void => {
+  if (!name) return;
+  const current = getRenamedCustomers();
+  const lower = name.toLowerCase().trim();
+  if (!current.includes(lower)) {
+    const updated = [...current, lower];
+    localStorage.setItem(RENAMED_CUSTOMERS_KEY, JSON.stringify(updated));
+  }
+};
+
+export const removeRenamedCustomer = (name: string): void => {
+  if (!name) return;
+  const current = getRenamedCustomers();
+  const lower = name.toLowerCase().trim();
+  const filtered = current.filter((item) => item !== lower);
+  localStorage.setItem(RENAMED_CUSTOMERS_KEY, JSON.stringify(filtered));
 };
 
 export const harmonizeCustomerRecord = (cust: Partial<Customer>): Customer => {
@@ -196,6 +226,31 @@ export const normalizeHospitalName = (name?: string): string => {
   return name.trim().replace(/\s+/g, " ");
 };
 
+export const deduplicateAndCleanCustomers = (list: Customer[]): Customer[] => {
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  const result: Customer[] = [];
+
+  for (const c of list) {
+    if (!c || !c.name) continue;
+    const cleanName = normalizeHospitalName(c.name).toLowerCase().trim();
+    if (!cleanName || isDemoHospital(c)) continue;
+
+    if (seenNames.has(cleanName)) continue;
+    seenNames.add(cleanName);
+
+    const finalCust = { ...c };
+    if (!finalCust.id || seenIds.has(finalCust.id)) {
+      finalCust.id = createId();
+    }
+    seenIds.add(finalCust.id);
+
+    result.push(finalCust);
+  }
+
+  return result.sort((a, b) => a.name.localeCompare(b.name));
+};
+
 /**
  * Retrieve saved customers from local storage, harmonizing across DC and Cash Invoice keys
  */
@@ -252,7 +307,7 @@ export const getSavedCustomers = (): Customer[] => {
       }
     }
 
-    const result = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const result = deduplicateAndCleanCustomers(Array.from(map.values()));
 
     // If mock demo records were cleansed from local storage, write clean state immediately
     if (hadDemoData) {
@@ -325,7 +380,7 @@ export const fetchUnifiedCustomers = async (): Promise<Customer[]> => {
       }
     });
 
-    const combined = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const combined = deduplicateAndCleanCustomers(Array.from(map.values()));
     saveCustomerListLocally(combined);
     return combined;
   } catch (error) {
@@ -335,16 +390,117 @@ export const fetchUnifiedCustomers = async (): Promise<Customer[]> => {
 };
 
 /**
- * Save or update a single customer/hospital across LocalStorage and Firestore
+ * Cascade a customer name rename across all saved Delivery Challans and Cash Invoices
+ * Both in Firestore and LocalStorage, and broadcast update events.
  */
-export const saveCustomer = async (data: Partial<Customer> & { name: string }): Promise<Customer> => {
+export const updateHospitalNameAcrossAllDcsAndInvoices = async (
+  oldName: string,
+  newName: string
+): Promise<{ updatedDcsCount: number; updatedInvoicesCount: number }> => {
+  const oldClean = normalizeHospitalName(oldName);
+  const newClean = normalizeHospitalName(newName);
+  if (!oldClean || !newClean || oldClean.toLowerCase() === newClean.toLowerCase()) {
+    return { updatedDcsCount: 0, updatedInvoicesCount: 0 };
+  }
+
+  const oldLower = oldClean.toLowerCase();
+  let updatedDcsCount = 0;
+  let updatedInvoicesCount = 0;
+
+  // 1. Update Saved Delivery Challans (DCs)
+  try {
+    const dcs = await loadSavedDcs();
+    let dcsChanged = false;
+    const updatedDcsList = await Promise.all(
+      dcs.map(async (dc) => {
+        if (dc.hospitalName && normalizeHospitalName(dc.hospitalName).toLowerCase() === oldLower) {
+          const updatedDc: SavedDc = { ...dc, hospitalName: newClean };
+          try {
+            await updateDcInFirestore(updatedDc);
+          } catch (err) {
+            console.warn(`Error updating DC #${dc.dcNo} in Firestore during rename:`, err);
+          }
+          updatedDcsCount++;
+          dcsChanged = true;
+          return updatedDc;
+        }
+        return dc;
+      })
+    );
+
+    if (dcsChanged) {
+      localStorage.setItem("srrortho:saved-dcs", JSON.stringify(updatedDcsList));
+      window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: updatedDcsList }));
+    }
+  } catch (e) {
+    console.error("Error updating DCs during customer rename:", e);
+  }
+
+  // 2. Update Cash Invoices
+  try {
+    const invoices = await fetchCashInvoicesFromFirestore();
+    for (const inv of invoices) {
+      if (inv.clientName && normalizeHospitalName(inv.clientName).toLowerCase() === oldLower) {
+        const updatedInv: CashInvoiceData = { ...inv, clientName: newClean };
+        try {
+          await saveCashInvoiceToFirestore(updatedInv);
+        } catch (err) {
+          console.warn("Error updating cash invoice in Firestore during rename:", err);
+        }
+        updatedInvoicesCount++;
+      }
+    }
+
+    // Also update local storage cash invoices
+    ["im_saved_invoices", "im_invoices"].forEach((key) => {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            let localUpdated = false;
+            const mapped = parsed.map((inv: any) => {
+              if (inv.clientName && normalizeHospitalName(inv.clientName).toLowerCase() === oldLower) {
+                localUpdated = true;
+                return { ...inv, clientName: newClean };
+              }
+              return inv;
+            });
+            if (localUpdated) {
+              localStorage.setItem(key, JSON.stringify(mapped));
+            }
+          }
+        }
+      } catch {}
+    });
+
+    if (updatedInvoicesCount > 0) {
+      window.dispatchEvent(new CustomEvent("srrortho:cash_invoices_updated"));
+    }
+  } catch (e) {
+    console.error("Error updating cash invoices during customer rename:", e);
+  }
+
+  return { updatedDcsCount, updatedInvoicesCount };
+};
+
+/**
+ * Save or update a single customer/hospital across LocalStorage and Firestore.
+ * If the customer name was edited / renamed, automatically cascades the change to all
+ * Delivery Challans (DCs) and Cash Invoices so they never fall out of sync!
+ */
+export const saveCustomer = async (
+  data: Partial<Customer> & { name: string; previousName?: string },
+  options?: { updateAssociatedDcs?: boolean; updateAssociatedInvoices?: boolean }
+): Promise<Customer> => {
   const cleanName = normalizeHospitalName(data.name);
   if (!cleanName) {
     throw new Error("Hospital / Customer name is required.");
   }
 
-  // Remove from deleted blacklist if user deliberately saves/re-adds
+  // Remove from deleted and renamed blacklists if user deliberately saves/re-adds
   removeDeletedCustomer(cleanName);
+  removeRenamedCustomer(cleanName);
 
   const currentList = getSavedCustomers();
   const lower = cleanName.toLowerCase();
@@ -352,6 +508,21 @@ export const saveCustomer = async (data: Partial<Customer> & { name: string }): 
     (c) => c.name.toLowerCase().trim() === lower || (Boolean(data.id) && c.id === data.id)
   );
   const existing = existingIndex >= 0 ? currentList[existingIndex] : null;
+
+  // Detect if customer was renamed: either existing.name differed or data.previousName was explicitly provided
+  const oldCandidateName = (data.previousName || existing?.name || "").trim();
+  const oldCleanName = normalizeHospitalName(oldCandidateName);
+  const isRenamed = Boolean(
+    oldCleanName &&
+    oldCleanName.toLowerCase() !== cleanName.toLowerCase()
+  );
+
+  // If customer was renamed, blacklist the old name from being re-harvested by DC history
+  if (isRenamed) {
+    addRenamedCustomer(oldCleanName);
+    // Cleanup old customer doc from Firestore if doc ID was sanitized name
+    deleteCashCustomerFromFirestore(existing?.id || oldCleanName, oldCleanName).catch(() => {});
+  }
 
   // Prefer explicitly provided data fields (even if empty string ""), then fallback to existing
   const otNumber = (data.otNumber !== undefined ? data.otNumber : (existing?.otNumber || "")).trim();
@@ -385,18 +556,38 @@ export const saveCustomer = async (data: Partial<Customer> & { name: string }): 
     updatedAt: new Date().toISOString(),
   });
 
-  let updatedList: Customer[];
-  if (existingIndex >= 0) {
-    updatedList = [...currentList];
-    updatedList[existingIndex] = customerRecord;
-  } else {
-    updatedList = [...currentList, customerRecord];
+  // If renamed, filter out any leftover records matching oldCleanName from current list
+  let cleanedList = currentList;
+  if (isRenamed) {
+    cleanedList = currentList.filter(
+      (c) => c.id !== (data.id || existing?.id) && c.name.toLowerCase().trim() !== oldCleanName.toLowerCase()
+    );
   }
 
-  // 1. Save locally immediately
+  let updatedList: Customer[];
+  const targetIndex = cleanedList.findIndex(
+    (c) => c.name.toLowerCase().trim() === lower || (Boolean(data.id) && c.id === data.id)
+  );
+  if (targetIndex >= 0) {
+    updatedList = [...cleanedList];
+    updatedList[targetIndex] = customerRecord;
+  } else {
+    updatedList = [...cleanedList, customerRecord];
+  }
+
+  // 1. Save customer list locally immediately
   saveCustomerListLocally(updatedList);
 
-  // 2. Sync to Firestore in background
+  // 2. Cascade rename to all existing Delivery Challans (DCs) & Cash Invoices!
+  if (isRenamed && options?.updateAssociatedDcs !== false) {
+    try {
+      await updateHospitalNameAcrossAllDcsAndInvoices(oldCleanName, cleanName);
+    } catch (err) {
+      console.error("Error cascading customer name change to DCs and Invoices:", err);
+    }
+  }
+
+  // 3. Sync to Firestore in background
   try {
     await saveCashCustomerToFirestore(customerRecord as CashCustomerData);
   } catch (err) {
@@ -510,9 +701,10 @@ export const getCustomerRecordsSummary = async (hospitalName: string): Promise<C
  * Automatically harvest hospital names from DC history into the customer directory
  * Skips any hospitals that the user has previously deleted.
  */
-export const syncCustomersFromDcs = (dcs: Array<{ hospitalName?: string }>): Customer[] => {
+export const syncCustomersFromDcs = (dcs: Array<{ hospitalName?: string; doctorName?: string }>): Customer[] => {
   const current = getSavedCustomers();
   const deletedSet = new Set(getDeletedCustomers().map((n) => n.toLowerCase().trim()));
+  const renamedSet = new Set(getRenamedCustomers().map((n) => n.toLowerCase().trim()));
   const nameSet = new Set(current.map((c) => c.name.toLowerCase().trim()));
   const additions: Customer[] = [];
 
@@ -523,24 +715,28 @@ export const syncCustomersFromDcs = (dcs: Array<{ hospitalName?: string }>): Cus
     if (!clean || clean === "-" || clean.toLowerCase() === "none") return;
 
     const lowerClean = clean.toLowerCase();
-    // Do NOT re-harvest if previously deleted by user or if it's mock demo hospital!
-    if (deletedSet.has(lowerClean) || isDemoHospital({ name: clean })) return;
+    // Do NOT re-harvest if previously deleted, renamed by user, or if it's mock demo hospital!
+    if (deletedSet.has(lowerClean) || renamedSet.has(lowerClean) || isDemoHospital({ name: clean })) return;
 
     if (!nameSet.has(lowerClean)) {
       nameSet.add(lowerClean);
-      additions.push({
+      const newCust: Customer = {
         id: createId(),
         name: clean,
         mobile: "",
+        contactPerson: dc.doctorName || "",
         address: "",
-        notes: "Auto-discovered from DC history",
+        notes: "From DC history",
         createdAt: new Date().toISOString(),
-      });
+        updatedAt: new Date().toISOString(),
+      };
+      additions.push(newCust);
+      saveCashCustomerToFirestore(newCust as CashCustomerData).catch(() => {});
     }
   });
 
   if (additions.length > 0) {
-    const combined = [...current, ...additions];
+    const combined = deduplicateAndCleanCustomers([...current, ...additions]);
     saveCustomerListLocally(combined);
     return combined;
   }
@@ -668,91 +864,19 @@ export const mergeCustomers = async (
     updatedAt: new Date().toISOString(),
   };
 
-  // 2. Update Delivery Challans that reference source name
+  // 2. Cascade rename to all existing Delivery Challans & Cash Invoices!
   let updatedDcsCount = 0;
-  if (options?.updateDcs !== false) {
-    try {
-      const dcs = await loadSavedDcs();
-      const sourceNameLower = source.name.toLowerCase().trim();
-      let dcsChanged = false;
-      const updatedDcsList = await Promise.all(
-        dcs.map(async (dc) => {
-          if (dc.hospitalName && dc.hospitalName.toLowerCase().trim() === sourceNameLower) {
-            const updatedDc: SavedDc = { ...dc, hospitalName: targetName };
-            try {
-              await updateDcInFirestore(updatedDc);
-            } catch (err) {
-              console.warn("Error updating DC in Firestore:", err);
-            }
-            updatedDcsCount++;
-            dcsChanged = true;
-            return updatedDc;
-          }
-          return dc;
-        })
-      );
-      if (dcsChanged) {
-        localStorage.setItem("srrortho:saved-dcs", JSON.stringify(updatedDcsList));
-        window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: updatedDcsList }));
-      }
-    } catch (e) {
-      console.warn("Error updating DCs during customer merge:", e);
-    }
-  }
-
-  // 3. Update Cash Invoices that reference source name
   let updatedInvoicesCount = 0;
-  if (options?.updateInvoices !== false) {
-    try {
-      const invoices = await fetchCashInvoicesFromFirestore();
-      const sourceNameLower = source.name.toLowerCase().trim();
-      for (const inv of invoices) {
-        if (inv.clientName && inv.clientName.toLowerCase().trim() === sourceNameLower) {
-          const updatedInv: CashInvoiceData = { ...inv, clientName: targetName };
-          try {
-            await saveCashInvoiceToFirestore(updatedInv);
-          } catch (err) {
-            console.warn("Error updating cash invoice in Firestore:", err);
-          }
-          updatedInvoicesCount++;
-        }
-      }
-      // Also update local storage cash invoices
-      ["im_saved_invoices", "im_invoices"].forEach((key) => {
-        try {
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              let localUpdated = false;
-              const mapped = parsed.map((inv: any) => {
-                if (inv.clientName && inv.clientName.toLowerCase().trim() === sourceNameLower) {
-                  localUpdated = true;
-                  return { ...inv, clientName: targetName };
-                }
-                return inv;
-              });
-              if (localUpdated) {
-                localStorage.setItem(key, JSON.stringify(mapped));
-              }
-            }
-          }
-        } catch {
-          // ignore local storage json errors
-        }
-      });
-      if (updatedInvoicesCount > 0) {
-        window.dispatchEvent(new CustomEvent("srrortho:cash_invoices_updated"));
-      }
-    } catch (e) {
-      console.warn("Error updating invoices during customer merge:", e);
-    }
+  if (options?.updateDcs !== false || options?.updateInvoices !== false) {
+    const res = await updateHospitalNameAcrossAllDcsAndInvoices(source.name, targetName);
+    updatedDcsCount = res.updatedDcsCount;
+    updatedInvoicesCount = res.updatedInvoicesCount;
   }
 
-  // 4. Save merged target customer
-  const finalSavedTarget = await saveCustomer(mergedTargetData);
+  // 3. Save merged target customer
+  const finalSavedTarget = await saveCustomer(mergedTargetData, { updateAssociatedDcs: false, updateAssociatedInvoices: false });
 
-  // 5. Delete source customer
+  // 4. Delete source customer
   await deleteCustomer(source.id);
 
   return {

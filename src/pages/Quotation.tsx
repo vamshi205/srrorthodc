@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
 import { auth } from "@/firebase";
+import { Loader2 } from "lucide-react";
 
 export default function Quotation() {
   const navigate = useNavigate();
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'light';
   });
+  const [iframeLoaded, setIframeLoaded] = useState(false);
 
   const toggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
@@ -50,10 +52,19 @@ export default function Quotation() {
         
         {/* Floating Quotation card aligned with the main toolbar */}
         <div className="mt-2 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[700px] h-[calc(100vh-80px)]">
+          {!iframeLoaded && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/80 backdrop-blur-xs z-10 transition-opacity">
+              <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white shadow-sm border border-slate-200">
+                <Loader2 className="w-4 h-4 text-teal-600 animate-spin" />
+                <span className="text-xs font-semibold text-slate-700">Opening Quotation Studio...</span>
+              </div>
+            </div>
+          )}
           <iframe
             src="/quotation/index.html"
             title="Quotation Maker"
-            className="absolute inset-0 w-full h-full border-0"
+            onLoad={() => setIframeLoaded(true)}
+            className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-150 ${iframeLoaded ? 'opacity-100' : 'opacity-0'}`}
           />
         </div>
       </main>

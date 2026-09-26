@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
 import { auth } from "@/firebase";
@@ -30,6 +30,8 @@ import {
   MapPin,
   Clock,
   CheckCircle2,
+  Check,
+  RefreshCw,
   AlertCircle,
   HelpCircle,
   LayoutList,
@@ -57,7 +59,13 @@ import {
   mergeCustomers,
   CustomerRecordsSummary,
   getCustomerRecordsSummary,
+  updateHospitalNameAcrossAllDcsAndInvoices,
+  normalizeHospitalName,
+  deduplicateAndCleanCustomers,
+  syncCustomersFromDcs,
 } from "@/lib/customerStorage";
+import { loadSavedDcs, SavedDc } from "@/lib/savedDcStorage";
+import { findNearDuplicateHospital } from "@/lib/hospitalDuplicateDetector";
 
 export default function Customers() {
   const navigate = useNavigate();
@@ -127,7 +135,7 @@ export default function Customers() {
   useEffect(() => {
     fetchUnifiedCustomers()
       .then((unified) => {
-        setCustomers(unified);
+        setCustomers(deduplicateAndCleanCustomers(unified));
       })
       .catch((err) => console.warn("Failed to fetch unified customers:", err));
 
@@ -153,11 +161,129 @@ export default function Customers() {
     }
 
     const handleUpdate = () => {
-      setCustomers(getSavedCustomers());
+      setCustomers(deduplicateAndCleanCustomers(getSavedCustomers()));
     };
     window.addEventListener("srrortho:customers_updated", handleUpdate);
     return () => window.removeEventListener("srrortho:customers_updated", handleUpdate);
   }, []);
+
+  const [savedDcs, setSavedDcs] = useState<SavedDc[]>([]);
+  const [isSyncingUnmatched, setIsSyncingUnmatched] = useState(false);
+
+  useEffect(() => {
+    loadSavedDcs()
+      .then((dcs) => {
+        setSavedDcs(dcs);
+        const synced = syncCustomersFromDcs(dcs);
+        if (synced && synced.length > 0) {
+          setCustomers(deduplicateAndCleanCustomers(synced));
+        }
+      })
+      .catch(() => {});
+
+    const handleDcs = (e: any) => {
+      const dcs = e?.detail && Array.isArray(e.detail) ? e.detail : null;
+      if (dcs) {
+        setSavedDcs(dcs);
+        const synced = syncCustomersFromDcs(dcs);
+        if (synced && synced.length > 0) {
+          setCustomers(deduplicateAndCleanCustomers(synced));
+        }
+      } else {
+        loadSavedDcs()
+          .then((fresh) => {
+            setSavedDcs(fresh);
+            const synced = syncCustomersFromDcs(fresh);
+            if (synced && synced.length > 0) {
+              setCustomers(deduplicateAndCleanCustomers(synced));
+            }
+          })
+          .catch(() => {});
+      }
+    };
+    window.addEventListener("srrortho:saved_dcs_updated", handleDcs);
+    return () => window.removeEventListener("srrortho:saved_dcs_updated", handleDcs);
+  }, []);
+
+  const unmatchedDcsList = useMemo(() => {
+    if (!savedDcs.length || !customers.length) return [];
+    const customerNamesSet = new Set(customers.map((c) => normalizeHospitalName(c.name).toLowerCase()));
+    const map = new Map<string, { count: number; dcs: SavedDc[]; matchedCustomer?: Customer }>();
+
+    savedDcs.forEach((dc) => {
+      if (!dc.hospitalName) return;
+      const cleanDcName = normalizeHospitalName(dc.hospitalName);
+      if (!cleanDcName || cleanDcName === "-" || cleanDcName.toLowerCase() === "none") return;
+      const lower = cleanDcName.toLowerCase();
+      if (!customerNamesSet.has(lower)) {
+        if (!map.has(lower)) {
+          const matchResult = findNearDuplicateHospital(cleanDcName, customers, 0.60);
+          map.set(lower, {
+            count: 1,
+            dcs: [dc],
+            matchedCustomer: matchResult?.match,
+          });
+        } else {
+          const entry = map.get(lower)!;
+          entry.count++;
+          entry.dcs.push(dc);
+        }
+      }
+    });
+
+    return Array.from(map.entries()).map(([, data]) => ({
+      rawName: data.dcs[0].hospitalName,
+      count: data.count,
+      dcs: data.dcs,
+      matchedCustomer: data.matchedCustomer,
+    }));
+  }, [savedDcs, customers]);
+
+  const handleSyncAllUnmatchedDcs = async () => {
+    setIsSyncingUnmatched(true);
+    let totalUpdated = 0;
+    let totalAdded = 0;
+    try {
+      for (const item of unmatchedDcsList) {
+        if (item.matchedCustomer?.name) {
+          const res = await updateHospitalNameAcrossAllDcsAndInvoices(item.rawName, item.matchedCustomer.name);
+          totalUpdated += res.updatedDcsCount;
+        } else {
+          await saveCustomer({
+            name: item.rawName,
+            contactPerson: item.dcs[0]?.doctorName || "",
+            notes: "Imported from DC history",
+          });
+          totalAdded++;
+        }
+      }
+      const refreshed = await loadSavedDcs();
+      setSavedDcs(refreshed);
+      setCustomers(deduplicateAndCleanCustomers(getSavedCustomers()));
+      const msgs = [];
+      if (totalUpdated > 0) msgs.push(`Updated ${totalUpdated} DC(s)`);
+      if (totalAdded > 0) msgs.push(`Added ${totalAdded} customer(s) to directory`);
+      toast.success(msgs.join(" & ") || "Synchronization complete.");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to sync DCs.");
+    } finally {
+      setIsSyncingUnmatched(false);
+    }
+  };
+
+  const handleAddSingleUnmatchedToDirectory = async (item: { rawName: string; dcs: SavedDc[] }) => {
+    try {
+      const saved = await saveCustomer({
+        name: item.rawName,
+        contactPerson: item.dcs[0]?.doctorName || "",
+        notes: "Imported from DC history",
+      });
+      setCustomers(deduplicateAndCleanCustomers(getSavedCustomers()));
+      toast.success(`"${saved.name}" has been added to the customer directory!`);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to add customer.");
+    }
+  };
 
   // The 5 standard roles requested by user
   const STANDARD_ROLES = ["OT Person", "Accounts", "Reception", "Others", "Doctor"] as const;
@@ -280,9 +406,11 @@ export default function Customers() {
       const contactDoc = docContact?.name || finalContacts.find(c => c.role === "Doctor")?.name || finalContacts[0]?.name || "";
       const primaryMobile = (persNum || otNum || hospNum || anyWithPhone?.phone || "").trim();
 
+      const previousName = editingCust?.name || "";
       const saved = await saveCustomer({
         id: editingCust?.id,
         name: formName.trim(),
+        previousName,
         hospitalNumber: hospNum,
         otNumber: otNum,
         personalNumber: persNum,
@@ -295,13 +423,17 @@ export default function Customers() {
         notes: formNotes.trim(),
       });
 
+      const wasRenamed = Boolean(previousName && previousName.toLowerCase().trim() !== formName.toLowerCase().trim());
       toast.success(
-        editingCust
+        wasRenamed
+          ? `Updated "${saved.name}" and updated all associated Delivery Challans & Invoices.`
+          : editingCust
           ? `Updated "${saved.name}" successfully.`
           : `Saved "${saved.name}" to directory.`
       );
       setModalOpen(false);
       setCustomers(getSavedCustomers());
+      loadSavedDcs().then((dcs) => setSavedDcs(dcs)).catch(() => {});
     } catch (e: any) {
       toast.error(e.message || "Failed to save hospital.");
     } finally {
@@ -454,43 +586,47 @@ export default function Customers() {
   };
 
   // Filtered list
-  const filteredCustomers = customers.filter((c) => {
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const match =
-        (c.name && c.name.toLowerCase().includes(q)) ||
-        (c.otNumber && c.otNumber.includes(q)) ||
-        (c.hospitalNumber && c.hospitalNumber.includes(q)) ||
-        (c.personalNumber && c.personalNumber.includes(q)) ||
-        (c.mobile && c.mobile.includes(q)) ||
-        (c.contactPerson && c.contactPerson.toLowerCase().includes(q)) ||
-        (c.address && c.address.toLowerCase().includes(q)) ||
-        (c.email && c.email.toLowerCase().includes(q)) ||
-        (c.notes && c.notes.toLowerCase().includes(q)) ||
-        (Array.isArray(c.contacts) &&
-          c.contacts.some(
-            (item) =>
-              (item.name && item.name.toLowerCase().includes(q)) ||
-              (item.phone && item.phone.includes(q)) ||
-              (item.role && item.role.toLowerCase().includes(q))
-          ));
-      if (!match) return false;
-    }
+  const filteredCustomers = useMemo(() => {
+    const list = customers.filter((c) => {
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const match =
+          (c.name && c.name.toLowerCase().includes(q)) ||
+          (c.otNumber && c.otNumber.includes(q)) ||
+          (c.hospitalNumber && c.hospitalNumber.includes(q)) ||
+          (c.personalNumber && c.personalNumber.includes(q)) ||
+          (c.mobile && c.mobile.includes(q)) ||
+          (c.contactPerson && c.contactPerson.toLowerCase().includes(q)) ||
+          (c.address && c.address.toLowerCase().includes(q)) ||
+          (c.email && c.email.toLowerCase().includes(q)) ||
+          (c.notes && c.notes.toLowerCase().includes(q)) ||
+          (Array.isArray(c.contacts) &&
+            c.contacts.some(
+              (item) =>
+                (item.name && item.name.toLowerCase().includes(q)) ||
+                (item.phone && item.phone.includes(q)) ||
+                (item.role && item.role.toLowerCase().includes(q))
+            ));
+        if (!match) return false;
+      }
 
-    // Active pill filter
-    if (activeFilter === "ot") {
-      return Boolean(c.otNumber || c.contacts?.some((x) => /ot/i.test(x.role)));
-    }
-    if (activeFilter === "contacts") {
-      return Boolean((c.contacts && c.contacts.length > 0) || c.personalNumber);
-    }
-    if (activeFilter === "dues") {
-      const due = invoicesDuesMap[c.name.toLowerCase().trim()] || 0;
-      return due > 0;
-    }
-    return true;
-  });
+      // Active pill filter
+      if (activeFilter === "ot") {
+        return Boolean(c.otNumber || c.contacts?.some((x) => /ot/i.test(x.role)));
+      }
+      if (activeFilter === "contacts") {
+        return Boolean((c.contacts && c.contacts.length > 0) || c.personalNumber);
+      }
+      if (activeFilter === "dues") {
+        const due = invoicesDuesMap[c.name.toLowerCase().trim()] || 0;
+        return due > 0;
+      }
+      return true;
+    });
+
+    return deduplicateAndCleanCustomers(list);
+  }, [customers, searchQuery, activeFilter, invoicesDuesMap]);
 
   // KPI counters
   const totalHospitals = customers.length;
@@ -609,6 +745,81 @@ export default function Customers() {
               <p className="text-[10px] text-amber-700/80 dark:text-amber-400 mt-0.5">Pending collection total</p>
             </div>
           </div>
+
+          {/* Outdated or Unmatched DC Names Reconciliation Banner */}
+          {unmatchedDcsList.length > 0 && (
+            <div className="p-4 rounded-2xl border-2 border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in-50">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-amber-200 dark:bg-amber-900/60 flex items-center justify-center shrink-0 text-amber-800 dark:text-amber-300">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white">
+                      Hospital Names from Delivery Challans ({unmatchedDcsList.reduce((sum, i) => sum + i.count, 0)} DCs)
+                    </span>
+                    <Badge className="bg-amber-200 text-amber-900 text-[10px] font-bold border-0">
+                      Sync Available
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1">
+                    The following hospital or customer names exist in your DCs and can be synced or added to your customer directory:
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {unmatchedDcsList.map((item) => (
+                      <span
+                        key={item.rawName}
+                        className="inline-flex items-center gap-1.5 text-[11px] bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 px-2.5 py-1 rounded-lg text-slate-800 dark:text-slate-200 shadow-2xs"
+                      >
+                        {item.matchedCustomer ? (
+                          <>
+                            <span className="line-through text-slate-400 font-medium">{item.rawName}</span>
+                            <span>→</span>
+                            <strong className="text-teal-700 dark:text-teal-400 font-bold">{item.matchedCustomer.name}</strong>
+                            <span className="text-[10px] text-slate-400">({item.count} DCs)</span>
+                          </>
+                        ) : (
+                          <>
+                            <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <strong className="text-slate-900 dark:text-white font-bold">{item.rawName}</strong>
+                            <span className="text-[10px] text-slate-400">({item.count} DCs)</span>
+                            <button
+                              type="button"
+                              onClick={() => handleAddSingleUnmatchedToDirectory(item)}
+                              className="ml-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 hover:bg-teal-200 dark:bg-teal-950 dark:hover:bg-teal-900 text-teal-800 dark:text-teal-300 transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                              Add to Directory
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                size="sm"
+                disabled={isSyncingUnmatched}
+                onClick={handleSyncAllUnmatchedDcs}
+                className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs shrink-0 shadow-sm gap-2 h-9 px-4"
+              >
+                {isSyncingUnmatched ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    Sync &amp; Import All to Directory
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
 
           {/* Search & Filter Toolbar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -735,7 +946,7 @@ export default function Customers() {
                       const balance = invoicesDuesMap[cust.name.toLowerCase().trim()] || 0;
                       return (
                         <tr
-                          key={cust.id || cust.name}
+                          key={`${cust.id || "cust"}_${cust.name}_${idx}`}
                           className="hover:bg-teal-50/30 dark:hover:bg-slate-800/40 transition-colors group"
                         >
                           {/* Row Number */}
@@ -971,11 +1182,11 @@ export default function Customers() {
             /* Grid Cards View (Alternative)                                             */
             /* ========================================================================= */
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredCustomers.map((cust) => {
+              {filteredCustomers.map((cust, idx) => {
                 const balance = invoicesDuesMap[cust.name.toLowerCase().trim()] || 0;
                 return (
                   <div
-                    key={cust.id || cust.name}
+                    key={`${cust.id || "cust"}_${cust.name}_${idx}`}
                     className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
                   >
                     <div>

@@ -120,6 +120,12 @@ export const saveSavedDc = async (
 
   try {
     await saveDcToFirestore(saved);
+    try {
+      const dcs = await loadSavedDcs();
+      const updatedList = [saved, ...dcs.filter((d) => d.id !== saved.id)];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: updatedList }));
+    } catch {}
     return saved;
   } catch (error) {
     console.error('Error saving DC to Firestore:', error);
@@ -133,6 +139,17 @@ export const saveSavedDc = async (
 export const deleteSavedDc = async (id: string): Promise<void> => {
   try {
     await deleteDcFromFirestore(id);
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((d: any) => d.id !== id);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+          window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: filtered }));
+        }
+      }
+    } catch {}
   } catch (error) {
     console.error('Error deleting DC from Firestore:', error);
     throw error;
@@ -143,7 +160,6 @@ export const deleteSavedDc = async (id: string): Promise<void> => {
  * Update a DC in Firestore
  */
 export const updateSavedDc = async (id: string, updates: Partial<SavedDc>): Promise<SavedDc> => {
-  // ...
   try {
     // First, fetch all DCs to get the current DC
     const dcs = await loadSavedDcs();
@@ -158,6 +174,13 @@ export const updateSavedDc = async (id: string, updates: Partial<SavedDc>): Prom
 
     // Update in Firestore
     await updateDcInFirestore(updatedDc);
+
+    // Also update localStorage and broadcast
+    try {
+      const updatedList = dcs.map((d) => (d.id === id ? updatedDc : d));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: updatedList }));
+    } catch {}
 
     return updatedDc;
   } catch (error) {
@@ -222,6 +245,13 @@ export const transitionSavedDc = async (
 
     // Update in Firestore
     await updateDcInFirestore(updatedDc);
+
+    // Also update localStorage and broadcast
+    try {
+      const updatedList = dcs.map((d) => (d.id === id ? updatedDc : d));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: updatedList }));
+    } catch {}
 
     return updatedDc;
   } catch (error) {

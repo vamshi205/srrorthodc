@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
-import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon, FileText, Receipt } from 'lucide-react';
+import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon, FileText, Receipt, Building2, AlertCircle, Check, ArrowRight, ShieldCheck, MapPin, Phone, Stethoscope } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,8 +25,10 @@ import { auth } from '@/firebase';
 import { PersonnelSelect } from '@/components/ortho/PersonnelSelect';
 import { HospitalSelect } from '@/components/ortho/HospitalSelect';
 import { DoctorSelect } from '@/components/ortho/DoctorSelect';
-import { saveCustomer } from '@/lib/customerStorage';
+import { saveCustomer, getSavedCustomers, Customer } from '@/lib/customerStorage';
 import { saveDoctorName } from '@/lib/doctorStorage';
+import { findNearDuplicateHospital, DuplicateMatchResult } from '@/lib/hospitalDuplicateDetector';
+
 
 export default function OrthoApp() {
   const navigate = useNavigate();
@@ -58,6 +60,16 @@ export default function OrthoApp() {
   const [showConfirmSaveDialog, setShowConfirmSaveDialog] = useState(false);
   const [deliveredBy, setDeliveredBy] = useState('');
   const [customDcDate, setCustomDcDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Prompt dialog for near-duplicate hospital names
+  const [duplicatePrompt, setDuplicatePrompt] = useState<{
+    enteredName: string;
+    duplicateResult: DuplicateMatchResult;
+    shouldNavigate: boolean;
+    shouldClear: boolean;
+    isPrintAfter?: boolean;
+  } | null>(null);
+
 
   // Details Prompt before displaying Procedure
   const [pendingProcedure, setPendingProcedure] = useState<Procedure | null>(null);
@@ -708,14 +720,43 @@ export default function OrthoApp() {
     setHospitalName(newHospital);
   }, [hospitalName]);
 
-  const handleSaveDc = useCallback(async (shouldNavigate: boolean = true, shouldClear: boolean = true): Promise<boolean> => {
-    if (!hospitalName || !dcNo || !receivedBy || !deliveredBy) {
+  const handleSaveDc = useCallback(async (
+    shouldNavigate: boolean = true, 
+    shouldClear: boolean = true,
+    isPrintAfter: boolean = false,
+    skipDuplicateCheck: boolean = false,
+    overrideHospitalName?: string
+  ): Promise<boolean> => {
+    const activeHospital = (overrideHospitalName || hospitalName).trim();
+    if (!activeHospital || !dcNo || !receivedBy || !deliveredBy) {
       setShowSettingsModal(true);
       return false;
     }
     if (activeProcedures.length === 0 && manualItems.length === 0 && manualInstruments.length === 0 && manualBoxNumbers.length === 0) {
       toast({ title: 'Nothing to save', description: 'Add procedures or use Manual DC to add items/instruments.' });
       return false;
+    }
+
+    // Near-duplicate hospital check: prompt user if entered name resembles existing registered profile
+    if (!skipDuplicateCheck) {
+      const existingCustomers = getSavedCustomers();
+      const exactMatch = existingCustomers.find(
+        (c) => c.name.trim().toLowerCase() === activeHospital.toLowerCase()
+      );
+
+      if (!exactMatch) {
+        const duplicateMatch = findNearDuplicateHospital(activeHospital, existingCustomers, 0.75);
+        if (duplicateMatch) {
+          setDuplicatePrompt({
+            enteredName: activeHospital,
+            duplicateResult: duplicateMatch,
+            shouldNavigate,
+            shouldClear,
+            isPrintAfter,
+          });
+          return false;
+        }
+      }
     }
 
     setIsSavingDc(true);
@@ -732,7 +773,7 @@ export default function OrthoApp() {
       })();
 
       await saveSavedDc({
-        hospitalName,
+        hospitalName: activeHospital,
         dcNo,
         doctorName: doctorName.trim() || undefined,
         materialType: dcMaterialType,
@@ -746,9 +787,9 @@ export default function OrthoApp() {
       });
 
       // Ensure hospital name is automatically registered in customer directory on the fly
-      if (hospitalName.trim()) {
+      if (activeHospital) {
         saveCustomer({
-          name: hospitalName.trim(),
+          name: activeHospital,
           contactPerson: doctorName.trim() ? doctorName.trim() : undefined,
         }).catch((err) =>
           console.error("Auto-sync hospital to customer directory error:", err)
@@ -760,7 +801,7 @@ export default function OrthoApp() {
         saveDoctorName(doctorName.trim());
       }
 
-      toast({ title: 'DC saved successfully', description: `${hospitalName} · ${dcNo}` });
+      toast({ title: 'DC saved successfully', description: `${activeHospital} · ${dcNo}` });
 
       // Reload recent DCs
       const dcs = await loadSavedDcs();
@@ -778,6 +819,7 @@ export default function OrthoApp() {
         handleClearManualEntry();
         setCustomDcDate(new Date().toISOString().split('T')[0]);
         setDoctorName('');
+        setHospitalName('');
       }
 
       if (shouldNavigate) {
@@ -1690,7 +1732,7 @@ export default function OrthoApp() {
                           document.getElementById('hospital-name-input')?.focus();
                           return;
                         }
-                        const success = await handleSaveDc(false, false);
+                        const success = await handleSaveDc(false, false, true);
                         if (success) {
                           setShowPrintModal(true);
                         }
@@ -1945,7 +1987,7 @@ export default function OrthoApp() {
               <Button
                 onClick={async () => {
                   setShowConfirmSaveDialog(false);
-                  const success = await handleSaveDc(false, false);
+                  const success = await handleSaveDc(false, false, true);
                   if (success) {
                     setShowPrintModal(true);
                   }
@@ -1958,7 +2000,146 @@ export default function OrthoApp() {
             </div>
           </div>
         </DialogContent>
-      </Dialog >
+      </Dialog>
+
+      {/* Near-Duplicate Hospital Prompt Dialog */}
+      <Dialog 
+        open={!!duplicatePrompt} 
+        onOpenChange={(open) => {
+          if (!open) setDuplicatePrompt(null);
+        }}
+      >
+        <DialogContent className="max-w-md border-2 border-amber-500/40 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+              Similar Hospital Profile Found
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              An existing registered hospital closely matches the name you entered. Use the existing profile to keep records linked and avoid creating a duplicate entry.
+            </DialogDescription>
+          </DialogHeader>
+
+          {duplicatePrompt && (
+            <div className="space-y-3.5 pt-2">
+              {/* Entered vs Existing comparison cards */}
+              <div className="space-y-2.5">
+                <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">
+                      You Entered
+                    </span>
+                    <Badge variant="outline" className="text-[9.5px] px-1.5 py-0 h-4 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-medium">
+                      New Name
+                    </Badge>
+                  </div>
+                  <div className="font-extrabold text-sm text-slate-900 dark:text-slate-100 mt-1">
+                    "{duplicatePrompt.enteredName}"
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-teal-50/80 dark:bg-teal-950/40 border-2 border-teal-500/50 space-y-2 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-extrabold text-teal-800 dark:text-teal-300 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-teal-600" />
+                      Existing Profile ({Math.round(duplicatePrompt.duplicateResult.score * 100)}% match)
+                    </span>
+                    <Badge className="text-[9.5px] px-1.5 py-0 h-4 bg-teal-700 hover:bg-teal-700 text-white font-bold">
+                      Recommended
+                    </Badge>
+                  </div>
+
+                  <div className="font-black text-sm sm:text-base text-slate-900 dark:text-slate-100">
+                    {duplicatePrompt.duplicateResult.match.name}
+                  </div>
+
+                  <div className="text-xs space-y-1 text-slate-600 dark:text-slate-300 pt-1.5 border-t border-teal-200/60 dark:border-teal-800/60">
+                    {duplicatePrompt.duplicateResult.match.address && (
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>{duplicatePrompt.duplicateResult.match.address}</span>
+                      </div>
+                    )}
+                    {duplicatePrompt.duplicateResult.match.otNumber && (
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                        <Stethoscope className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>OT: {duplicatePrompt.duplicateResult.match.otNumber}</span>
+                      </div>
+                    )}
+                    {(duplicatePrompt.duplicateResult.match.hospitalNumber || duplicatePrompt.duplicateResult.match.mobile) && (
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>{duplicatePrompt.duplicateResult.match.hospitalNumber || duplicatePrompt.duplicateResult.match.mobile}</span>
+                      </div>
+                    )}
+                    {duplicatePrompt.duplicateResult.match.contactPerson && (
+                      <div className="text-[11px] text-slate-500">
+                        Contact Person: <strong>{duplicatePrompt.duplicateResult.match.contactPerson}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    const chosenHospital = duplicatePrompt.duplicateResult.match.name;
+                    const nav = duplicatePrompt.shouldNavigate;
+                    const clr = duplicatePrompt.shouldClear;
+                    const print = duplicatePrompt.isPrintAfter || false;
+                    setHospitalName(chosenHospital);
+                    setDuplicatePrompt(null);
+
+                    const success = await handleSaveDc(nav, clr, print, true, chosenHospital);
+                    if (success && print) {
+                      setShowPrintModal(true);
+                    }
+                  }}
+                  className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-teal-600/20"
+                >
+                  <Check className="w-4 h-4" />
+                  Use Existing Profile: "{duplicatePrompt.duplicateResult.match.name}"
+                </Button>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDuplicatePrompt(null)}
+                    className="flex-1 h-8 text-xs font-semibold"
+                  >
+                    Cancel
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={async () => {
+                      const typedName = duplicatePrompt.enteredName;
+                      const nav = duplicatePrompt.shouldNavigate;
+                      const clr = duplicatePrompt.shouldClear;
+                      const print = duplicatePrompt.isPrintAfter || false;
+                      setDuplicatePrompt(null);
+
+                      const success = await handleSaveDc(nav, clr, print, true, typedName);
+                      if (success && print) {
+                        setShowPrintModal(true);
+                      }
+                    }}
+                    className="flex-1 h-8 text-xs font-semibold text-slate-700 dark:text-slate-300"
+                  >
+                    Keep "{duplicatePrompt.enteredName}"
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
 
       {/* Print Modal */}
       <Dialog 

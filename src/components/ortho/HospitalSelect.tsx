@@ -36,6 +36,11 @@ import {
 } from "@/lib/customerStorage";
 import { loadSavedDcs, SavedDc } from "@/lib/savedDcStorage";
 import { useToast } from "@/hooks/use-toast";
+import {
+  findNearDuplicateHospital,
+  DuplicateMatchResult,
+} from "@/lib/hospitalDuplicateDetector";
+
 
 interface HospitalSelectProps {
   value: string;
@@ -237,19 +242,18 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
     );
   }, [allSuggestions, value]);
 
-  // Check if typed value is closely related to an existing registered hospital
-  const potentialExistingMatch = useMemo(() => {
+  // Detect near-duplicate match using intelligent fuzzy detector
+  const duplicateMatch = useMemo<DuplicateMatchResult | null>(() => {
     if (!value || exactMatch) return null;
-    const clean = value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (clean.length < 3) return null;
-
-    return (
-      allSuggestions.find((s) => {
-        const sClean = s.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return sClean.startsWith(clean) || sClean.includes(clean);
-      }) || null
-    );
+    return findNearDuplicateHospital(value, allSuggestions, 0.70);
   }, [allSuggestions, value, exactMatch]);
+
+  // Also detect duplicates inside the Quick-Add modal when typing a new name
+  const modalDuplicateMatch = useMemo<DuplicateMatchResult | null>(() => {
+    if (!newName || !quickAddModalOpen) return null;
+    return findNearDuplicateHospital(newName, allSuggestions, 0.70);
+  }, [allSuggestions, newName, quickAddModalOpen]);
+
 
   const handleSelect = (cust: Customer) => {
     onChange(cust.name);
@@ -492,6 +496,27 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
         </div>
       </div>
 
+      {/* Inline Near-Duplicate Alert below input when closed */}
+      {!open && duplicateMatch && value.trim().length >= 3 && (
+        <div className="mt-1 flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200 animate-in fade-in-50">
+          <div className="flex items-center gap-1.5 truncate">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="truncate">
+              Similar to existing hospital: <strong className="text-slate-900 dark:text-white font-bold">{duplicateMatch.match.name}</strong>
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => handleSelect(duplicateMatch.match)}
+            className="h-6 px-2 text-[10.5px] font-bold border-amber-400 dark:border-amber-700 bg-white dark:bg-slate-900 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-950 dark:text-amber-100 shrink-0 shadow-2xs"
+          >
+            Use Profile
+          </Button>
+        </div>
+      )}
+
       {/* Floating Auto-complete Dropdown */}
       {open && (
         <div className="absolute top-full left-0 mt-1.5 w-full min-w-[300px] sm:min-w-[380px] max-w-[500px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden text-xs animate-in fade-in-50 zoom-in-95 duration-100">
@@ -506,34 +531,45 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
             </span>
           </div>
 
-          {/* Recommendation Banner when typed input resembles an existing hospital */}
-          {potentialExistingMatch && (
-            <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-2 animate-in fade-in duration-150">
-              <div className="min-w-0">
+          {/* Near-Duplicate Recommendation Banner */}
+          {duplicateMatch && (
+            <div className="p-2.5 bg-amber-50/90 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-2 animate-in fade-in duration-150">
+              <div className="min-w-0 flex-1">
                 <div className="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
-                  Existing Hospital Found
+                  Similar Hospital Found ({Math.round(duplicateMatch.score * 100)}% match)
                 </div>
                 <div className="font-bold text-slate-900 dark:text-slate-100 text-xs truncate">
-                  {potentialExistingMatch.name}
+                  {duplicateMatch.match.name}
                 </div>
-                {potentialExistingMatch.address && (
-                  <div className="text-[10.5px] text-muted-foreground truncate">
-                    📍 {potentialExistingMatch.address}
-                  </div>
-                )}
+                <div className="text-[10px] text-slate-600 dark:text-slate-400 flex flex-wrap items-center gap-1.5 mt-0.5">
+                  {duplicateMatch.match.address && (
+                    <span className="truncate max-w-[180px]">📍 {duplicateMatch.match.address}</span>
+                  )}
+                  {duplicateMatch.match.otNumber && (
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                      🩺 OT: {duplicateMatch.match.otNumber}
+                    </span>
+                  )}
+                  {(duplicateMatch.match.hospitalNumber || duplicateMatch.match.mobile) && (
+                    <span className="text-slate-500">
+                      📞 {duplicateMatch.match.hospitalNumber || duplicateMatch.match.mobile}
+                    </span>
+                  )}
+                </div>
               </div>
               <Button
                 type="button"
                 size="sm"
-                onClick={() => handleSelect(potentialExistingMatch)}
+                onClick={() => handleSelect(duplicateMatch.match)}
                 className="h-7 text-xs bg-teal-700 hover:bg-teal-800 text-white font-bold shrink-0 gap-1 px-2.5 shadow-xs"
               >
                 <Check className="w-3 h-3" />
-                Select This
+                Use Profile
               </Button>
             </div>
           )}
+
 
           {/* Suggestions List */}
           <div ref={listRef} className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 p-1">
@@ -685,7 +721,43 @@ export const HospitalSelect: React.FC<HospitalSelectProps> = ({
                 className="mt-1 h-9 text-xs font-bold"
                 autoFocus
               />
+
+              {modalDuplicateMatch && (
+                <div className="mt-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 flex items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] font-extrabold uppercase text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      Similar Hospital Found ({Math.round(modalDuplicateMatch.score * 100)}% match)
+                    </div>
+                    <div className="font-bold text-slate-900 dark:text-slate-100 truncate mt-0.5">
+                      {modalDuplicateMatch.match.name}
+                    </div>
+                    {modalDuplicateMatch.match.address && (
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        📍 {modalDuplicateMatch.match.address}
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      handleSelect(modalDuplicateMatch.match);
+                      setQuickAddModalOpen(false);
+                      toast({
+                        title: "Selected Existing Profile",
+                        description: `Using "${modalDuplicateMatch.match.name}" from directory.`,
+                      });
+                    }}
+                    className="h-7 text-xs font-bold border-teal-600 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950 shrink-0"
+                  >
+                    Use Profile
+                  </Button>
+                </div>
+              )}
             </div>
+
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>

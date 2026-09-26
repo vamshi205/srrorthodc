@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, FileCheck, CheckSquare, ChevronRight, HardDrive, Plus, Search, Eye, Upload, User, Building, FolderOpen, Folder } from 'lucide-react';
+import { Mail, FileText, FileCheck, CheckSquare, ChevronRight, HardDrive, Plus, Search, Eye, Upload, User, Building, FolderOpen, Folder, RefreshCw } from 'lucide-react';
 import { sendEmailWithResend } from '../utils/emailService';
 
 const EmailerView = ({ 
@@ -10,7 +10,9 @@ const EmailerView = ({
   onEmailSent, 
   showAlert, 
   initialForm = null, 
-  isModal = false 
+  isModal = false,
+  onRefreshFiles = null,
+  isRefreshing = false
 }) => {
   const defaultSignature = `\n\nFrom\nSri Raja Rajeshwari Ortho Plus, \nHyderabad, India\nMobile : +91 9396857455, +91 8686559393\nWebsite : srrorthoplus.com`;
 
@@ -443,9 +445,22 @@ const EmailerView = ({
         {/* Right Side: Selection */}
         <div className="w-full lg:w-[360px] xl:w-[400px] bg-white border border-slate-200 shadow-xl p-5 flex flex-col rounded-2xl min-h-[480px] shrink-0">
           <div className="flex items-center justify-between mb-4 border-b border-[var(--apple-gray-2)] pb-4">
-            <h4 className="text-[14px] font-bold text-[var(--apple-black)] flex items-center gap-2">
-              <HardDrive size={18} className="text-[var(--apple-gray-6)]" /> Attachments
-            </h4>
+            <div className="flex items-center gap-2">
+              <h4 className="text-[14px] font-bold text-[var(--apple-black)] flex items-center gap-2">
+                <HardDrive size={18} className="text-[var(--apple-gray-6)]" /> Attachments
+              </h4>
+              {onRefreshFiles && (
+                <button
+                  type="button"
+                  onClick={onRefreshFiles}
+                  disabled={isRefreshing}
+                  className="p-1 rounded-md text-[var(--apple-gray-5)] hover:text-[var(--apple-black)] hover:bg-[var(--apple-gray-2)] transition-all cursor-pointer"
+                  title="Refresh Files & Attachments"
+                >
+                  <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-teal-600' : ''} />
+                </button>
+              )}
+            </div>
             <span className="text-[10px] font-bold bg-[var(--apple-gray-2)] px-2.5 py-1 rounded-full text-[var(--apple-gray-6)]">
               {emailForm.selectedDriveFiles.length} Selected
             </span>

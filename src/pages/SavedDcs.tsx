@@ -52,7 +52,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
-import { getSavedCustomers, saveCustomer, Customer, HospitalContact } from "@/lib/customerStorage";
+import { getSavedCustomers, saveCustomer, Customer, HospitalContact, normalizeHospitalName } from "@/lib/customerStorage";
+import { HospitalSelect } from "@/components/ortho/HospitalSelect";
+import { DoctorSelect } from "@/components/ortho/DoctorSelect";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -78,7 +80,7 @@ import html2pdf from "html2pdf.js";
 import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore, type CashInvoiceData } from "@/services/cashInvoiceFirebaseService";
 import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotifications";
 import { CollectPaymentsScroller } from "@/components/ortho/CollectPaymentsScroller";
-import { PersonnelSelect } from "@/components/ortho/PersonnelSelect";
+import { PersonnelSelect, TRANSPORT_MODES, getTransportMode, renderTransportIcon } from "@/components/ortho/PersonnelSelect";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -230,6 +232,97 @@ const SavedDcs = () => {
     window.addEventListener("srrortho:customers_updated", handleCustUpdate);
     return () => window.removeEventListener("srrortho:customers_updated", handleCustUpdate);
   }, []);
+
+  // Listen for background updates to Saved DCs
+  useEffect(() => {
+    const handleDcsUpdated = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setSavedDcs(e.detail);
+      } else {
+        loadSavedDcs().then((dcs) => setSavedDcs(dcs)).catch(() => {});
+      }
+    };
+    window.addEventListener("srrortho:saved_dcs_updated", handleDcsUpdated);
+    return () => window.removeEventListener("srrortho:saved_dcs_updated", handleDcsUpdated);
+  }, []);
+
+  // Edit DC Details Modal State
+  const [editDcModalOpen, setEditDcModalOpen] = useState(false);
+  const [editingDcTarget, setEditingDcTarget] = useState<SavedDc | null>(null);
+  const [editHospitalName, setEditHospitalName] = useState("");
+  const [editDoctorName, setEditDoctorName] = useState("");
+  const [editDcNo, setEditDcNo] = useState("");
+  const [editDcDate, setEditDcDate] = useState("");
+  const [editDeliveredBy, setEditDeliveredBy] = useState("");
+  const [editReceivedBy, setEditReceivedBy] = useState("");
+  const [editMaterialType, setEditMaterialType] = useState("SS");
+  const [editRemarks, setEditRemarks] = useState("");
+  const [isSavingDcEdit, setIsSavingDcEdit] = useState(false);
+
+  const openEditDcModal = (dc: SavedDc) => {
+    setEditingDcTarget(dc);
+    setEditHospitalName(dc.hospitalName || "");
+    setEditDoctorName(dc.doctorName || "");
+    setEditDcNo(dc.dcNo || "");
+    setEditDcDate(dc.savedAt ? dc.savedAt.split("T")[0] : "");
+    setEditDeliveredBy(dc.deliveredBy || "");
+    setEditReceivedBy(dc.receivedBy || "");
+    setEditMaterialType(dc.materialType || "SS");
+    setEditRemarks(dc.remarks || "");
+    setEditDcModalOpen(true);
+  };
+
+  const handleSaveDcEdit = async () => {
+    if (!editingDcTarget) return;
+    const cleanHospital = normalizeHospitalName(editHospitalName);
+    if (!cleanHospital) {
+      toast({ title: "Hospital Required", description: "Please enter or select a hospital / customer name.", variant: "destructive" });
+      return;
+    }
+    if (!editDcNo.trim()) {
+      toast({ title: "DC Number Required", description: "DC number cannot be empty.", variant: "destructive" });
+      return;
+    }
+
+    setIsSavingDcEdit(true);
+    try {
+      const updates: Partial<SavedDc> = {
+        hospitalName: cleanHospital,
+        doctorName: editDoctorName.trim() || undefined,
+        dcNo: editDcNo.trim(),
+        deliveredBy: editDeliveredBy.trim(),
+        receivedBy: editReceivedBy.trim(),
+        materialType: editMaterialType,
+        remarks: editRemarks.trim() || undefined,
+        savedAt: editDcDate ? new Date(editDcDate).toISOString() : editingDcTarget.savedAt,
+      };
+
+      const updated = await updateSavedDc(editingDcTarget.id, updates);
+
+      // Update in state
+      setSavedDcs((prev) => prev.map((d) => (d.id === editingDcTarget.id ? updated : d)));
+
+      // Auto ensure hospital is in directory
+      saveCustomer({
+        name: cleanHospital,
+        contactPerson: editDoctorName.trim() || undefined,
+      }).catch(() => {});
+
+      toast({
+        title: "DC Updated Successfully",
+        description: `DC #${updated.dcNo} has been updated to "${cleanHospital}".`,
+      });
+      setEditDcModalOpen(false);
+    } catch (err: any) {
+      toast({
+        title: "Update Failed",
+        description: err.message || "Failed to update DC details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingDcEdit(false);
+    }
+  };
 
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
@@ -1903,43 +1996,10 @@ const SavedDcs = () => {
                                         {dc.status.charAt(0).toUpperCase() + dc.status.slice(1)}
                                       </Badge>
                                     </div>
-                                    <div className="flex items-center justify-between gap-2 mt-1">
+                                    <div className="mt-1">
                                       <div className="text-sm font-semibold text-slate-900 break-words whitespace-normal">
                                         {dc.hospitalName}
                                       </div>
-                                      {(() => {
-                                        const summary = getHospitalContactSummary(dc.hospitalName);
-                                        if (!summary.hasPhone) {
-                                          return (
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleOpenHospitalContact(dc.hospitalName, dc, true);
-                                              }}
-                                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md transition-colors shrink-0 shadow-2xs"
-                                              title={`No phone number recorded for ${dc.hospitalName}. Click to add number.`}
-                                            >
-                                              <Plus className="w-3 h-3 text-amber-600" />
-                                              <span>+ Add Number</span>
-                                            </button>
-                                          );
-                                        }
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenHospitalContact(dc.hospitalName, dc, false);
-                                            }}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-md transition-colors shrink-0 shadow-2xs"
-                                            title={`View contact numbers for ${dc.hospitalName}`}
-                                          >
-                                            <Phone className="w-3 h-3 text-teal-600" />
-                                            <span>Contacts</span>
-                                          </button>
-                                        );
-                                      })()}
                                     </div>
                                     <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
                                       <span className="flex items-center gap-1">
@@ -1959,6 +2019,31 @@ const SavedDcs = () => {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-1.5">
+                                    {/* Quick Call Icon Action */}
+                                    {(() => {
+                                      const contactSummary = getHospitalContactSummary(dc.hospitalName);
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenHospitalContact(dc.hospitalName, dc, !contactSummary.hasPhone);
+                                          }}
+                                          className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-xs border ${
+                                            contactSummary.hasPhone
+                                              ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                                              : "bg-slate-50 border-slate-200 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200"
+                                          }`}
+                                          title={
+                                            contactSummary.hasPhone
+                                              ? `Call / Contacts: ${contactSummary.primaryPhone}`
+                                              : `Add phone number for ${dc.hospitalName}`
+                                          }
+                                        >
+                                          <Phone className="w-3.5 h-3.5" />
+                                        </button>
+                                      );
+                                    })()}
                                     <button 
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -2007,7 +2092,27 @@ const SavedDcs = () => {
                                           )}
                                         </Button>
                                       </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end" className="w-48">
+                                      <DropdownMenuContent align="end" className="w-52">
+                                        <DropdownMenuItem
+                                          onClick={() => {
+                                            const cs = getHospitalContactSummary(dc.hospitalName);
+                                            handleOpenHospitalContact(dc.hospitalName, dc, !cs.hasPhone);
+                                          }}
+                                          className="gap-2 font-medium text-emerald-800 dark:text-emerald-300"
+                                        >
+                                          <Phone className="h-4 w-4 text-emerald-600" />
+                                          {getHospitalContactSummary(dc.hospitalName).hasPhone
+                                            ? `Call (${getHospitalContactSummary(dc.hospitalName).primaryPhone})`
+                                            : "Add Phone Number"}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() => openEditDcModal(dc)}
+                                          className="gap-2 font-bold text-teal-800 dark:text-teal-300 bg-teal-50/60 hover:bg-teal-100 cursor-pointer"
+                                        >
+                                          <Edit className="h-4 w-4 text-teal-600" />
+                                          Edit DC Details
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
                                         <DropdownMenuItem
                                           onClick={() => {
                                             setSelectedDcId(dc.id);
@@ -2331,51 +2436,16 @@ const SavedDcs = () => {
                                         </td>
                                       )}
                                       <td className="p-3 border-r-2 border-slate-200">
-                                        <div className="space-y-1">
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setSelectedDcId(dc.id);
-                                              setDetailsDialogOpen(true);
-                                            }}
-                                            className="text-sm font-semibold text-slate-900 hover:text-teal-800 transition-colors text-left break-words whitespace-normal block"
-                                          >
-                                            {dc.hospitalName}
-                                          </button>
-                                          {(() => {
-                                            const summary = getHospitalContactSummary(dc.hospitalName);
-                                            if (!summary.hasPhone) {
-                                              return (
-                                                <button
-                                                  type="button"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleOpenHospitalContact(dc.hospitalName, dc, true);
-                                                  }}
-                                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-300 transition-colors shadow-2xs"
-                                                  title={`No number recorded for ${dc.hospitalName}. Click to add.`}
-                                                >
-                                                  <Plus className="w-2.5 h-2.5 text-amber-600" />
-                                                  <span>+ Add Number</span>
-                                                </button>
-                                              );
-                                            }
-                                            return (
-                                              <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  handleOpenHospitalContact(dc.hospitalName, dc, false);
-                                                }}
-                                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900 hover:underline cursor-pointer bg-teal-50 hover:bg-teal-100 px-2 py-0.5 rounded border border-teal-200/80 transition-colors shadow-2xs"
-                                                title={`View contact numbers for ${dc.hospitalName}`}
-                                              >
-                                                <Phone className="w-2.5 h-2.5 text-teal-600" />
-                                                <span>View Contacts</span>
-                                              </button>
-                                            );
-                                          })()}
-                                        </div>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedDcId(dc.id);
+                                            setDetailsDialogOpen(true);
+                                          }}
+                                          className="text-sm font-semibold text-slate-900 hover:text-teal-800 transition-colors text-left break-words whitespace-normal block"
+                                        >
+                                          {dc.hospitalName}
+                                        </button>
                                       </td>
                                       <td className="p-3 text-center border-r-2 border-slate-200">
                                         <div className="flex items-center justify-center gap-1">
@@ -2393,14 +2463,32 @@ const SavedDcs = () => {
                                         </div>
                                       </td>
                                       <td className="p-3 border-r-2 border-slate-200">
-                                        <div className="text-xs font-medium truncate max-w-[110px]" title={dc.deliveredBy}>
-                                          {dc.deliveredBy || "-"}
+                                        <div className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5" title={dc.deliveredBy}>
+                                          {dc.deliveredBy ? (
+                                            <>
+                                              {getTransportMode(dc.deliveredBy) && (
+                                                renderTransportIcon(getTransportMode(dc.deliveredBy)?.iconName, "w-3 h-3 text-teal-600 shrink-0")
+                                              )}
+                                              <span className="truncate">{dc.deliveredBy}</span>
+                                            </>
+                                          ) : (
+                                            "-"
+                                          )}
                                         </div>
                                       </td>
                                       {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash") && (
                                         <td className="p-3 border-r-2 border-slate-200">
-                                          <div className="text-xs font-medium truncate max-w-[110px]" title={dc.returnedBy}>
-                                            {dc.returnedBy || "-"}
+                                          <div className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5" title={dc.returnedBy}>
+                                            {dc.returnedBy ? (
+                                              <>
+                                                {getTransportMode(dc.returnedBy) && (
+                                                  renderTransportIcon(getTransportMode(dc.returnedBy)?.iconName, "w-3 h-3 text-teal-600 shrink-0")
+                                                )}
+                                                <span className="truncate">{dc.returnedBy}</span>
+                                              </>
+                                            ) : (
+                                              "-"
+                                            )}
                                           </div>
                                         </td>
                                       )}
@@ -2414,6 +2502,31 @@ const SavedDcs = () => {
                                       </td>
                                       <td className="p-3 text-center">
                                         <div className="flex items-center justify-center gap-1.5">
+                                          {/* Quick Call Icon Action */}
+                                          {(() => {
+                                            const contactSummary = getHospitalContactSummary(dc.hospitalName);
+                                            return (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleOpenHospitalContact(dc.hospitalName, dc, !contactSummary.hasPhone);
+                                                }}
+                                                className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-xs border ${
+                                                  contactSummary.hasPhone
+                                                    ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                                                    : "bg-slate-50 border-slate-200 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200"
+                                                }`}
+                                                title={
+                                                  contactSummary.hasPhone
+                                                    ? `Call / Contacts: ${contactSummary.primaryPhone}`
+                                                    : `Add phone number for ${dc.hospitalName}`
+                                                }
+                                              >
+                                                <Phone className="w-3.5 h-3.5" />
+                                              </button>
+                                            );
+                                          })()}
                                           <button 
                                             onClick={(e) => {
                                               e.stopPropagation();
@@ -2463,7 +2576,27 @@ const SavedDcs = () => {
                                                 )}
                                               </Button>
                                             </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end" className="w-48">
+                                            <DropdownMenuContent align="end" className="w-52">
+                                              <DropdownMenuItem
+                                                onClick={() => {
+                                                  const cs = getHospitalContactSummary(dc.hospitalName);
+                                                  handleOpenHospitalContact(dc.hospitalName, dc, !cs.hasPhone);
+                                                }}
+                                                className="gap-2 font-medium text-emerald-800 dark:text-emerald-300"
+                                              >
+                                                <Phone className="h-4 w-4 text-emerald-600" />
+                                                {getHospitalContactSummary(dc.hospitalName).hasPhone
+                                                  ? `Call (${getHospitalContactSummary(dc.hospitalName).primaryPhone})`
+                                                  : "Add Phone Number"}
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() => openEditDcModal(dc)}
+                                                className="gap-2 font-bold text-teal-800 dark:text-teal-300 bg-teal-50/60 hover:bg-teal-100 cursor-pointer"
+                                              >
+                                                <Edit className="h-4 w-4 text-teal-600" />
+                                                Edit DC Details
+                                              </DropdownMenuItem>
+                                              <DropdownMenuSeparator />
                                               <DropdownMenuItem
                                                 onClick={() => {
                                                   setSelectedDcId(dc.id);
@@ -2652,6 +2785,31 @@ const SavedDcs = () => {
                     onChange={setReturnedByInput}
                     placeholder="Select or enter returned by..."
                   />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-0.5">
+                    Quick Select:
+                  </span>
+                  {TRANSPORT_MODES.map((mode) => {
+                    const isSelected =
+                      returnedByInput.trim().toLowerCase() === mode.name.toLowerCase() ||
+                      returnedByInput.trim().toLowerCase() === "courier";
+                    return (
+                      <button
+                        key={mode.name}
+                        type="button"
+                        onClick={() => setReturnedByInput(mode.name)}
+                        className={`text-xs px-2.5 py-1 rounded-md font-semibold border transition-all flex items-center gap-1.5 ${
+                          isSelected
+                            ? "bg-teal-600 text-white border-teal-600 shadow-xs"
+                            : "bg-slate-50 hover:bg-teal-50 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
+                        }`}
+                      >
+                        {renderTransportIcon(mode.iconName, isSelected ? "w-3 h-3 text-white" : "w-3 h-3 text-teal-600")}
+                        <span>{mode.name}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <div>
@@ -2887,6 +3045,14 @@ const SavedDcs = () => {
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
+                variant="outline"
+                onClick={() => selectedDc && openEditDcModal(selectedDc)}
+                className="border-teal-300 gap-1.5 h-8 text-xs bg-teal-50 text-teal-800 hover:bg-teal-100 font-bold"
+              >
+                <Edit className="h-3.5 w-3.5 text-teal-700" /> Edit DC
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => selectedDc && handlePrint(selectedDc)}
                 className="bg-teal-700 text-white hover:bg-teal-800 font-bold gap-1.5 h-8 text-xs"
               >
@@ -2930,7 +3096,20 @@ const SavedDcs = () => {
               {/* Party & Personnel Details */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
                 <div>
-                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Hospital / Party Name:</span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Hospital / Party Name:</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openEditDcModal(selectedDc)}
+                      className="h-5 px-1.5 text-[10.5px] font-bold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 border border-teal-200/80 rounded"
+                      title="Edit DC details or change hospital name"
+                    >
+                      <Edit className="w-2.5 h-2.5" />
+                      <span>Change</span>
+                    </Button>
+                  </div>
                   <span className="font-extrabold text-slate-900 text-sm">{selectedDc.hospitalName}</span>
                 </div>
                 <div>
@@ -3075,33 +3254,34 @@ const SavedDcs = () => {
                       {selectedDc.status.toUpperCase()}
                     </Badge>
                     <div className="text-sm font-semibold text-slate-900 truncate">{selectedDc.hospitalName}</div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openEditDcModal(selectedDc)}
+                      className="h-6 px-1.5 text-[11px] font-bold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 border border-teal-200/80 rounded"
+                      title="Edit DC details or change hospital name"
+                    >
+                      <Edit className="w-3 h-3 text-teal-600" />
+                      <span>Edit DC</span>
+                    </Button>
                     {(() => {
                       const summary = getHospitalContactSummary(selectedDc.hospitalName);
-                      if (!summary.hasPhone) {
-                        return (
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => handleOpenHospitalContact(selectedDc.hospitalName, selectedDc, true)}
-                            className="h-6 px-2 text-[11px] font-bold text-amber-900 border-amber-300 hover:bg-amber-100 gap-1 bg-amber-50 shadow-2xs"
-                            title="No phone number for this hospital. Click to add number."
-                          >
-                            <Plus className="w-3 h-3 text-amber-600" />
-                            <span>+ Add Number</span>
-                          </Button>
-                        );
-                      }
                       return (
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() => handleOpenHospitalContact(selectedDc.hospitalName, selectedDc, false)}
-                          className="h-6 px-2 text-[11px] font-bold text-teal-800 border-teal-300 hover:bg-teal-50 gap-1 bg-teal-50/60 shadow-2xs"
-                          title="View Hospital & Staff Contacts"
+                          onClick={() => handleOpenHospitalContact(selectedDc.hospitalName, selectedDc, !summary.hasPhone)}
+                          className={`h-6 px-2 text-[11px] font-bold gap-1 shadow-2xs ${
+                            summary.hasPhone
+                              ? "text-emerald-800 border-emerald-300 hover:bg-emerald-50 bg-emerald-50/60"
+                              : "text-slate-600 border-slate-300 hover:bg-slate-100 bg-slate-50"
+                          }`}
+                          title={summary.hasPhone ? `Contacts: ${summary.primaryPhone}` : "Add phone number"}
                         >
-                          <PhoneCall className="w-3 h-3 text-teal-600" />
-                          <span>View Contacts</span>
+                          <Phone className="w-3 h-3 text-emerald-600" />
+                          <span>{summary.hasPhone ? "Call / Contacts" : "Add Number"}</span>
                         </Button>
                       );
                     })()}
@@ -3118,6 +3298,15 @@ const SavedDcs = () => {
                 </div>
 
                 <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-teal-700 hover:text-teal-900 hover:bg-teal-50"
+                    onClick={() => openEditDcModal(selectedDc)}
+                    title="Edit DC Details"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -4075,6 +4264,152 @@ const SavedDcs = () => {
                 Close
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit DC Details Modal */}
+      <Dialog open={editDcModalOpen} onOpenChange={setEditDcModalOpen}>
+        <DialogContent className="max-w-lg p-5">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900">
+              <Edit className="h-4 w-4 text-teal-600" />
+              Edit DC Details — {editingDcTarget?.dcNo}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Update the hospital/customer name, doctor, DC number, date, or personnel for this delivery challan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-2">
+            <div>
+              <Label className="text-xs font-bold text-slate-800">
+                Hospital / Customer Name <span className="text-rose-500">*</span>
+              </Label>
+              <div className="mt-1">
+                <HospitalSelect
+                  value={editHospitalName}
+                  onChange={setEditHospitalName}
+                  placeholder="Select or enter hospital name..."
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold text-slate-800">Doctor Name</Label>
+                <div className="mt-1">
+                  <DoctorSelect
+                    value={editDoctorName}
+                    onChange={setEditDoctorName}
+                    hospitalName={editHospitalName}
+                    placeholder="Doctor Name"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold text-slate-800">
+                  DC Number <span className="text-rose-500">*</span>
+                </Label>
+                <Input
+                  value={editDcNo}
+                  onChange={(e) => setEditDcNo(e.target.value)}
+                  placeholder="DC Number"
+                  className="mt-1 h-9 text-xs font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold text-slate-800">DC Date</Label>
+                <Input
+                  type="date"
+                  value={editDcDate}
+                  onChange={(e) => setEditDcDate(e.target.value)}
+                  className="mt-1 h-9 text-xs"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold text-slate-800">Material Type</Label>
+                <select
+                  value={editMaterialType}
+                  onChange={(e) => setEditMaterialType(e.target.value)}
+                  className="mt-1 w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-600"
+                >
+                  <option value="SS">SS (Stainless Steel)</option>
+                  <option value="TITANIUM">TITANIUM</option>
+                  <option value="Mixed">Mixed</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold text-slate-800">Delivered By</Label>
+                <div className="mt-1">
+                  <PersonnelSelect
+                    role="delivery"
+                    value={editDeliveredBy}
+                    onChange={setEditDeliveredBy}
+                    placeholder="Delivery person"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold text-slate-800">Received By</Label>
+                <Input
+                  value={editReceivedBy}
+                  onChange={(e) => setEditReceivedBy(e.target.value)}
+                  placeholder="Receiver name / phone"
+                  className="mt-1 h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold text-slate-800">Remarks / Notes</Label>
+              <Textarea
+                value={editRemarks}
+                onChange={(e) => setEditRemarks(e.target.value)}
+                placeholder="Optional notes or instructions..."
+                className="mt-1 text-xs min-h-[60px]"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setEditDcModalOpen(false)}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={isSavingDcEdit}
+              onClick={handleSaveDcEdit}
+              className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs gap-1.5"
+            >
+              {isSavingDcEdit ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Saving Changes...
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  Save Changes
+                </>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
