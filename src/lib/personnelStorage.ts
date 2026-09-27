@@ -432,3 +432,56 @@ export const getAllPersonnelNames = (
 
   return Array.from(nameSet).sort((a, b) => a.localeCompare(b));
 };
+
+export interface PersonnelUsageStats {
+  name: string;
+  totalUsage: number;
+  returnCount: number;
+  deliveryCount: number;
+}
+
+/**
+ * Calculates usage frequency of personnel across DC history.
+ * Returns map of lowercase name to stats.
+ */
+export const getPersonnelUsageStats = (
+  savedDcs?: Array<{ deliveredBy?: string; returnedBy?: string }>
+): Map<string, PersonnelUsageStats> => {
+  const statsMap = new Map<string, PersonnelUsageStats>();
+
+  if (savedDcs && savedDcs.length > 0) {
+    savedDcs.forEach((dc) => {
+      // Returned By
+      const ret = normalizePersonnelName(dc.returnedBy);
+      if (ret && !isDisallowedPersonnel(ret) && !isTransportLogisticsName(ret)) {
+        const key = ret.toLowerCase();
+        const existing = statsMap.get(key) || {
+          name: ret,
+          totalUsage: 0,
+          returnCount: 0,
+          deliveryCount: 0,
+        };
+        existing.totalUsage += 1;
+        existing.returnCount += 1;
+        statsMap.set(key, existing);
+      }
+
+      // Delivered By
+      const deliv = normalizePersonnelName(dc.deliveredBy);
+      if (deliv && !isDisallowedPersonnel(deliv) && !isTransportLogisticsName(deliv)) {
+        const key = deliv.toLowerCase();
+        const existing = statsMap.get(key) || {
+          name: deliv,
+          totalUsage: 0,
+          returnCount: 0,
+          deliveryCount: 0,
+        };
+        existing.totalUsage += 1;
+        existing.deliveryCount += 1;
+        statsMap.set(key, existing);
+      }
+    });
+  }
+
+  return statsMap;
+};

@@ -64,6 +64,9 @@ export type SavedDc = {
   billedAmount?: number;
   hospitalMargin?: number;
   cashRemarks?: string;
+  paymentMethod?: "cash" | "bank_transfer";
+  collectedBy?: string;
+  paidAt?: string;
   cancelledAt?: string;
   cancelledRemarks?: string;
   history?: SavedDcHistoryEvent[];

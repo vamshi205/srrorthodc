@@ -48,6 +48,12 @@ import {
   Check,
   MessageCircle,
   ShoppingBag,
+  Lock,
+  ArrowRight,
+  Clock,
+  Banknote,
+  Landmark,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -84,6 +90,7 @@ import { printCashMemo } from "@/lib/cashInvoicePrint";
 import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotifications";
 import { CollectPaymentsScroller } from "@/components/ortho/CollectPaymentsScroller";
 import { PersonnelSelect, TRANSPORT_MODES, getTransportMode, renderTransportIcon } from "@/components/ortho/PersonnelSelect";
+import { normalizePersonnelName, isDisallowedPersonnel, isTransportLogisticsName } from "@/lib/personnelStorage";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -218,6 +225,8 @@ const SavedDcs = () => {
   const [paymentDialog, setPaymentDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
   const [paymentRemarksInput, setPaymentRemarksInput] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer">("cash");
+  const [paymentCollectedBy, setPaymentCollectedBy] = useState("");
   const [cashInvoices, setCashInvoices] = useState<CashInvoiceData[]>([]);
 
   const activeViewingCashMemo = useMemo(() => {
@@ -575,6 +584,21 @@ const SavedDcs = () => {
     return { count: completedDcs.length, totalCollected };
   }, [normalizedDcs]);
 
+  // Top frequently used return persons for Quick Select chips
+  const topReturnPersons = useMemo(() => {
+    const counts = new Map<string, number>();
+    savedDcs.forEach((d) => {
+      const ret = normalizePersonnelName(d.returnedBy);
+      if (ret && !isDisallowedPersonnel(ret) && !isTransportLogisticsName(ret)) {
+        counts.set(ret, (counts.get(ret) || 0) + 1);
+      }
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, count]) => ({ name, count }));
+  }, [savedDcs]);
+
 
 
   const handleShareWhatsApp = (dc: SavedDc) => {
@@ -601,17 +625,36 @@ const SavedDcs = () => {
     setPaymentDialog({ open: true, dc });
     setPaymentAmountInput(dc.cashAmount ? String(dc.cashAmount) : "");
     setPaymentRemarksInput("");
+    setPaymentMethod(dc.paymentMethod || "cash");
+    setPaymentCollectedBy(dc.collectedBy || dc.returnedBy || dc.deliveredBy || "");
   };
 
   const handleQuickRecordPayment = async () => {
     if (!paymentDialog.dc) return;
     const dc = paymentDialog.dc;
     const paidAmount = parseFloat(paymentAmountInput) || (dc.cashAmount || 0);
+
+    if (paymentMethod === "cash" && !paymentCollectedBy.trim()) {
+      toast({
+        title: "Collector Name Required",
+        description: "Please specify who collected the cash payment.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const hasHiked = dc.billedAmount && dc.billedAmount > paidAmount;
     const margin = hasHiked ? Math.round((dc.billedAmount! - paidAmount) * 100) / 100 : dc.hospitalMargin;
+    const methodLabel = paymentMethod === "cash" ? "Cash" : "Bank Transfer";
+    const collectedInfo = paymentMethod === "cash" && paymentCollectedBy.trim()
+      ? ` • Collected by ${paymentCollectedBy.trim()}`
+      : "";
     const defaultRemark = hasHiked
-      ? `Paid ₹${paidAmount.toLocaleString('en-IN')} (Hiked Bill ₹${dc.billedAmount!.toLocaleString('en-IN')}, Hospital Cut ₹${margin!.toLocaleString('en-IN')})`
-      : `Payment recorded: ₹${paidAmount.toLocaleString('en-IN')}`;
+      ? `Paid ₹${paidAmount.toLocaleString('en-IN')} via ${methodLabel}${collectedInfo} (Hiked Bill ₹${dc.billedAmount!.toLocaleString('en-IN')}, Hospital Cut ₹${margin!.toLocaleString('en-IN')})`
+      : `Paid ₹${paidAmount.toLocaleString('en-IN')} via ${methodLabel}${collectedInfo}`;
+    const finalRemarks = paymentRemarksInput.trim()
+      ? `${paymentRemarksInput.trim()} (${methodLabel}${collectedInfo})`
+      : defaultRemark;
 
     setIsActionLoading(true);
     try {
@@ -622,14 +665,19 @@ const SavedDcs = () => {
         updates: {
           cashAmount: paidAmount,
           hospitalMargin: margin,
-          cashRemarks: paymentRemarksInput.trim() || defaultRemark,
+          paymentMethod,
+          collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+          paidAt: new Date().toISOString(),
+          cashRemarks: finalRemarks,
         },
         meta: {
           paidAt: new Date().toISOString(),
           paidAmount,
+          paymentMethod,
+          collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
           billedAmount: dc.billedAmount,
           hospitalMargin: margin,
-          remarks: paymentRemarksInput.trim() || defaultRemark,
+          remarks: finalRemarks,
         }
       });
       // Sync payment status to Firestore Cash Invoice
@@ -648,14 +696,24 @@ const SavedDcs = () => {
           console.error("Failed to sync payment status to Firestore cash invoice:", e);
         }
       }
-      setSavedDcs(prev => prev.map(d => d.id === dc.id ? { ...d, status: "completed", cashAmount: paidAmount } : d));
+      setSavedDcs(prev => prev.map(d => d.id === dc.id ? { 
+        ...d, 
+        status: "completed", 
+        cashAmount: paidAmount,
+        paymentMethod,
+        collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+        paidAt: new Date().toISOString(),
+        cashRemarks: finalRemarks,
+      } : d));
       setSelectedDcId(null);
       setActiveQueue("completed");
       setSearchParams({ queue: "completed" });
-      toast({ title: "Payment Recorded", description: `DC ${dc.dcNo} Cash Memo marked as PAID and moved to Completed Queue.` });
+      toast({ title: "Payment Recorded", description: `DC ${dc.dcNo} Cash Memo marked as PAID via ${methodLabel} and moved to Completed Queue.` });
       setPaymentDialog({ open: false, dc: null });
       setPaymentAmountInput("");
       setPaymentRemarksInput("");
+      setPaymentCollectedBy("");
+      setPaymentMethod("cash");
     } catch (err) {
       toast({ title: "Payment Failed", description: err instanceof Error ? err.message : "Failed to record payment.", variant: "destructive" });
     } finally {
@@ -1311,6 +1369,7 @@ const SavedDcs = () => {
       toast({ title: "Cancellation reason is required" });
       return;
     }
+    const returnedBy = returnedByInput.trim();
     setIsActionLoading(true);
     try {
       await transitionSavedDc(dc.id, {
@@ -1319,6 +1378,10 @@ const SavedDcs = () => {
         updates: {
           cancelledAt: new Date().toISOString(),
           cancelledRemarks: remarks,
+          ...(returnedBy ? {
+            returnedBy,
+            returnedAt: dc.returnedAt || new Date().toISOString(),
+          } : {}),
         },
       });
       const dcs = await loadSavedDcs();
@@ -1811,31 +1874,6 @@ const SavedDcs = () => {
                     </div>
                   )}
 
-                  {activeQueue === "completed" && (
-                    <div className="mx-3 sm:mx-4 mt-1 mb-3 p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-lg">
-                          <Receipt className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-900">Completed Queue Summary</h4>
-                          <p className="text-xs text-slate-500 font-medium">Successfully processed transactions & collections</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-6">
-                        <div>
-                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Completed Transactions</span>
-                          <span className="text-lg font-black text-slate-900">{completedQueueStats.count} Processed</span>
-                        </div>
-                        <div className="h-8 w-px bg-slate-200" />
-                        <div>
-                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Total Revenue (Cash)</span>
-                          <span className="text-lg font-black text-emerald-700">₹{completedQueueStats.totalCollected.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                 <CardContent className="p-0">
                   {isLoading && savedDcs.length === 0 ? (
                     <div className="py-20 flex justify-center items-center">
@@ -2092,9 +2130,23 @@ const SavedDcs = () => {
                             return (
                               <div
                                 key={dc.id}
-                                className={`p-3 transition-all ${isSelected
-                                  ? 'bg-blue-50 border-l-4 border-l-blue-500'
-                                  : 'bg-white border-l-4 border-l-transparent'
+                                onMouseMove={(e) => {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  e.currentTarget.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+                                  e.currentTarget.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.setProperty('--mouse-x', '-999px');
+                                  e.currentTarget.style.setProperty('--mouse-y', '-999px');
+                                }}
+                                style={{
+                                  backgroundImage: isSelected
+                                    ? undefined
+                                    : 'radial-gradient(350px circle at var(--mouse-x, -999px) var(--mouse-y, -999px), rgba(13, 148, 136, 0.14), transparent 70%)',
+                                }}
+                                className={`group p-3 transition-all duration-200 cursor-pointer hover:shadow-md hover:-translate-y-0.5 ${isSelected
+                                  ? 'bg-blue-50 border-l-4 border-l-blue-500 shadow-xs'
+                                  : 'bg-white border-l-4 border-l-transparent hover:border-l-teal-500 hover:bg-slate-50/80'
                                   }`}
                                 onClick={() => setSelectedDcId(dc.id)}
                               >
@@ -2435,16 +2487,11 @@ const SavedDcs = () => {
                                   <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
                                     Delivered
                                   </th>
-                                  {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash") && (
+                                  {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash" || activeQueue === "cancelled") && (
                                     <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
                                       Returned
                                     </th>
                                   )}
-                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[100px] border-r border-border/50">
-                                    <SortableHeader sortKey="status">
-                                      Status
-                                    </SortableHeader>
-                                  </th>
                                   <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[60px]">
                                     Actions
                                   </th>
@@ -2457,19 +2504,40 @@ const SavedDcs = () => {
                                   return (
                                     <tr
                                       key={dc.id}
-                                      className={`border-b border-border/50 transition-colors cursor-pointer ${selectedDcId === dc.id
-                                        ? 'bg-teal-500/10 hover:bg-teal-500/15 border-l-4 border-l-teal-600 font-semibold'
+                                      onMouseMove={(e) => {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        e.currentTarget.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+                                        e.currentTarget.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.setProperty('--mouse-x', '-999px');
+                                        e.currentTarget.style.setProperty('--mouse-y', '-999px');
+                                      }}
+                                      style={{
+                                        backgroundImage: selectedDcId === dc.id
+                                          ? undefined
+                                          : 'radial-gradient(550px circle at var(--mouse-x, -999px) var(--mouse-y, -999px), rgba(13, 148, 136, 0.16), transparent 75%)',
+                                      }}
+                                      className={`group border-b border-border/50 transition-all duration-200 cursor-pointer relative hover:shadow-[0_2px_12px_-2px_rgba(13,148,136,0.18)] hover:z-10 ${selectedDcId === dc.id
+                                        ? 'bg-teal-500/10 hover:bg-teal-500/15 border-l-4 border-l-teal-600 font-semibold shadow-xs'
                                         : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/80'
                                         }`}
                                       onClick={() => {
                                         setSelectedDcId(dc.id);
                                       }}
                                     >
-                                      <td className="p-3 text-center border-r-2 border-slate-200">
+                                      <td className="relative p-3 text-center border-r-2 border-slate-200">
+                                        <span
+                                          className={`absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r transition-all duration-200 ${
+                                            selectedDcId === dc.id
+                                              ? "bg-teal-600 opacity-100 scale-y-100"
+                                              : "bg-teal-500 opacity-0 group-hover:opacity-100 scale-y-50 group-hover:scale-y-100"
+                                          }`}
+                                        />
                                         <input
                                           type="radio"
                                           name="selected-dc"
-                                          className="h-4 w-4 accent-blue-600 cursor-pointer"
+                                          className="h-4 w-4 accent-blue-600 cursor-pointer transition-transform duration-200 group-hover:scale-110"
                                           checked={selectedDcId === dc.id}
                                           onChange={() => setSelectedDcId(dc.id)}
                                           aria-label={`Select DC ${dc.dcNo}`}
@@ -2478,14 +2546,14 @@ const SavedDcs = () => {
                                       </td>
                                       <td className="p-3 border-r-2 border-slate-200">
                                         <div className="flex items-center gap-2">
-                                          <Calendar className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                                          <Calendar className="h-4 w-4 text-slate-400 group-hover:text-teal-600 group-hover:scale-110 transition-all duration-200 flex-shrink-0" />
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               setSelectedDcId(dc.id);
                                               setDetailsDialogOpen(true);
                                             }}
-                                            className="text-sm font-medium hover:text-blue-700 transition-colors text-left"
+                                            className="text-sm font-medium hover:text-blue-700 group-hover:text-slate-900 transition-colors text-left"
                                           >
                                             {formatDate(getDisplayDate(dc))}
                                           </button>
@@ -2498,7 +2566,7 @@ const SavedDcs = () => {
                                             setSelectedDcId(dc.id);
                                             setDetailsDialogOpen(true);
                                           }}
-                                          className="text-sm font-extrabold text-teal-800 hover:text-teal-900 hover:underline transition-colors"
+                                          className="text-sm font-extrabold text-teal-800 hover:text-teal-900 group-hover:text-teal-700 group-hover:translate-x-1 inline-flex items-center gap-1 hover:underline transition-all duration-200"
                                         >
                                           {dc.dcNo}
                                         </button>
@@ -2640,7 +2708,7 @@ const SavedDcs = () => {
                                           )}
                                         </div>
                                       </td>
-                                      {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash") && (
+                                      {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash" || activeQueue === "cancelled") && (
                                         <td className="p-3 border-r-2 border-slate-200">
                                           <div className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5" title={dc.returnedBy}>
                                             {dc.returnedBy ? (
@@ -2656,14 +2724,6 @@ const SavedDcs = () => {
                                           </div>
                                         </td>
                                       )}
-                                      <td className="p-3 border-r-2 border-slate-200">
-                                        <div className="flex justify-center">
-                                          <Badge className={`${getStatusBadgeClass(dc.status)} flex items-center gap-1 text-xs font-medium border px-1.5 py-0.5`}>
-                                            {getStatusIcon(dc.status)}
-                                            {dc.status.charAt(0).toUpperCase() + dc.status.slice(1)}
-                                          </Badge>
-                                        </div>
-                                      </td>
                                       <td className="p-3 text-center">
                                         <div className="flex items-center justify-center gap-1.5">
                                           {/* Quick Call Icon Action */}
@@ -2951,221 +3011,471 @@ const SavedDcs = () => {
           if (!open) closeActionDialog();
         }}
       >
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-[500px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
             <DialogTitle>
               {actionDialog.type === "return" && "Mark as Returned"}
-              {actionDialog.type === "invoice" && (
-                actionDialog.dc?.status === "pending"
-                  ? "Purchase: Link GoGSTBill Invoice"
-                  : (actionDialog.dc?.invoiceRef ? "Update Linked Invoice" : "Link Invoice / GoGSTBill")
-              )}
-              {actionDialog.type === "cash" && (
-                actionDialog.dc?.status === "pending" ? "Purchase: Move to Cash Queue" : "Move to Cash Queue"
-              )}
+              {actionDialog.type === "invoice" && "Link GoGSTBill Invoice"}
+              {actionDialog.type === "cash" && "Move to Cash Queue"}
               {actionDialog.type === "purchase" && "Purchase DC (Direct Sale)"}
               {actionDialog.type === "cancel" && "Cancel Case"}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              Update the selected delivery challan status and related fields.
+              Delivery Challan Action Dialog
             </DialogDescription>
           </DialogHeader>
+
+          {/* 1. Return Action Dialog */}
           {actionDialog.type === "return" && actionDialog.dc && (
-            <div className="space-y-4 pt-2">
-              <div>
-                <Label className="text-xs font-bold">Returned By *</Label>
-                <div className="mt-1">
-                  <PersonnelSelect
-                    value={returnedByInput}
-                    onChange={setReturnedByInput}
-                    placeholder="Select or enter returned by..."
+            <div>
+              {/* Top Header */}
+              <div className="bg-gradient-to-r from-teal-50 via-cyan-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0 border border-teal-200/80 shadow-xs">
+                      <RotateCcw className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-teal-100 text-teal-800 border border-teal-300">
+                          DC #{actionDialog.dc.dcNo}
+                        </span>
+                        {actionDialog.dc.date && (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            {actionDialog.dc.date}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold text-teal-800 bg-teal-100/80 border border-teal-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Return Inward
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
+                        Receive Returned Items
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
+                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
+                  {actionDialog.dc.doctorName && (
+                    <span className="flex items-center gap-1">
+                      <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      Dr. {actionDialog.dc.doctorName}
+                    </span>
+                  )}
+                  {actionDialog.dc.patientName && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      {actionDialog.dc.patientName}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Top Info Card */}
+              <div className="px-5 pt-4 pb-1">
+                <div className="rounded-xl border border-teal-200/90 dark:border-teal-900/40 bg-teal-50/60 dark:bg-teal-950/20 p-3.5 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between font-bold text-teal-900 dark:text-teal-200">
+                    <span className="flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-teal-600" />
+                      Pending Return Verification
+                    </span>
+                    <span className="text-[10px] bg-teal-200/80 dark:bg-teal-900/80 px-2 py-0.5 rounded-full font-bold">
+                      {actionDialog.dc.items?.length || 0} Items Dispatched
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 pt-1 border-t border-teal-200/60 dark:border-teal-900/40">
+                    <span>Originally Delivered By:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{actionDialog.dc.deliveredBy || "Standard Dispatch"}</span>
+                  </div>
+                  {actionDialog.dc.receivedBy && (
+                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                      <span>Hospital Received By:</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">{actionDialog.dc.receivedBy}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bottom Options & Form Inputs */}
+              <div className="px-5 py-3.5 space-y-3.5">
+                <div>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Returned By *</Label>
+                  <div className="mt-1.5">
+                    <PersonnelSelect
+                      value={returnedByInput}
+                      onChange={setReturnedByInput}
+                      placeholder="Select or enter person who returned items..."
+                      showQuickPicks={false}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-0.5">
+                      Quick Select:
+                    </span>
+                    {TRANSPORT_MODES.map((mode) => {
+                      const isSelected =
+                        returnedByInput.trim().toLowerCase() === mode.name.toLowerCase() ||
+                        returnedByInput.trim().toLowerCase() === "courier";
+                      return (
+                        <button
+                          key={mode.name}
+                          type="button"
+                          onClick={() => setReturnedByInput(mode.name)}
+                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isSelected
+                              ? "bg-teal-600 text-white border-teal-600 shadow-xs"
+                              : "bg-white hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
+                          }`}
+                        >
+                          {renderTransportIcon(mode.iconName, isSelected ? "w-3 h-3 text-white" : "w-3 h-3 text-teal-600")}
+                          <span>{mode.name}</span>
+                        </button>
+                      );
+                    })}
+
+                    {topReturnPersons.map((p) => {
+                      const isSelected = returnedByInput.trim().toLowerCase() === p.name.toLowerCase();
+                      return (
+                        <button
+                          key={p.name}
+                          type="button"
+                          onClick={() => setReturnedByInput(p.name)}
+                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isSelected
+                              ? "bg-teal-600 text-white border-teal-600 shadow-xs"
+                              : "bg-slate-50 hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
+                          }`}
+                        >
+                          <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-teal-600"}`} />
+                          <span>{p.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Return Remarks (Optional)</Label>
+                  <Textarea
+                    value={returnedRemarksInput}
+                    onChange={(e) => setReturnedRemarksInput(e.target.value)}
+                    placeholder="Condition of returned sets, missing screws, hospital remarks..."
+                    className="mt-1.5 resize-none rounded-xl border-slate-300 dark:border-slate-700 text-xs"
+                    rows={2}
                   />
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-0.5">
-                    Quick Select:
-                  </span>
-                  {TRANSPORT_MODES.map((mode) => {
-                    const isSelected =
-                      returnedByInput.trim().toLowerCase() === mode.name.toLowerCase() ||
-                      returnedByInput.trim().toLowerCase() === "courier";
-                    return (
-                      <button
-                        key={mode.name}
-                        type="button"
-                        onClick={() => setReturnedByInput(mode.name)}
-                        className={`text-xs px-2.5 py-1 rounded-md font-semibold border transition-all flex items-center gap-1.5 ${
-                          isSelected
-                            ? "bg-teal-600 text-white border-teal-600 shadow-xs"
-                            : "bg-slate-50 hover:bg-teal-50 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
-                        }`}
-                      >
-                        {renderTransportIcon(mode.iconName, isSelected ? "w-3 h-3 text-white" : "w-3 h-3 text-teal-600")}
-                        <span>{mode.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
-              <div>
-                <Label>Return Remarks</Label>
-                <Textarea
-                  value={returnedRemarksInput}
-                  onChange={(e) => setReturnedRemarksInput(e.target.value)}
-                  placeholder="Add return remarks"
-                  className="mt-1 resize-none"
-                  rows={3}
-                />
-              </div>
-              <div className="flex gap-2">
+
+              {/* Action Footer */}
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+                <Button
+                  variant="outline"
+                  onClick={closeActionDialog}
+                  disabled={isActionLoading}
+                  className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                >
+                  Cancel
+                </Button>
                 <Button
                   onClick={() => handleConfirmReturn(actionDialog.dc!)}
                   disabled={isActionLoading}
-                  className="gap-2"
+                  className="rounded-xl h-10 px-5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-sm gap-2 min-w-[140px]"
                 >
-                  {isActionLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  {isActionLoading ? 'Saving...' : 'Confirm Return'}
-                </Button>
-                <Button variant="outline" onClick={closeActionDialog} disabled={isActionLoading}>
-                  Cancel
+                  {isActionLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Confirm Return</span>
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
           )}
+
+          {/* 2. Invoice Action Dialog */}
           {actionDialog.type === "invoice" && actionDialog.dc && (
-            <div className="space-y-4 pt-2">
-              <div>
-                <Label>Invoice No *</Label>
-                <Input
-                  value={invoiceRefInput}
-                  onChange={(e) => setInvoiceRefInput(e.target.value)}
-                  placeholder="Enter invoice number (e.g. 2026/001)"
-                  className="mt-1"
-                />
-              </div>
-              <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
-                    <Link2 className="h-3.5 w-3.5 text-purple-600" />
-                    GoGSTBill Invoice Link / URL
-                  </Label>
-                  {typeof navigator !== "undefined" && navigator.clipboard && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const text = await navigator.clipboard.readText();
-                          if (text) setInvoiceUrlInput(text.trim());
-                        } catch {
-                          // ignore clipboard read failure
-                        }
-                      }}
-                      className="text-[11px] text-purple-700 hover:text-purple-900 font-semibold underline cursor-pointer"
-                    >
-                      Paste from Clipboard
-                    </button>
+            <div>
+              {/* Top Header */}
+              <div className="bg-gradient-to-r from-purple-50 via-indigo-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 border border-purple-200/80 shadow-xs">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-300">
+                          DC #{actionDialog.dc.dcNo}
+                        </span>
+                        {actionDialog.dc.date && (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            {actionDialog.dc.date}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold text-purple-800 bg-purple-100/80 border border-purple-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Tax Invoice
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
+                        {actionDialog.dc.invoiceRef ? "Update Linked Invoice" : "Link GoGSTBill Tax Invoice"}
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
+                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
+                  {actionDialog.dc.doctorName && (
+                    <span className="flex items-center gap-1">
+                      <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      Dr. {actionDialog.dc.doctorName}
+                    </span>
+                  )}
+                  {actionDialog.dc.patientName && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      {actionDialog.dc.patientName}
+                    </span>
                   )}
                 </div>
-                <div className="flex gap-1.5">
+              </div>
+
+              {/* Top Info Card */}
+              <div className="px-5 pt-4 pb-1">
+                <div className="rounded-xl border border-purple-200/90 dark:border-purple-900/40 bg-purple-50/60 dark:bg-purple-950/20 p-3.5 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between font-bold text-purple-900 dark:text-purple-200">
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-purple-600" />
+                      GoGSTBill Settlement Link
+                    </span>
+                    <span className="text-[10px] bg-purple-200/80 dark:bg-purple-900/80 px-2 py-0.5 rounded-full font-bold">
+                      Direct Integration
+                    </span>
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Attach the official tax invoice number and online sharing URL to settle this DC and lock it into the Completed queue.
+                  </p>
+                </div>
+              </div>
+
+              {/* Bottom Options & Form Inputs */}
+              <div className="px-5 py-3.5 space-y-3.5">
+                <div>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Invoice Number *</Label>
                   <Input
-                    value={invoiceUrlInput}
-                    onChange={(e) => setInvoiceUrlInput(e.target.value)}
-                    placeholder="https://bill.gogstbill.com/wa/s/..."
-                    className="text-xs bg-white"
+                    value={invoiceRefInput}
+                    onChange={(e) => setInvoiceRefInput(e.target.value)}
+                    placeholder="e.g. 2026/001 or GST-1049"
+                    className="mt-1.5 h-10 rounded-xl border-slate-300 dark:border-slate-700 font-mono text-sm"
                   />
-                  {invoiceUrlInput.trim() && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-9 px-2.5 text-xs border-purple-300 text-purple-800 bg-white hover:bg-purple-100 shrink-0 gap-1"
-                      onClick={() => window.open(invoiceUrlInput.trim(), '_blank')}
-                      title="Test open link in new tab"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5 text-purple-600" />
-                      Test
-                    </Button>
-                  )}
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  Direct link from GoGSTBill (WhatsApp/PDF share URL). Allows viewing this invoice directly in 1 click anytime.
-                </p>
+
+                <div className="rounded-xl border border-purple-200/80 bg-purple-50/50 dark:bg-purple-950/20 dark:border-purple-900/40 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-purple-950 dark:text-purple-200 flex items-center gap-1.5">
+                      <Link2 className="h-3.5 w-3.5 text-purple-600" />
+                      GoGSTBill Share URL (Optional)
+                    </Label>
+                    {typeof navigator !== "undefined" && navigator.clipboard && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const text = await navigator.clipboard.readText();
+                            if (text) setInvoiceUrlInput(text.trim());
+                          } catch {
+                            // ignore clipboard read failure
+                          }
+                        }}
+                        className="text-[11px] text-purple-700 dark:text-purple-400 hover:underline font-semibold cursor-pointer"
+                      >
+                        Paste Clipboard Link
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={invoiceUrlInput}
+                      onChange={(e) => setInvoiceUrlInput(e.target.value)}
+                      placeholder="https://bill.gogstbill.com/wa/s/..."
+                      className="text-xs h-10 bg-white dark:bg-slate-900 rounded-xl border-purple-200 dark:border-purple-800"
+                    />
+                    {invoiceUrlInput.trim() && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-10 px-3 text-xs border-purple-300 text-purple-800 bg-white hover:bg-purple-100 shrink-0 gap-1.5 rounded-xl cursor-pointer"
+                        onClick={() => window.open(invoiceUrlInput.trim(), '_blank')}
+                        title="Open link in new tab"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 text-purple-600" />
+                        Test
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Invoice Remarks (Optional)</Label>
+                  <Textarea
+                    value={invoiceRemarksInput}
+                    onChange={(e) => setInvoiceRemarksInput(e.target.value)}
+                    placeholder="Payment terms, PO reference, hospital notes..."
+                    className="mt-1.5 resize-none rounded-xl border-slate-300 dark:border-slate-700 text-xs"
+                    rows={2}
+                  />
+                </div>
               </div>
-              <div>
-                <Label>Invoice Remarks</Label>
-                <Textarea
-                  value={invoiceRemarksInput}
-                  onChange={(e) => setInvoiceRemarksInput(e.target.value)}
-                  placeholder="Add invoice remarks (optional)"
-                  className="mt-1 resize-none"
-                  rows={2}
-                />
-              </div>
-              <div className="flex gap-2">
+
+              {/* Action Footer */}
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+                <Button
+                  variant="outline"
+                  onClick={closeActionDialog}
+                  disabled={isActionLoading}
+                  className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                >
+                  Cancel
+                </Button>
                 <Button
                   onClick={() => handleConfirmInvoice(actionDialog.dc!)}
                   disabled={isActionLoading}
-                  className="gap-2"
+                  className="rounded-xl h-10 px-5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-sm gap-2 min-w-[140px]"
                 >
-                  {isActionLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  {isActionLoading ? 'Saving...' : (actionDialog.dc?.invoiceRef ? 'Update Invoice' : 'Link Invoice')}
-                </Button>
-                <Button variant="outline" onClick={closeActionDialog} disabled={isActionLoading}>
-                  Cancel
+                  {isActionLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>{actionDialog.dc.invoiceRef ? 'Update Invoice' : 'Link Invoice'}</span>
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
           )}
+
+          {/* 3. Cash Action Dialog */}
           {actionDialog.type === "cash" && actionDialog.dc && (
-            <div className="space-y-4 pt-2">
-              <p className="text-sm text-muted-foreground">
-                This will move the DC to the Cash queue.
-              </p>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
-                      <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
-                      Our Actual Cash to Collect *
-                    </Label>
-                    <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                      Amount we get
+            <div>
+              {/* Top Header */}
+              <div className="bg-gradient-to-r from-blue-50 via-sky-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200/80 shadow-xs">
+                      <Receipt className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-300">
+                          DC #{actionDialog.dc.dcNo}
+                        </span>
+                        {actionDialog.dc.date && (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            {actionDialog.dc.date}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold text-blue-800 bg-blue-100/80 border border-blue-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Cash Queue
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
+                        Move to Cash Queue / Bill Settlement
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
+                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
+                  {actionDialog.dc.doctorName && (
+                    <span className="flex items-center gap-1">
+                      <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      Dr. {actionDialog.dc.doctorName}
+                    </span>
+                  )}
+                  {actionDialog.dc.patientName && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      {actionDialog.dc.patientName}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Top Info Card */}
+              <div className="px-5 pt-4 pb-1">
+                <div className="rounded-xl border border-blue-200/90 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 p-3.5 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between font-bold text-blue-900 dark:text-blue-200">
+                    <span className="flex items-center gap-1.5">
+                      <Receipt className="w-3.5 h-3.5 text-blue-600" />
+                      Cash Memo Preparation
+                    </span>
+                    <span className="text-[10px] bg-blue-200/80 dark:bg-blue-900/80 px-2 py-0.5 rounded-full font-bold">
+                      Awaiting Payment
                     </span>
                   </div>
-                  <div className="mt-1 flex items-center rounded-md border border-slate-300 bg-white focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20">
-                    <span className="px-3 text-sm font-bold text-slate-600">₹</span>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Set the actual cash to collect. You can also generate an instant prefilled Cash Memo with 1 click.
+                  </p>
+                </div>
+              </div>
+
+              {/* Bottom Options & Form Inputs */}
+              <div className="px-5 py-3.5 space-y-3.5">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <Label className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200 text-xs">
+                      <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
+                      Our Actual Net Cash to Collect *
+                    </Label>
+                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Net Expected
+                    </span>
+                  </div>
+                  <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 h-10 px-3">
+                    <span className="text-sm font-bold text-slate-500 mr-2">₹</span>
                     <Input
                       type="number"
                       value={cashAmountInput}
                       onChange={(e) => setCashAmountInput(e.target.value)}
                       placeholder="e.g. 32000"
-                      className="h-9 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 font-semibold text-slate-900"
+                      className="h-full border-0 bg-transparent p-0 focus-visible:ring-0 focus-visible:ring-offset-0 font-bold text-slate-900 dark:text-slate-100 text-sm"
                       min="0"
                       step="0.01"
                     />
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">What our recovery staff will actually collect from the hospital.</p>
                 </div>
 
                 {/* Hiked Bill / Hospital Printed Amount (Optional) */}
-                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-2.5 space-y-1.5">
+                <div className="rounded-xl border border-amber-200/90 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-900/40 p-3.5 space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-1.5 font-semibold text-amber-900 text-xs">
+                    <Label className="flex items-center gap-1.5 font-bold text-amber-950 dark:text-amber-200 text-xs">
                       <Receipt className="h-3.5 w-3.5 text-amber-600" />
-                      Hospital Hiked Bill / Printed Total (Optional)
+                      Hospital Printed / Hiked Total (Optional)
                     </Label>
-                    <span className="text-[10px] text-amber-700 bg-amber-100/70 px-1.5 py-0.5 rounded font-medium">
-                      Hospital Paper
+                    <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full font-bold">
+                      Paper Bill
                     </span>
                   </div>
-                  <div className="flex items-center rounded-md border border-amber-300/80 bg-white focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20">
-                    <span className="px-3 text-sm font-bold text-amber-700">₹</span>
+                  <div className="flex items-center rounded-xl border border-amber-300/80 bg-white dark:bg-slate-900 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 h-10 px-3">
+                    <span className="text-sm font-bold text-amber-700 mr-2">₹</span>
                     <Input
                       type="number"
                       value={billedAmountInput}
                       onChange={(e) => setBilledAmountInput(e.target.value)}
-                      placeholder="e.g. 50000 (if bill was hiked)"
-                      className="h-9 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-xs font-medium"
+                      placeholder="e.g. 50000 (if printed with markup for hospital)"
+                      className="h-full border-0 bg-transparent p-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-xs font-semibold"
                       min="0"
                       step="0.01"
                     />
@@ -3173,184 +3483,381 @@ const SavedDcs = () => {
 
                   {/* Live Calculation of Margin */}
                   {parseFloat(billedAmountInput) > (parseFloat(cashAmountInput) || 0) && (
-                    <div className="mt-1.5 pt-1.5 border-t border-amber-200 text-xs flex items-center justify-between text-amber-900 font-medium">
-                      <span>Hospital Cut / Markup:</span>
+                    <div className="mt-1 pt-2 border-t border-amber-200/80 text-xs flex items-center justify-between text-amber-950 dark:text-amber-200 font-semibold">
+                      <span>Hospital Markup / Cut:</span>
                       <span className="font-bold text-amber-800">
                         ₹{(parseFloat(billedAmountInput) - (parseFloat(cashAmountInput) || 0)).toLocaleString('en-IN')}
                       </span>
                     </div>
                   )}
                 </div>
+
+                <div>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Cash Remarks (Optional)</Label>
+                  <Textarea
+                    value={cashRemarksInput}
+                    onChange={(e) => setCashRemarksInput(e.target.value)}
+                    placeholder="Payment terms, collector details, hospital instructions..."
+                    className="mt-1.5 resize-none rounded-xl border-slate-300 dark:border-slate-700 text-xs"
+                    rows={2}
+                  />
+                </div>
               </div>
-              <div>
-                <Label>Cash Remarks</Label>
-                <Textarea
-                  value={cashRemarksInput}
-                  onChange={(e) => setCashRemarksInput(e.target.value)}
-                  placeholder="Add cash remarks"
-                  className="mt-1 resize-none"
-                  rows={3}
-                />
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2">
+
+              {/* Action Footer */}
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2.5">
                 <Button
                   onClick={() => handleCreateCashMemoForDc(actionDialog.dc!)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 flex-1"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 w-full sm:w-auto h-10 px-4 text-xs rounded-xl shadow-sm cursor-pointer"
                 >
-                  <Receipt className="w-4 h-4" />
+                  <Receipt className="w-3.5 h-3.5" />
                   Create Cash Memo (Prefilled)
                 </Button>
-                <Button
-                  onClick={() => handleConfirmCash(actionDialog.dc!)}
-                  disabled={isActionLoading}
-                  variant="outline"
-                  className="gap-2"
-                >
-                  {isActionLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  {isActionLoading ? 'Saving...' : 'Move to Cash Queue'}
-                </Button>
-                <Button variant="ghost" onClick={closeActionDialog} disabled={isActionLoading}>
-                  Cancel
-                </Button>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={closeActionDialog}
+                    disabled={isActionLoading}
+                    className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => handleConfirmCash(actionDialog.dc!)}
+                    disabled={isActionLoading}
+                    variant="secondary"
+                    className="rounded-xl h-10 px-4 text-xs font-bold gap-1.5 border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    {isActionLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    {isActionLoading ? 'Saving...' : 'Move to Cash Queue'}
+                  </Button>
+                </div>
               </div>
             </div>
           )}
+
+          {/* 4. Cancel Action Dialog */}
           {actionDialog.type === "cancel" && actionDialog.dc && (
-            <div className="space-y-4 pt-2">
-              <div className="p-3 bg-orange-50 border border-orange-200 rounded-md">
-                <p className="text-sm text-orange-800">
-                  <strong>Warning:</strong> You are about to cancel this case. Add details why case is cancelled
-                </p>
+            <div>
+              {/* Top Header */}
+              <div className="bg-gradient-to-r from-rose-50 via-orange-50/50 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200/80 shadow-xs">
+                      <AlertCircle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300">
+                          DC #{actionDialog.dc.dcNo}
+                        </span>
+                        {actionDialog.dc.date && (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            {actionDialog.dc.date}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold text-rose-800 bg-rose-100/80 border border-rose-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Cancellation
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
+                        Cancel Delivery Challan
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
+                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
+                  {actionDialog.dc.doctorName && (
+                    <span className="flex items-center gap-1">
+                      <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      Dr. {actionDialog.dc.doctorName}
+                    </span>
+                  )}
+                  {actionDialog.dc.patientName && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      {actionDialog.dc.patientName}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div>
-                <Label>Cancellation Reason *</Label>
-                <Textarea
-                  value={cancelledRemarksInput}
-                  onChange={(e) => setCancelledRemarksInput(e.target.value)}
-                  placeholder="Why is this case being cancelled?"
-                  className="mt-1 resize-none"
-                  rows={3}
-                />
+
+              {/* Top Info Card */}
+              <div className="px-5 pt-4 pb-1">
+                <div className="rounded-xl border border-rose-200/90 dark:border-rose-900/40 bg-rose-50/70 dark:bg-rose-950/20 p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between font-bold text-rose-900 dark:text-rose-200">
+                    <span className="flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                      Case Cancellation Notice
+                    </span>
+                    <span className="text-[10px] bg-rose-200/80 dark:bg-rose-900/80 px-2 py-0.5 rounded-full font-bold">
+                      Direct to Cancelled
+                    </span>
+                  </div>
+                  <p className="text-rose-950/80 dark:text-rose-300 leading-relaxed">
+                    This DC will be moved directly to the <strong>Cancelled queue</strong>. Please record who returned the physical items and the reason.
+                  </p>
+                  {actionDialog.dc.deliveredBy && (
+                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 pt-1.5 border-t border-rose-200/70 dark:border-rose-900/40">
+                      <span>Originally Delivered By:</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">{actionDialog.dc.deliveredBy}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="flex gap-2">
+
+              {/* Bottom Options & Form Inputs */}
+              <div className="px-5 py-3.5 space-y-3.5">
+                <div>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Returned By (Person / Transport) *</Label>
+                  <div className="mt-1.5">
+                    <PersonnelSelect
+                      value={returnedByInput}
+                      onChange={setReturnedByInput}
+                      placeholder="Select or enter person who returned items..."
+                      showQuickPicks={false}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-0.5">
+                      Quick Select:
+                    </span>
+                    {TRANSPORT_MODES.map((mode) => {
+                      const isSelected =
+                        returnedByInput.trim().toLowerCase() === mode.name.toLowerCase() ||
+                        returnedByInput.trim().toLowerCase() === "courier";
+                      return (
+                        <button
+                          key={mode.name}
+                          type="button"
+                          onClick={() => setReturnedByInput(mode.name)}
+                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isSelected
+                              ? "bg-teal-600 text-white border-teal-600 shadow-xs"
+                              : "bg-white hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
+                          }`}
+                        >
+                          {renderTransportIcon(mode.iconName, isSelected ? "w-3 h-3 text-white" : "w-3 h-3 text-teal-600")}
+                          <span>{mode.name}</span>
+                        </button>
+                      );
+                    })}
+
+                    {topReturnPersons.map((p) => {
+                      const isSelected = returnedByInput.trim().toLowerCase() === p.name.toLowerCase();
+                      return (
+                        <button
+                          key={p.name}
+                          type="button"
+                          onClick={() => setReturnedByInput(p.name)}
+                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isSelected
+                              ? "bg-teal-600 text-white border-teal-600 shadow-xs"
+                              : "bg-slate-50 hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
+                          }`}
+                        >
+                          <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-teal-600"}`} />
+                          <span>{p.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Cancellation Reason *</Label>
+                  <Textarea
+                    value={cancelledRemarksInput}
+                    onChange={(e) => setCancelledRemarksInput(e.target.value)}
+                    placeholder="Why was this case cancelled (e.g., patient unfit, surgery postponed, implant change)?"
+                    className="mt-1.5 resize-none rounded-xl border-slate-300 dark:border-slate-700 text-xs"
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              {/* Action Footer */}
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+                <Button
+                  variant="outline"
+                  onClick={closeActionDialog}
+                  disabled={isActionLoading}
+                  className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                >
+                  Cancel
+                </Button>
                 <Button
                   onClick={() => handleConfirmCancel(actionDialog.dc!)}
                   disabled={isActionLoading}
-                  className="gap-2 bg-orange-600 hover:bg-orange-700 text-white"
+                  className="rounded-xl h-10 px-5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-sm gap-2 min-w-[140px]"
                 >
-                  {isActionLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  {isActionLoading ? 'Submitting...' : 'Submit'}
-                </Button>
-                <Button variant="outline" onClick={closeActionDialog} disabled={isActionLoading}>
-                  Cancel
+                  {isActionLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-4 h-4" />
+                      <span>Confirm Cancellation</span>
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
           )}
+
+          {/* 5. Purchase Action Dialog */}
           {actionDialog.type === "purchase" && actionDialog.dc && (
-            <div className="space-y-4 pt-2">
-              <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 dark:bg-amber-950/20 dark:border-amber-900/40 p-3.5 flex items-start gap-3">
-                <div className="p-2 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 shrink-0">
-                  <ShoppingBag className="h-5 w-5" />
-                </div>
-                <div className="text-xs text-amber-950 dark:text-amber-200 min-w-0">
-                  <div className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                    <span>DC #{actionDialog.dc.dcNo}</span>
-                    <Badge variant="outline" className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300">
-                      Direct Purchase
-                    </Badge>
-                  </div>
-                  <div className="text-slate-600 dark:text-slate-300 font-medium mt-0.5 truncate">
-                    {actionDialog.dc.hospitalName}
-                  </div>
-                  <div className="text-amber-800 dark:text-amber-300/90 mt-1">
-                    Direct purchase workflow: material is sold directly. <strong>No material return step required.</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Select Billing Option:
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Option 1: Cash Invoice */}
-                <div
-                  onClick={() => {
-                    handleCreateCashMemoForDc(actionDialog.dc!);
-                  }}
-                  className="group relative flex flex-col justify-between p-4 rounded-xl border-2 border-blue-200 dark:border-blue-900/60 hover:border-blue-500 dark:hover:border-blue-500 bg-gradient-to-br from-blue-50/70 to-white dark:from-blue-950/30 dark:to-slate-900 hover:shadow-md transition-all duration-200 cursor-pointer text-left"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="p-2.5 rounded-lg bg-blue-600 text-white shadow-xs group-hover:scale-105 transition-transform">
-                        <Receipt className="h-5 w-5" />
-                      </div>
-                      <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 hover:bg-blue-100 border-blue-300 text-[11px] font-bold">
-                        Cash Memo
-                      </Badge>
+            <div>
+              {/* Top Header */}
+              <div className="bg-gradient-to-r from-amber-50 via-yellow-50/50 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200/80 shadow-xs">
+                      <ShoppingBag className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                        Cash Invoice
-                      </h4>
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                        Open Cash Invoice editor with all items & hospital prefilled from this DC.
-                      </p>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300">
+                          DC #{actionDialog.dc.dcNo}
+                        </span>
+                        {actionDialog.dc.date && (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            {actionDialog.dc.date}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Direct Sale
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
+                        Direct Purchase (Immediate Sale)
+                      </h3>
                     </div>
-                  </div>
-
-                  <div className="mt-4 pt-2.5 border-t border-blue-100 dark:border-blue-900/40 flex items-center justify-between text-xs font-bold text-blue-600 dark:text-blue-400">
-                    <span>Create Cash Invoice</span>
-                    <span className="text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
                   </div>
                 </div>
+                <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
+                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
+                  {actionDialog.dc.doctorName && (
+                    <span className="flex items-center gap-1">
+                      <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      Dr. {actionDialog.dc.doctorName}
+                    </span>
+                  )}
+                  {actionDialog.dc.patientName && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      {actionDialog.dc.patientName}
+                    </span>
+                  )}
+                </div>
+              </div>
 
-                {/* Option 2: Go GST Bill */}
-                <div
-                  onClick={() => {
-                    openActionDialog("invoice", actionDialog.dc!);
-                  }}
-                  className="group relative flex flex-col justify-between p-4 rounded-xl border-2 border-purple-200 dark:border-purple-900/60 hover:border-purple-500 dark:hover:border-purple-500 bg-gradient-to-br from-purple-50/70 to-white dark:from-purple-950/30 dark:to-slate-900 hover:shadow-md transition-all duration-200 cursor-pointer text-left"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="p-2.5 rounded-lg bg-purple-600 text-white shadow-xs group-hover:scale-105 transition-transform">
-                        <FileText className="h-5 w-5" />
+              {/* Top Info Card */}
+              <div className="px-5 pt-4 pb-1">
+                <div className="rounded-xl border border-amber-200/90 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-950/20 p-3.5 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between font-bold text-amber-900 dark:text-amber-200">
+                    <span className="flex items-center gap-1.5">
+                      <ShoppingBag className="w-3.5 h-3.5 text-amber-600" />
+                      Direct Purchase Mode
+                    </span>
+                    <span className="text-[10px] bg-amber-200/80 dark:bg-amber-900/80 px-2 py-0.5 rounded-full font-bold">
+                      No Material Return
+                    </span>
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                    All items are consumed/sold directly. Select how you would like to bill this challan:
+                  </p>
+                </div>
+              </div>
+
+              {/* Bottom Options: Billing Method Choice Cards */}
+              <div className="px-5 py-3.5 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Option 1: Cash Invoice */}
+                  <div
+                    onClick={() => {
+                      handleCreateCashMemoForDc(actionDialog.dc!);
+                    }}
+                    className="group relative flex flex-col justify-between p-4 rounded-xl border-2 border-blue-200 dark:border-blue-900/60 hover:border-blue-500 dark:hover:border-blue-500 bg-gradient-to-br from-blue-50/70 to-white dark:from-blue-950/30 dark:to-slate-900 hover:shadow-md transition-all duration-200 cursor-pointer text-left"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="p-2.5 rounded-lg bg-blue-600 text-white shadow-xs group-hover:scale-105 transition-transform">
+                          <Receipt className="h-5 w-5" />
+                        </div>
+                        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 hover:bg-blue-100 border-blue-300 text-[11px] font-bold">
+                          Cash Memo
+                        </Badge>
                       </div>
-                      <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 hover:bg-purple-100 border-purple-300 text-[11px] font-bold">
-                        GoGSTBill
-                      </Badge>
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                          Cash Invoice
+                        </h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                          Open Cash Invoice editor with all items & hospital prefilled from this DC.
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-base text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
-                        Go GST Bill
-                      </h4>
-                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                        Link GoGSTBill tax invoice number and URL directly to complete this purchase.
-                      </p>
+
+                    <div className="mt-4 pt-2.5 border-t border-blue-100 dark:border-blue-900/40 flex items-center justify-between text-xs font-bold text-blue-600 dark:text-blue-400">
+                      <span>Create Cash Invoice</span>
+                      <span className="text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-2.5 border-t border-purple-100 dark:border-purple-900/40 flex items-center justify-between text-xs font-bold text-purple-600 dark:text-purple-400">
-                    <span>Link Go GST Bill</span>
-                    <span className="text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
+                  {/* Option 2: Go GST Bill */}
+                  <div
+                    onClick={() => {
+                      openActionDialog("invoice", actionDialog.dc!);
+                    }}
+                    className="group relative flex flex-col justify-between p-4 rounded-xl border-2 border-purple-200 dark:border-purple-900/60 hover:border-purple-500 dark:hover:border-purple-500 bg-gradient-to-br from-purple-50/70 to-white dark:from-purple-950/30 dark:to-slate-900 hover:shadow-md transition-all duration-200 cursor-pointer text-left"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="p-2.5 rounded-lg bg-purple-600 text-white shadow-xs group-hover:scale-105 transition-transform">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 hover:bg-purple-100 border-purple-300 text-[11px] font-bold">
+                          GoGSTBill
+                        </Badge>
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                          Go GST Bill
+                        </h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                          Link GoGSTBill tax invoice number and URL directly to complete this purchase.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-2.5 border-t border-purple-100 dark:border-purple-900/40 flex items-center justify-between text-xs font-bold text-purple-600 dark:text-purple-400">
+                      <span>Link Go GST Bill</span>
+                      <span className="text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
+              {/* Action Footer */}
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
                   onClick={() => openActionDialog("cash", actionDialog.dc!)}
-                  className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 gap-1 h-8 px-2"
+                  className="text-xs text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 gap-1.5 h-10 px-3 rounded-xl cursor-pointer"
                 >
                   <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
-                  Quick Cash Entry without Invoice Editor
+                  Quick Cash Entry
                 </Button>
-                <Button variant="outline" size="sm" onClick={closeActionDialog} className="h-8 text-xs">
+                <Button
+                  variant="outline"
+                  onClick={closeActionDialog}
+                  className="h-10 px-4 text-xs font-semibold rounded-xl border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                >
                   Cancel
                 </Button>
               </div>
@@ -3421,14 +3928,16 @@ const SavedDcs = () => {
               Delivery Challan Document — {selectedDc?.dcNo}
             </DialogTitle>
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => selectedDc && openEditDcModal(selectedDc)}
-                className="border-teal-300 gap-1.5 h-8 text-xs bg-teal-50 text-teal-800 hover:bg-teal-100 font-bold"
-              >
-                <Edit className="h-3.5 w-3.5 text-teal-700" /> Edit DC
-              </Button>
+              {selectedDc && selectedDc.status !== "completed" && selectedDc.status !== "cash" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => selectedDc && openEditDcModal(selectedDc)}
+                  className="border-teal-300 gap-1.5 h-8 text-xs bg-teal-50 text-teal-800 hover:bg-teal-100 font-bold"
+                >
+                  <Edit className="h-3.5 w-3.5 text-teal-700" /> Edit DC
+                </Button>
+              )}
               <Button
                 size="sm"
                 onClick={() => selectedDc && handlePrint(selectedDc)}
@@ -3476,17 +3985,19 @@ const SavedDcs = () => {
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Hospital / Party Name:</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => openEditDcModal(selectedDc)}
-                      className="h-5 px-1.5 text-[10.5px] font-bold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 border border-teal-200/80 rounded"
-                      title="Edit DC details or change hospital name"
-                    >
-                      <Edit className="w-2.5 h-2.5" />
-                      <span>Change</span>
-                    </Button>
+                    {selectedDc.status !== "completed" && selectedDc.status !== "cash" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEditDcModal(selectedDc)}
+                        className="h-5 px-1.5 text-[10.5px] font-bold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 border border-teal-200/80 rounded"
+                        title="Edit DC details or change hospital name"
+                      >
+                        <Edit className="w-2.5 h-2.5" />
+                        <span>Change</span>
+                      </Button>
+                    )}
                   </div>
                   <span className="font-extrabold text-slate-900 text-sm">{selectedDc.hospitalName}</span>
                 </div>
@@ -3515,9 +4026,9 @@ const SavedDcs = () => {
                 <div className="border border-slate-300 rounded-xl overflow-hidden shadow-xs">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-900 text-white font-bold">
-                        <th className="p-2.5 border-r border-slate-700 w-10 text-center">S.No</th>
-                        <th className="p-2.5 border-r border-slate-700">Item Description</th>
+                      <tr className="bg-teal-800 text-white font-bold">
+                        <th className="p-2.5 border-r border-teal-700 w-10 text-center">S.No</th>
+                        <th className="p-2.5 border-r border-teal-700">Item Description</th>
                         <th className="p-2.5 text-center w-20">Qty</th>
                       </tr>
                     </thead>
@@ -3613,6 +4124,12 @@ const SavedDcs = () => {
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-blue-700" />
               {selectedDc ? `DC ${selectedDc.dcNo}` : "DC Details"}
+              {selectedDc && (
+                <Badge className={`${getStatusBadgeClass(selectedDc.status)} flex items-center gap-1 text-xs font-medium border px-2 py-0.5`}>
+                  {getStatusIcon(selectedDc.status)}
+                  {selectedDc.status.toUpperCase()}
+                </Badge>
+              )}
             </DialogTitle>
             <DialogDescription className="sr-only">
               View delivery challan details, items, instruments, notes, and history.
@@ -3627,22 +4144,7 @@ const SavedDcs = () => {
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className={`${getStatusBadgeClass(selectedDc.status)} flex items-center gap-1.5 text-xs font-medium border px-2 py-1`}>
-                      {getStatusIcon(selectedDc.status)}
-                      {selectedDc.status.toUpperCase()}
-                    </Badge>
                     <div className="text-sm font-semibold text-slate-900 truncate">{selectedDc.hospitalName}</div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => openEditDcModal(selectedDc)}
-                      className="h-6 px-1.5 text-[11px] font-bold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 border border-teal-200/80 rounded"
-                      title="Edit DC details or change hospital name"
-                    >
-                      <Edit className="w-3 h-3 text-teal-600" />
-                      <span>Edit DC</span>
-                    </Button>
                     {(() => {
                       const summary = getHospitalContactSummary(selectedDc.hospitalName);
                       return (
@@ -3668,23 +4170,25 @@ const SavedDcs = () => {
                     Date: <span className="font-medium text-slate-800">{formatDate(getDisplayDate(selectedDc))}</span>
                     <span className="mx-2 text-slate-300">|</span>
                     Items: <span className="font-medium text-slate-800">{getTotalQty(selectedDc)}</span>
-                    <span className="mx-2 text-slate-300">|</span>
-                    Received: <span className="font-medium text-slate-800">{selectedDc.receivedBy || "-"}</span>
-                    <span className="mx-2 text-slate-300">|</span>
-                    Delivered: <span className="font-medium text-slate-800">{selectedDc.deliveredBy || "-"}</span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-teal-700 hover:text-teal-900 hover:bg-teal-50"
-                    onClick={() => openEditDcModal(selectedDc)}
-                    title="Edit DC Details"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Button>
+                  {selectedDc.status !== "completed" && selectedDc.status !== "cash" ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-teal-700 hover:text-teal-900 hover:bg-teal-50"
+                      onClick={() => openEditDcModal(selectedDc)}
+                      title="Edit DC Details"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <div className="h-8 w-8 flex items-center justify-center text-slate-300" title="Completed — locked">
+                      <Lock className="h-4 w-4" />
+                    </div>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -3735,278 +4239,569 @@ const SavedDcs = () => {
                 <TabsContent value="overview" className="mt-3 space-y-3">
                   {/* Tracking + actions (courier-tracking style) */}
                   <div className="rounded-md border border-slate-200 bg-white p-2.5 sm:p-3">
-                    <div className="space-y-3">
+                    <div className="space-y-4">
+                      {/* Animated Workflow Progress */}
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-slate-700">Tracking</div>
-                        <div className="mt-2 text-xs text-slate-600">
-                          {(() => {
-                            const step1Done = true;
-                            const step2Done = selectedDc.status !== "pending" && selectedDc.status !== "cancelled";
-                            const step3Done = selectedDc.status === "completed" || selectedDc.status === "cash";
-                            const step3Label = selectedDc.status === "cash" ? "Cash" : "Done";
-                            const isCancelled = selectedDc.status === "cancelled";
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Workflow</span>
+                          <span className="text-[11px] font-medium text-slate-400">Step-by-step lifecycle</span>
+                        </div>
+                        {(() => {
+                          const isCancelled = selectedDc.status === "cancelled";
+                          const isPurchase = selectedDc.isPurchase;
+                          const isReturned = selectedDc.status === "returned" || selectedDc.status === "completed" || selectedDc.status === "cash";
+                          const isCompleted = selectedDc.status === "completed";
 
-                            const dot = (done: boolean, active: boolean, cancelled?: boolean) =>
-                              cancelled
-                                ? "bg-slate-500 border-slate-500"
-                                : done
-                                  ? "bg-blue-600 border-blue-600"
-                                  : active
-                                    ? "bg-white border-blue-600"
-                                    : "bg-white border-slate-300";
-                            const line = (done: boolean) => (done ? "bg-blue-600" : "bg-slate-200");
-
-                            return (
-                              <div className="flex items-center gap-1.5 sm:gap-2 w-full">
-                                <div className="flex items-center gap-1 sm:gap-2">
-                                  <span className={`h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full border flex-shrink-0 ${dot(step1Done, selectedDc.status === "pending")}`} />
-                                  <span className="font-medium text-slate-800 text-[10px] sm:text-xs">Created</span>
-                                </div>
-                                <div className={`h-0.5 flex-1 rounded ${line(step2Done)}`} />
-                                {isCancelled ? (
-                                  <div className="flex items-center gap-1 sm:gap-2">
-                                    <span className={`h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full border flex-shrink-0 ${dot(true, true, true)}`} />
-                                    <span className="font-bold text-slate-800 text-[10px] sm:text-xs">CANCELLED</span>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center gap-1 sm:gap-2">
-                                      <span className={`h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full border flex-shrink-0 ${dot(step2Done, selectedDc.status === "returned")}`} />
-                                      <span className="font-medium text-slate-800 text-[10px] sm:text-xs">Return</span>
-                                    </div>
-                                    <div className={`h-0.5 flex-1 rounded ${line(step3Done)}`} />
-                                    <div className="flex items-center gap-1 sm:gap-2">
-                                      <span className={`h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full border flex-shrink-0 ${dot(step3Done, selectedDc.status === "completed" || selectedDc.status === "cash")}`} />
-                                      <span className="font-medium text-slate-800 text-[10px] sm:text-xs">{step3Label}</span>
-                                    </div>
-                                  </>
+                          const Step = ({
+                            num, label, sublabel, state
+                          }: {
+                            num: number; label: string; sublabel: string; state: "done" | "active" | "pending" | "cancelled"
+                          }) => (
+                            <div className="flex flex-col items-center gap-1.5 flex-1 min-w-0 z-10">
+                              <div className="relative flex items-center justify-center">
+                                {state === "active" && (
+                                  <div className="absolute -inset-1 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
                                 )}
+                                <div className={`
+                                  relative h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold border-2 shrink-0 transition-colors
+                                  ${state === "done" ? "bg-emerald-600 border-emerald-600 text-white shadow-xs" :
+                                    state === "active" ? "bg-blue-50 border-blue-200 text-blue-700 font-extrabold shadow-xs" :
+                                    state === "cancelled" ? "bg-red-100 border-red-500 text-red-600" :
+                                    "bg-slate-50 border-slate-200 text-slate-400"}
+                                `}>
+                                  {state === "done" ? <Check className="h-4 w-4 stroke-[2.5]" /> : state === "cancelled" ? "✕" : num}
+                                </div>
                               </div>
-                            );
-                          })()}
-                        </div>
-                        <div className="mt-2 text-[10px] sm:text-xs text-slate-600">
-                          <span className="block sm:inline">Created: <span className="font-medium text-slate-800">{formatDateTime(selectedDc.savedAt)}</span></span>
-                          <span className="hidden sm:inline mx-2 text-slate-300">|</span>
-                          <span className="block sm:inline mt-0.5 sm:mt-0">
-                            {selectedDc.isPurchase ? (
-                              <span className="font-semibold text-amber-700 dark:text-amber-400">Direct Purchase (No Return)</span>
-                            ) : (
-                              <>Returned: <span className="font-medium text-slate-800">{selectedDc.returnedAt ? formatDateTime(selectedDc.returnedAt) : "-"}</span></>
-                            )}
-                          </span>
-                        </div>
+                              <div className={`text-[11px] font-semibold text-center leading-tight
+                                ${state === "done" ? "text-emerald-700" :
+                                  state === "active" ? "text-blue-700 font-bold" :
+                                  state === "cancelled" ? "text-red-600" :
+                                  "text-slate-400"}
+                              `}>{label}</div>
+                              <div className="text-[10px] text-slate-400 text-center leading-tight truncate w-full px-1">{sublabel}</div>
+                            </div>
+                          );
+
+                          const Line = ({ done }: { done: boolean; active?: boolean }) => (
+                            <div className={`h-0.5 flex-1 rounded-full -mt-6 shrink-0 transition-colors duration-300 ${
+                              done ? "bg-emerald-500" : "bg-slate-200"
+                            }`} />
+                          );
+
+                          if (isCancelled) return (
+                            <div className="flex items-center gap-1">
+                              <Step num={1} label="Created" sublabel={formatDate(getDisplayDate(selectedDc))} state="done" />
+                              <Line done={true} />
+                              <Step num={2} label="Cancelled" sublabel={selectedDc.cancelledAt ? formatDate(selectedDc.cancelledAt) : "–"} state="cancelled" />
+                            </div>
+                          );
+
+                          if (isPurchase) return (
+                            <div className="flex items-center gap-1">
+                              <Step num={1} label="Created" sublabel={formatDate(getDisplayDate(selectedDc))} state="done" />
+                              <Line done={true} />
+                              <Step num={2} label="Purchased" sublabel="Direct sale" state={isCompleted ? "done" : "active"} />
+                              <Line done={isCompleted} />
+                              {selectedDc.status === "cash" ? (
+                                <Step num={3} label="Awaiting Payment" sublabel={selectedDc.invoiceRef || "Unpaid"} state="active" />
+                              ) : (
+                                <Step num={3} label="Invoiced" sublabel={selectedDc.invoiceRef || "Pending"} state={isCompleted ? "done" : "pending"} />
+                              )}
+                            </div>
+                          );
+
+                          return (
+                            <div className="flex items-center gap-1">
+                              <Step num={1} label="Created" sublabel={formatDate(getDisplayDate(selectedDc))} state="done" />
+                              <Line done={isReturned} />
+                              <Step num={2} label="Returned" sublabel={selectedDc.returnedAt ? formatDate(selectedDc.returnedAt) : "Pending"} state={isReturned ? "done" : "active"} />
+                              <Line done={isCompleted} />
+                              {selectedDc.status === "cash" ? (
+                                <Step num={3} label="Awaiting Payment" sublabel={selectedDc.invoiceRef || "Unpaid"} state="active" />
+                              ) : (
+                                <Step num={3} label={selectedIsCashMemo ? "Cash Done" : "Invoiced"} sublabel={selectedDc.invoiceRef || "Pending"} state={isCompleted ? "done" : "pending"} />
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
 
-                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                        {selectedDc.status === "pending" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800"
-                              onClick={() => openActionDialog("return", selectedDc)}
-                            >
-                              <User className="h-3 w-3 sm:h-4 sm:w-4" /> Return
-                            </Button>
+                      {/* Next Steps Action Cards */}
+                      <div className="pt-3 border-t border-slate-100">
+                        <div className="flex items-center justify-between mb-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                              <ArrowRight className="h-3 w-3" />
+                            </span>
+                            <span className="text-xs font-semibold text-slate-700 tracking-wide">
+                              Next Steps
+                            </span>
+                          </div>
+                          {selectedDc.status === "completed" ? (
+                            <Badge variant="outline" className="text-[10px] font-medium border-emerald-200 text-emerald-700 bg-emerald-50 gap-1 py-0 h-5">
+                              <Lock className="h-2.5 w-2.5" /> Case Settled
+                            </Badge>
+                          ) : selectedDc.status === "cash" ? (
+                            <Badge variant="outline" className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50 gap-1 py-0 h-5">
+                              ● Awaiting Payment
+                            </Badge>
+                          ) : selectedDc.status === "returned" ? (
+                            <Badge variant="outline" className="text-[10px] font-medium border-teal-200 text-teal-700 bg-teal-50 gap-1 py-0 h-5">
+                              Returned • Ready to Bill
+                            </Badge>
+                          ) : selectedDc.status === "pending" ? (
+                            <Badge variant="outline" className="text-[10px] font-medium border-amber-200 text-amber-700 bg-amber-50 gap-1 py-0 h-5">
+                              Pending Return
+                            </Badge>
+                          ) : null}
+                        </div>
 
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800 font-bold"
-                                >
-                                  <ShoppingBag className="h-3 w-3 sm:h-4 sm:w-4 text-amber-600" /> Purchase
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-56 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-[100]">
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setDetailsDialogOpen(false);
-                                    handleCreateCashMemoForDc(selectedDc);
-                                  }}
-                                  className="gap-2.5 py-2 cursor-pointer font-medium hover:bg-blue-50 dark:hover:bg-blue-950/40"
-                                >
-                                  <Receipt className="h-4 w-4 text-blue-600" />
-                                  <div>
-                                    <div className="font-semibold text-slate-900 dark:text-slate-100">Cash Invoice</div>
-                                    <div className="text-[11px] text-slate-500">Prefilled cash memo editor</div>
-                                  </div>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setDetailsDialogOpen(false);
-                                    openActionDialog("invoice", selectedDc);
-                                  }}
-                                  className="gap-2.5 py-2 cursor-pointer font-medium hover:bg-purple-50 dark:hover:bg-purple-950/40"
-                                >
-                                  <FileText className="h-4 w-4 text-purple-600" />
-                                  <div>
-                                    <div className="font-semibold text-slate-900 dark:text-slate-100">Go GST Bill</div>
-                                    <div className="text-[11px] text-slate-500">Link GoGSTBill tax invoice</div>
-                                  </div>
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setDetailsDialogOpen(false);
-                                    openActionDialog("purchase", selectedDc);
-                                  }}
-                                  className="gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
-                                >
-                                  <Eye className="h-3.5 w-3.5 text-amber-600" />
-                                  View Purchase Options
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </>
-                        )}
-                        {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-green-300 text-green-700 hover:bg-green-50 hover:text-green-800"
-                            onClick={() => openActionDialog("invoice", selectedDc)}
-                          >
-                            <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> Link Invoice
-                          </Button>
-                        )}
-                        {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800 font-bold"
-                            onClick={() => handleCreateCashMemoForDc(selectedDc)}
-                          >
-                            <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> Create Cash Memo
-                          </Button>
-                        )}
-                        {selectedDc.invoiceRef && selectedIsTaxInvoice && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-purple-300 text-purple-700 hover:bg-purple-50 hover:text-purple-800 font-bold"
-                              onClick={() => {
-                                setDetailsDialogOpen(false);
-                                openActionDialog("invoice", selectedDc);
-                              }}
-                            >
-                              <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-purple-600" /> Tax Invoice: {selectedDc.invoiceRef}
-                            </Button>
-                            {selectedDc.invoiceUrl ? (
-                              <Button
-                                size="sm"
-                                className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                                onClick={() => window.open(selectedDc.invoiceUrl, '_blank')}
-                                title="Open GoGSTBill invoice in new tab"
+                        {/* State: Pending Return */}
+                        {selectedDc.status === "pending" && (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {/* 1. Record Return */}
+                              <button
+                                type="button"
+                                onClick={() => openActionDialog("return", selectedDc)}
+                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-indigo-200/90 bg-indigo-50/60 hover:bg-indigo-100 hover:border-indigo-300 text-indigo-900 transition-all text-center group shadow-2xs hover:shadow-sm"
                               >
-                                <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4" /> Open GoGSTBill
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold"
+                                <div className="h-7 w-7 rounded-full bg-indigo-100 group-hover:bg-indigo-200 flex items-center justify-center mb-1 text-indigo-700 transition-colors">
+                                  <User className="h-4 w-4" />
+                                </div>
+                                <span className="text-xs font-bold leading-tight">Return</span>
+                                <span className="text-[10px] text-slate-500 mt-0.5">Receive Sets</span>
+                              </button>
+
+                              {/* 2. Purchase: Cash Memo */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDetailsDialogOpen(false);
+                                  handleCreateCashMemoForDc(selectedDc);
+                                }}
+                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all text-center group shadow-2xs hover:shadow-sm"
+                              >
+                                <span className="absolute -top-1.5 right-2 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-500 text-white shadow-2xs">
+                                  Purchase
+                                </span>
+                                <div className="h-7 w-7 rounded-full bg-amber-100 group-hover:bg-amber-200 flex items-center justify-center mb-1 text-amber-800 transition-colors">
+                                  <Receipt className="h-4 w-4" />
+                                </div>
+                                <span className="text-xs font-bold leading-tight">Cash Memo</span>
+                                <span className="text-[10px] text-amber-800/80 mt-0.5">Instant Bill</span>
+                              </button>
+
+                              {/* 3. Purchase: Go GST Bill */}
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setDetailsDialogOpen(false);
                                   openActionDialog("invoice", selectedDc);
                                 }}
-                                title="Enter GoGSTBill URL for this DC"
+                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all text-center group shadow-2xs hover:shadow-sm"
                               >
-                                <Link2 className="h-3 w-3 sm:h-4 sm:w-4 text-indigo-600" /> Enter GoGSTBill URL
+                                <span className="absolute -top-1.5 right-2 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-500 text-white shadow-2xs">
+                                  Purchase
+                                </span>
+                                <div className="h-7 w-7 rounded-full bg-amber-100 group-hover:bg-amber-200 flex items-center justify-center mb-1 text-amber-800 transition-colors">
+                                  <FileText className="h-4 w-4" />
+                                </div>
+                                <span className="text-xs font-bold leading-tight">Go GST Bill</span>
+                                <span className="text-[10px] text-amber-800/80 mt-0.5">Link Invoice</span>
+                              </button>
+
+                              {/* 4. Cancel Case */}
+                              <button
+                                type="button"
+                                onClick={() => openActionDialog("cancel", selectedDc)}
+                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-rose-200/90 bg-rose-50/50 hover:bg-rose-100 hover:border-rose-300 text-rose-900 transition-all text-center group shadow-2xs hover:shadow-sm"
+                              >
+                                <div className="h-7 w-7 rounded-full bg-rose-100 group-hover:bg-rose-200 flex items-center justify-center mb-1 text-rose-700 transition-colors">
+                                  <AlertCircle className="h-4 w-4" />
+                                </div>
+                                <span className="text-xs font-bold leading-tight text-rose-800">Cancel Case</span>
+                                <span className="text-[10px] text-rose-600/80 mt-0.5">Surgery Cancelled</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* State: Returned, Awaiting Billing */}
+                        {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {/* Option 1: Create Cash Memo */}
+                            <div className="rounded-lg border border-blue-200/80 bg-blue-50/40 p-2.5 flex flex-col justify-between hover:border-blue-300 transition-colors">
+                              <div>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-900">
+                                    <Receipt className="h-3.5 w-3.5 text-blue-600" />
+                                    Create Cash Memo
+                                  </div>
+                                  <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
+                                    Instant
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                                  Auto-fill returned items and generate instant cash bill
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                className="mt-2.5 h-7 w-full text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shadow-sm"
+                                onClick={() => handleCreateCashMemoForDc(selectedDc)}
+                              >
+                                Create Cash Memo <ArrowRight className="h-3 w-3" />
                               </Button>
-                            )}
-                          </>
+                            </div>
+
+                            {/* Option 2: Link GoGSTBill */}
+                            <div className="rounded-lg border border-purple-200/80 bg-purple-50/40 p-2.5 flex flex-col justify-between hover:border-purple-300 transition-colors">
+                              <div>
+                                <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-900">
+                                  <FileText className="h-3.5 w-3.5 text-purple-600" />
+                                  Link GoGSTBill
+                                </div>
+                                <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                                  Attach tax invoice number from GoGSTBill portal
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="mt-2.5 h-7 w-full text-xs font-medium border-purple-300 text-purple-700 bg-white hover:bg-purple-50 gap-1.5"
+                                onClick={() => openActionDialog("invoice", selectedDc)}
+                              >
+                                Link Invoice Number <ArrowRight className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
                         )}
-                        {selectedDc.invoiceRef && selectedIsCashMemo && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800 font-bold"
-                            onClick={() => {
-                              setDetailsDialogOpen(false);
-                              setViewingCashMemoRef(selectedDc.invoiceRef!);
-                              setCashMemoModalOpen(true);
-                            }}
-                          >
-                            <Receipt className="h-3 w-3 sm:h-4 sm:w-4" /> View Cash Memo ({selectedDc.invoiceRef})
-                          </Button>
+
+                        {/* State: Cash Queue - Awaiting Payment */}
+                        {selectedDc.status === "cash" && (
+                          <div className="rounded-lg border border-amber-300 bg-amber-50/50 p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                                <Wallet className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                                  <span>Cash Memo Linked:</span>
+                                  <span className="font-mono text-amber-900 bg-amber-100 px-1.5 py-0.5 rounded text-[11px] font-bold">
+                                    {selectedDc.invoiceRef || "Cash Memo"}
+                                  </span>
+                                  <Badge className="bg-amber-500/15 text-amber-800 border-amber-300 text-[10px] px-1.5 py-0 font-bold">
+                                    ● Awaiting Payment ({getCashMemoAgingDays(selectedDc)}d)
+                                  </Badge>
+                                </div>
+                                <p className="text-[11px] text-slate-600 mt-0.5">
+                                  Unpaid in Cash Queue. Expected cash: <span className="font-bold text-slate-800">₹{((selectedDc as any).cashAmount || 0).toLocaleString("en-IN")}</span>
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                              {selectedDc.invoiceRef && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-amber-300 text-amber-900 bg-white hover:bg-amber-50 font-medium"
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    setViewingCashMemoRef(selectedDc.invoiceRef!);
+                                    setCashMemoModalOpen(true);
+                                  }}
+                                >
+                                  <Receipt className="h-3 w-3 mr-1" /> View Memo
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-sm"
+                                onClick={() => openPaymentDialog(selectedDc)}
+                              >
+                                <Wallet className="h-3.5 w-3.5 mr-1" /> Collect / Mark as Paid
+                              </Button>
+                            </div>
+                          </div>
                         )}
-                        {selectedDc.status === "pending" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-orange-300 text-orange-700 hover:bg-orange-50 hover:text-orange-800"
-                            onClick={() => openActionDialog("cancel", selectedDc)}
-                          >
-                            <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4" /> Cancel Case
-                          </Button>
+
+                        {/* State: Invoiced or Cash Settled (Completed) */}
+                        {selectedDc.status !== "cash" && selectedDc.invoiceRef && (
+                          <div className="rounded-lg border border-emerald-200/80 bg-emerald-50/30 p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                <CheckCircle2 className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                                  {selectedIsTaxInvoice ? "GoGSTBill Tax Invoice" : "Cash Memo"} Linked:
+                                  <span className="font-mono text-emerald-800 bg-emerald-100/80 px-1.5 py-0.5 rounded text-[11px]">
+                                    {selectedDc.invoiceRef}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500">
+                                  This delivery challan is settled and locked.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                              {selectedIsTaxInvoice && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs border-purple-300 text-purple-700 bg-white hover:bg-purple-50 font-medium"
+                                    onClick={() => {
+                                      setDetailsDialogOpen(false);
+                                      openActionDialog("invoice", selectedDc);
+                                    }}
+                                  >
+                                    <FileText className="h-3 w-3 mr-1" /> View Details
+                                  </Button>
+                                  {selectedDc.invoiceUrl ? (
+                                    <Button
+                                      size="sm"
+                                      className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                                      onClick={() => window.open(selectedDc.invoiceUrl, '_blank')}
+                                    >
+                                      <ExternalLink className="h-3 w-3 mr-1" /> Open GoGSTBill
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50 font-medium"
+                                      onClick={() => {
+                                        setDetailsDialogOpen(false);
+                                        openActionDialog("invoice", selectedDc);
+                                      }}
+                                    >
+                                      <Link2 className="h-3 w-3 mr-1" /> Add Invoice URL
+                                    </Button>
+                                  )}
+                                </>
+                              )}
+
+                              {selectedIsCashMemo && (
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    setViewingCashMemoRef(selectedDc.invoiceRef!);
+                                    setCashMemoModalOpen(true);
+                                  }}
+                                >
+                                  <Receipt className="h-3 w-3 mr-1" /> View Cash Memo
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                         )}
+
+                        {/* State: Cancelled */}
                         {selectedDc.status === "cancelled" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 sm:gap-2 h-7 sm:h-8 text-xs border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-800"
-                            onClick={() => restoreFromCancelled(selectedDc)}
-                          >
-                            <Undo2 className="h-3 w-3 sm:h-4 sm:w-4" /> Restore
-                          </Button>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                              <div>
+                                <span className="text-xs text-slate-700">This case was cancelled.</span>
+                                {selectedDc.returnedBy && (
+                                  <div className="text-[11px] text-slate-600 font-medium">
+                                    Items returned by: <span className="text-slate-900 font-bold">{selectedDc.returnedBy}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-slate-300 text-slate-700 hover:bg-white"
+                              onClick={() => restoreFromCancelled(selectedDc)}
+                            >
+                              <Undo2 className="h-3 w-3 mr-1" /> Restore DC
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    {/* Vertical Activity Timeline */}
                     <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-2">Timeline</div>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-center justify-between gap-3 text-xs sm:text-sm">
-                          <span className="text-slate-500">Delivered By</span>
-                          <span className="font-medium text-slate-800">{selectedDc.deliveredBy || "-"}</span>
+                      <div className="text-xs font-semibold text-slate-700 mb-3">Activity</div>
+                      <div className="relative pl-5 space-y-4">
+
+                        {/* Created */}
+                        <div className="relative">
+                          <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
+                          <div className="text-xs font-semibold text-slate-800">DC Created</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(selectedDc.savedAt)}</div>
+                          {selectedDc.deliveredBy && (
+                            <div className="text-[10px] text-slate-600 mt-0.5">
+                              Delivered by: <span className="font-medium text-slate-800">{selectedDc.deliveredBy}</span>
+                            </div>
+                          )}
+                          {selectedDc.receivedBy && (
+                            <div className="text-[10px] text-slate-600">
+                              Received by: <span className="font-medium text-slate-800">{selectedDc.receivedBy}</span>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center justify-between gap-3 text-xs sm:text-sm">
-                          <span className="text-slate-500">Created</span>
-                          <span className="font-medium text-slate-800">{formatDateTime(selectedDc.savedAt)}</span>
-                        </div>
-                        {selectedDc.status === "cancelled" && (
-                          <div className="flex items-center justify-between gap-3 text-xs sm:text-sm">
-                            <span className="text-slate-500">Cancelled At</span>
-                            <span className="font-medium text-red-600">{selectedDc.cancelledAt ? formatDateTime(selectedDc.cancelledAt) : "-"}</span>
+
+                        {/* Returned */}
+                        {selectedDc.returnedAt ? (
+                          <div className="relative">
+                            <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-teal-600 border-2 border-white ring-1 ring-teal-200 shadow-sm" />
+                            <div className="text-xs font-semibold text-slate-800">Returned</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(selectedDc.returnedAt)}</div>
+                            {selectedDc.returnedBy && (
+                              <div className="text-[10px] text-slate-600 mt-0.5">
+                                Returned by: <span className="font-medium text-slate-800">{selectedDc.returnedBy}</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : selectedDc.status === "pending" && (
+                          <div className="relative">
+                            <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-white border-2 border-amber-400 shadow-sm" />
+                            <div className="text-xs font-semibold text-amber-700">Pending Return</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">Awaiting return from hospital</div>
                           </div>
                         )}
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-500">Returned</span>
-                          <span className="font-medium text-slate-800">{selectedDc.returnedAt ? formatDateTime(selectedDc.returnedAt) : "-"}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-500">Cash At</span>
-                          <span className="font-medium text-slate-800">{(selectedDc as any).cashAt ? formatDateTime((selectedDc as any).cashAt) : "-"}</span>
-                        </div>
+
+                        {/* Cash Queue: Generated & Awaiting Payment */}
+                        {selectedDc.status === "cash" && (
+                          <>
+                            <div className="relative">
+                              <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
+                              <div className="text-xs font-semibold text-slate-800">Cash Memo Generated</div>
+                              {selectedDc.invoiceRef && (
+                                <div className="text-[10px] text-slate-600 mt-0.5">
+                                  Ref: <span className="font-mono font-medium text-slate-800">{selectedDc.invoiceRef}</span>
+                                </div>
+                              )}
+                              {(selectedDc as any).billedAmount ? (
+                                <div className="text-[10px] text-slate-500">
+                                  Printed Bill: ₹{(selectedDc as any).billedAmount.toLocaleString("en-IN")}
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <div className="relative">
+                              <span className="absolute -left-5 top-0.5 flex h-3 w-3 items-center justify-center">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 border border-white"></span>
+                              </span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-amber-800">Awaiting Payment</span>
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 uppercase">
+                                  UNPAID
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-600 mt-0.5">
+                                Pending in Cash Queue • Aging: {getCashMemoAgingDays(selectedDc)} day{getCashMemoAgingDays(selectedDc) === 1 ? '' : 's'}
+                              </div>
+                              {(selectedDc as any).cashAmount ? (
+                                <div className="text-[11px] font-bold text-amber-900 mt-0.5">
+                                  Net Cash Due: ₹{(selectedDc as any).cashAmount.toLocaleString("en-IN")}
+                                </div>
+                              ) : null}
+                            </div>
+                          </>
+                        )}
+
+                        {/* Completed / Settled Invoiced */}
+                        {selectedDc.status !== "cash" && selectedDc.invoiceRef && (
+                          <div className="relative">
+                            <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-green-600 border-2 border-white ring-1 ring-green-200 shadow-sm" />
+                            <div className="text-xs font-semibold text-slate-800">
+                              {selectedIsTaxInvoice ? "Tax Invoice Linked" : "Payment Received & Settled"}
+                            </div>
+                            <div className="text-[10px] text-slate-600 mt-0.5">
+                              Ref: <span className="font-medium text-slate-800">{selectedDc.invoiceRef}</span>
+                            </div>
+                            {(selectedDc as any).cashAmount && (
+                              <div className="text-[10px] text-green-700 font-medium">
+                                ₹{(selectedDc as any).cashAmount.toLocaleString("en-IN")}
+                              </div>
+                            )}
+                            {selectedDc.paymentMethod && (
+                              <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-1 flex-wrap">
+                                {selectedDc.paymentMethod === "cash" ? (
+                                  <>
+                                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                                      <Banknote className="h-3 w-3" /> Cash
+                                    </span>
+                                    {selectedDc.collectedBy && (
+                                      <span>• Collected by <strong className="text-slate-800">{selectedDc.collectedBy}</strong></span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 font-semibold text-indigo-700">
+                                    <Landmark className="h-3 w-3" /> Bank Transfer / UPI
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Cancelled */}
+                        {selectedDc.status === "cancelled" && (
+                          <div className="relative">
+                            <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-white ring-1 ring-red-200 shadow-sm" />
+                            <div className="text-xs font-semibold text-red-700">Case Cancelled</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">
+                              {selectedDc.cancelledAt ? formatDateTime(selectedDc.cancelledAt) : "-"}
+                            </div>
+                            {selectedDc.returnedBy && (
+                              <div className="text-[10px] text-slate-700 mt-1 font-medium">
+                                Items Returned by: <span className="font-bold text-slate-900">{selectedDc.returnedBy}</span>
+                              </div>
+                            )}
+                            {selectedDc.cancelledRemarks && (
+                              <div className="text-[10px] text-slate-500 mt-0.5 italic">
+                                Reason: {selectedDc.cancelledRemarks}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                       </div>
                     </div>
 
+                    {selectedDc.invoiceRef && (
                     <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                        {selectedIsTaxInvoice ? (
-                          <>
-                            <FileText className="h-4 w-4 text-purple-600" />
-                            Tax Invoice
-                          </>
-                        ) : (
-                          <>
-                            <Receipt className="h-4 w-4 text-slate-600" />
-                            Invoice / Cash
-                          </>
+                      <div className="text-xs font-semibold text-slate-700 mb-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {selectedIsTaxInvoice ? (
+                            <>
+                              <FileText className="h-4 w-4 text-purple-600" />
+                              Tax Invoice
+                            </>
+                          ) : (
+                            <>
+                              <Receipt className="h-4 w-4 text-slate-600" />
+                              Cash Memo Details
+                            </>
+                          )}
+                        </div>
+                        {selectedDc.status === "cash" && (
+                          <Badge variant="outline" className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50">
+                            Awaiting Payment
+                          </Badge>
                         )}
                       </div>
                       <div className="space-y-2 text-sm">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-slate-500">
-                            {selectedIsTaxInvoice ? "Tax Invoice No" : "Invoice No"}
+                            {selectedIsTaxInvoice ? "Tax Invoice No" : "Cash Memo No"}
                           </span>
-                          <span className="font-medium text-slate-800">{selectedDc.invoiceRef || "-"}</span>
+                          <span className="font-medium font-mono text-slate-800">{selectedDc.invoiceRef || "-"}</span>
                         </div>
                         {selectedIsTaxInvoice && (
                           <div className="flex items-center justify-between gap-3">
@@ -4056,18 +4851,47 @@ const SavedDcs = () => {
                             )}
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-slate-500">
-                                {(selectedDc as any).billedAmount ? "Our Net Cash Due" : "Cash Amount"}
+                                {selectedDc.status === "cash" ? "Net Cash Due" : ((selectedDc as any).billedAmount ? "Our Net Cash" : "Cash Amount")}
                               </span>
-                              <span className="font-bold text-green-700">
+                              <span className={`font-bold ${selectedDc.status === "cash" ? "text-amber-800" : "text-green-700"}`}>
                                 {typeof (selectedDc as any).cashAmount === "number"
                                   ? `₹${(selectedDc as any).cashAmount.toLocaleString('en-IN')}`
                                   : "-"}
+                                {selectedDc.status === "cash" ? " (Unpaid)" : ""}
                               </span>
                             </div>
+                            {selectedDc.status !== "cash" && selectedDc.paymentMethod && (
+                              <div className="flex items-center justify-between gap-3 text-xs pt-1 border-t border-slate-100">
+                                <span className="text-slate-500">Payment Mode</span>
+                                <span className="font-semibold text-slate-800 flex items-center gap-1">
+                                  {selectedDc.paymentMethod === "cash" ? (
+                                    <>
+                                      <Banknote className="h-3.5 w-3.5 text-emerald-600" />
+                                      Cash {selectedDc.collectedBy ? `(${selectedDc.collectedBy})` : ""}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Landmark className="h-3.5 w-3.5 text-indigo-600" />
+                                      Bank Transfer / UPI
+                                    </>
+                                  )}
+                                </span>
+                              </div>
+                            )}
+                            {selectedDc.status === "cash" && (
+                              <Button
+                                size="sm"
+                                className="mt-2 h-7 w-full text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white gap-1.5"
+                                onClick={() => openPaymentDialog(selectedDc)}
+                              >
+                                <Wallet className="h-3.5 w-3.5" /> Mark as Paid (Collect Payment)
+                              </Button>
+                            )}
                           </>
                         )}
                       </div>
                     </div>
+                    )}
                   </div>
                 </TabsContent>
 
@@ -4259,19 +5083,61 @@ const SavedDcs = () => {
         open={deleteDialog.open}
         onOpenChange={(open) => setDeleteDialog({ open, dc: open ? deleteDialog.dc : null })}
       >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-[440px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
             <DialogTitle>Confirm Delete</DialogTitle>
             <DialogDescription className="sr-only">
               Enter password to delete non-pending delivery challans.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Deleting a <span className="font-medium">{deleteDialog.dc?.status?.toUpperCase()}</span> DC requires a password.
+
+          {/* Top Header */}
+          <div className="bg-gradient-to-r from-rose-50 via-red-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200/80 shadow-xs">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300">
+                      DC #{deleteDialog.dc?.dcNo}
+                    </span>
+                    <span className="text-[10px] font-bold text-rose-800 bg-rose-100/80 border border-rose-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      Protected Action
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
+                    Delete Delivery Challan
+                  </h3>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 truncate">
+              {deleteDialog.dc?.hospitalName} {deleteDialog.dc?.doctorName ? `• Dr. ${deleteDialog.dc.doctorName}` : ''}
             </p>
+          </div>
+
+          {/* Top Info Card */}
+          <div className="px-5 pt-4 pb-1">
+            <div className="rounded-xl border border-rose-200/90 dark:border-rose-900/40 bg-rose-50/70 dark:bg-rose-950/20 p-3.5 space-y-1.5 text-xs text-rose-950 dark:text-rose-300">
+              <div className="flex items-center gap-1.5 font-bold text-rose-900 dark:text-rose-200">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span>Admin Authorization Required</span>
+              </div>
+              <p className="leading-relaxed">
+                Deleting a <span className="font-bold uppercase tracking-wider underline">{deleteDialog.dc?.status}</span> challan is a protected action. Please enter the manager password.
+              </p>
+            </div>
+          </div>
+
+          {/* Bottom Form */}
+          <div className="px-5 py-3.5 space-y-3.5">
             <div>
-              <Label>Password</Label>
+              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Admin Password *</Label>
               <Input
                 type="password"
                 autoComplete="off"
@@ -4281,37 +5147,93 @@ const SavedDcs = () => {
                 data-form-type="other"
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
-                placeholder="Enter password"
-                className="mt-1"
+                placeholder="Enter password to authorize deletion..."
+                className="mt-1.5 h-10 rounded-xl border-slate-300 dark:border-slate-700 text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmProtectedDelete();
+                }}
               />
             </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setDeleteDialog({ open: false, dc: null })}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={confirmProtectedDelete}>
-                Delete
-              </Button>
-            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialog({ open: false, dc: null })}
+              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmProtectedDelete}
+              className="rounded-xl h-10 px-5 text-xs font-bold gap-2 min-w-[130px] bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Confirm Delete</span>
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Admin Password Dialog */}
       <Dialog open={adminPasswordOpen} onOpenChange={setAdminPasswordOpen}>
-        <DialogContent className="max-w-sm border-2 border-slate-300 shadow-xl rounded-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Wrench className="h-5 w-5 text-blue-700" />
-              Admin Access
-            </DialogTitle>
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-[420px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Admin Access</DialogTitle>
             <DialogDescription>
-              Please enter the administrator password to manage procedures and items.
+              Please enter the administrator password.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="admin-pass">Password</Label>
+
+          {/* Top Header */}
+          <div className="bg-gradient-to-r from-indigo-50 via-blue-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 border border-indigo-200/80 shadow-xs">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 border border-indigo-300">
+                      Security Access
+                    </span>
+                    <span className="text-[10px] font-bold text-indigo-800 bg-indigo-100/80 border border-indigo-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      Manager Panel
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
+                    Admin Authorization
+                  </h3>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60">
+              Restricted management & system controls
+            </p>
+          </div>
+
+          {/* Top Info Card */}
+          <div className="px-5 pt-4 pb-1">
+            <div className="rounded-xl border border-blue-200/90 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 p-3.5 space-y-1 text-xs text-blue-950 dark:text-blue-200">
+              <div className="flex items-center gap-1.5 font-bold text-blue-900 dark:text-blue-200">
+                <Lock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span>Protected Management Tools</span>
+              </div>
+              <p className="leading-relaxed text-slate-600 dark:text-slate-400">
+                Enter your administrative key to manage system settings, registers, and audit options.
+              </p>
+            </div>
+          </div>
+
+          {/* Bottom Form */}
+          <div className="px-5 py-3.5 space-y-3.5">
+            <div>
+              <Label htmlFor="admin-pass" className="text-xs font-bold text-slate-800 dark:text-slate-200">Manager Password *</Label>
               <Input
                 id="admin-pass"
                 type="password"
@@ -4322,21 +5244,30 @@ const SavedDcs = () => {
                 data-form-type="other"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Manager password"
-                className="border-slate-300 focus:border-blue-500 rounded-lg"
+                placeholder="Enter password..."
+                className="mt-1.5 h-10 rounded-xl border-slate-300 dark:border-slate-700 text-sm"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') confirmAdminAccess();
                 }}
               />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setAdminPasswordOpen(false)} className="rounded-lg">
-                Cancel
-              </Button>
-              <Button onClick={confirmAdminAccess} className="bg-blue-700 hover:bg-blue-800 text-white rounded-lg">
-                Enter Admin Panel
-              </Button>
-            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setAdminPasswordOpen(false)}
+              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmAdminAccess}
+              className="rounded-xl h-10 px-5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm min-w-[130px]"
+            >
+              Enter Admin Panel
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -4349,103 +5280,305 @@ const SavedDcs = () => {
             setPaymentDialog({ open: false, dc: null });
             setPaymentAmountInput("");
             setPaymentRemarksInput("");
+            setPaymentMethod("cash");
+            setPaymentCollectedBy("");
           }
         }}
       >
-        <DialogContent className="max-w-sm border-2 border-slate-300 shadow-xl rounded-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-emerald-600" />
-              Mark as Paid
-            </DialogTitle>
+        <DialogContent 
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-[490px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>
-              Record cash memo payment for DC <strong>{paymentDialog.dc?.dcNo}</strong>.
+              Record payment settlement for DC {paymentDialog.dc?.dcNo}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            {/* If Hiked Bill */}
-            {paymentDialog.dc?.billedAmount && paymentDialog.dc.billedAmount > (paymentDialog.dc.cashAmount || 0) && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950 space-y-1.5">
-                <div className="font-bold flex items-center justify-between text-amber-900">
-                  <span className="flex items-center gap-1.5">
-                    <Receipt className="w-3.5 h-3.5 text-amber-600" />
-                    Hiked Bill Settlement Notice
+
+          {/* 1. TOP HEADER: Clean Light Themed Context */}
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-slate-50/50 dark:from-slate-850 dark:via-emerald-950/30 dark:to-slate-900 border-b border-emerald-100 dark:border-slate-800 px-5 py-4">
+            <div className="flex items-start gap-3.5">
+              <div className="h-10 w-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-200/80 shadow-xs">
+                {paymentMethod === "bank_transfer" ? (
+                  <Landmark className="h-5 w-5 text-indigo-700 dark:text-indigo-400" />
+                ) : (
+                  <Wallet className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200">
+                      DC #{paymentDialog.dc?.dcNo}
+                    </span>
+                    {paymentDialog.dc?.invoiceRef && (
+                      <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200">
+                        Memo: {paymentDialog.dc.invoiceRef}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Awaiting Settlement
                   </span>
-                  <span className="text-[10px] bg-amber-200/80 px-1.5 py-0.5 rounded font-semibold text-amber-900">
-                    Hospital Margin Active
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-snug">
+                  {paymentMethod === "bank_transfer" ? "Record Bank Transfer / UPI" : "Record Cash Payment"}
+                </h3>
+                <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-400 mt-1 flex-wrap">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{paymentDialog.dc?.hospitalName || "Hospital Record"}</span>
+                  {paymentDialog.dc?.doctorName && (
+                    <span className="flex items-center gap-1">
+                      <Stethoscope className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      Dr. {paymentDialog.dc.doctorName}
+                    </span>
+                  )}
+                  {paymentDialog.dc?.patientName && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      Patient: {paymentDialog.dc.patientName}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. TOP INFO CARD: Financial & Bill Breakdown */}
+          <div className="px-5 pt-4 pb-1">
+            {Boolean(paymentDialog.dc?.billedAmount && paymentDialog.dc.billedAmount > (paymentDialog.dc.cashAmount || 0)) ? (
+              <div className="rounded-xl border border-amber-200/90 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/30 p-3.5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                    <Receipt className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    Hiked Bill Settlement Breakdown
+                  </span>
+                  <span className="text-[10px] bg-amber-200/80 dark:bg-amber-900/80 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
+                    Hospital Cut
                   </span>
                 </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Printed Bill (on paper):</span>
-                  <span className="font-semibold line-through">₹{paymentDialog.dc.billedAmount.toLocaleString('en-IN')}</span>
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-amber-200/70 dark:border-amber-900/40">
+                  <div className="text-slate-600 dark:text-slate-400">
+                    <span className="block text-[10px] text-slate-400 dark:text-slate-500 uppercase">Printed Bill</span>
+                    <span className="font-semibold line-through text-slate-700 dark:text-slate-300">
+                      ₹{paymentDialog.dc?.billedAmount?.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="text-right text-amber-800 dark:text-amber-300">
+                    <span className="block text-[10px] text-amber-600/80 dark:text-amber-400/80 uppercase">Hospital Margin</span>
+                    <span className="font-semibold">
+                      - ₹{(paymentDialog.dc?.hospitalMargin || (paymentDialog.dc!.billedAmount! - (paymentDialog.dc!.cashAmount || 0))).toLocaleString('en-IN')}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-amber-800">
-                  <span>Hospital Margin / Cut:</span>
-                  <span className="font-semibold">- ₹{(paymentDialog.dc.hospitalMargin || (paymentDialog.dc.billedAmount - (paymentDialog.dc.cashAmount || 0))).toLocaleString('en-IN')}</span>
+                <div className="flex items-center justify-between pt-2 border-t border-amber-200/80 dark:border-amber-900/50">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Actual Cash to Collect:</span>
+                  <span className="text-base font-extrabold text-emerald-700 dark:text-emerald-400">
+                    ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
+                  </span>
                 </div>
-                <div className="flex justify-between font-bold text-emerald-800 pt-1 border-t border-amber-200 text-sm">
-                  <span>Actual Cash to Collect:</span>
-                  <span>₹{(paymentDialog.dc.cashAmount || 0).toLocaleString('en-IN')}</span>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                    Outstanding Receivable
+                  </span>
+                  <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                    Total payment due for this delivery challan
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-lg font-black text-emerald-700 dark:text-emerald-400">
+                    ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
+                  </span>
                 </div>
               </div>
             )}
-            <div className="space-y-2">
+          </div>
+
+          {/* 3. BOTTOM OPTIONS: Selection & Form Inputs */}
+          <div className="px-5 py-3 space-y-3.5">
+            {/* Payment Method Selector */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Payment Method *
+              </Label>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("cash")}
+                  className={`flex items-center justify-center gap-2 h-11 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    paymentMethod === "cash"
+                      ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs"
+                      : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  <Banknote className={`w-4 h-4 shrink-0 ${paymentMethod === "cash" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`} />
+                  <span>Cash Payment</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("bank_transfer")}
+                  className={`flex items-center justify-center gap-2 h-11 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    paymentMethod === "bank_transfer"
+                      ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
+                      : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  <Landmark className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
+                  <span>Bank Transfer / UPI</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Conditional Collector Field (if cash selected) */}
+            {paymentMethod === "cash" && (
+              <div className="space-y-2 rounded-xl border border-emerald-200/90 bg-emerald-50/50 dark:bg-emerald-950/30 dark:border-emerald-900/40 p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
+                    Who Collected the Cash? *
+                  </Label>
+                  <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full">
+                    Required
+                  </span>
+                </div>
+                <PersonnelSelect
+                  value={paymentCollectedBy}
+                  onChange={setPaymentCollectedBy}
+                  placeholder="Select or enter person who collected cash..."
+                  showQuickPicks={false}
+                />
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-0.5">Quick Select:</span>
+                  {TRANSPORT_MODES.map((mode) => {
+                    const isSelected = paymentCollectedBy.trim().toLowerCase() === mode.name.toLowerCase();
+                    return (
+                      <button
+                        key={mode.name}
+                        type="button"
+                        onClick={() => setPaymentCollectedBy(mode.name)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:border-emerald-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                        }`}
+                      >
+                        {mode.name}
+                      </button>
+                    );
+                  })}
+                  {paymentDialog.dc?.deliveredBy && !isDisallowedPersonnel(paymentDialog.dc.deliveredBy) && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentCollectedBy(paymentDialog.dc?.deliveredBy || "")}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 cursor-pointer"
+                    >
+                      <User className="w-3 h-3 text-teal-600" />
+                      <span>Delivery: {paymentDialog.dc.deliveredBy}</span>
+                    </button>
+                  )}
+                  {topReturnPersons.map((p) => {
+                    const isSelected = paymentCollectedBy.trim().toLowerCase() === p.name.toLowerCase();
+                    return (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => setPaymentCollectedBy(p.name)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:border-emerald-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                        }`}
+                      >
+                        <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-emerald-600"}`} />
+                        <span>{p.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Paid Amount Input */}
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="payment-amount">Paid Amount (INR) *</Label>
+                <Label htmlFor="payment-amount" className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Amount Received (INR) *
+                </Label>
                 {paymentDialog.dc?.cashAmount && (
                   <button
                     type="button"
                     onClick={() => setPaymentAmountInput(String(paymentDialog.dc?.cashAmount || ''))}
-                    className="text-[11px] text-emerald-700 hover:text-emerald-900 font-semibold underline cursor-pointer"
+                    className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-bold cursor-pointer inline-flex items-center gap-1"
                   >
-                    Fill Due: ₹{paymentDialog.dc.cashAmount.toLocaleString('en-IN')}
+                    <span>Fill Full Due: ₹{paymentDialog.dc.cashAmount.toLocaleString('en-IN')}</span>
                   </button>
                 )}
               </div>
-              <Input
-                id="payment-amount"
-                type="number"
-                value={paymentAmountInput}
-                onChange={(e) => setPaymentAmountInput(e.target.value)}
-                placeholder={paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "Enter amount"}
-                className="border-slate-300 focus:border-emerald-500 rounded-lg font-bold text-slate-800"
-              />
+              <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 h-10 px-3">
+                <span className="text-sm font-bold text-slate-500 dark:text-slate-400 mr-2">₹</span>
+                <Input
+                  id="payment-amount"
+                  type="number"
+                  value={paymentAmountInput}
+                  onChange={(e) => setPaymentAmountInput(e.target.value)}
+                  placeholder={paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "Enter amount"}
+                  className="h-full border-0 bg-transparent p-0 focus-visible:ring-0 focus-visible:ring-offset-0 font-bold text-slate-900 dark:text-slate-100 text-sm"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="payment-remarks">Payment Notes</Label>
+
+            {/* Payment Notes Input */}
+            <div className="space-y-1.5">
+              <Label htmlFor="payment-remarks" className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Payment Notes <span className="font-normal text-slate-500">(Optional)</span>
+              </Label>
               <Input
                 id="payment-remarks"
                 type="text"
                 value={paymentRemarksInput}
                 onChange={(e) => setPaymentRemarksInput(e.target.value)}
-                placeholder="e.g. Received full cash payment"
-                className="border-slate-300 focus:border-emerald-500 rounded-lg text-xs"
+                placeholder={paymentMethod === "cash" ? "e.g. Received full cash at hospital counter" : "e.g. Received via UPI / NEFT to company account"}
+                className="rounded-xl border-slate-300 dark:border-slate-700 text-xs h-10"
               />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button 
-                variant="outline" 
-                onClick={() => setPaymentDialog({ open: false, dc: null })} 
-                className="rounded-lg"
-                disabled={isActionLoading}
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleQuickRecordPayment} 
-                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1 min-w-[120px]"
-                disabled={isActionLoading}
-              >
-                {isActionLoading ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Saving...</span>
-                  </>
-                ) : (
+          </div>
+
+          {/* 4. FOOTER: Clear Action Buttons */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setPaymentDialog({ open: false, dc: null });
+                setPaymentAmountInput("");
+                setPaymentRemarksInput("");
+                setPaymentMethod("cash");
+                setPaymentCollectedBy("");
+              }} 
+              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+              disabled={isActionLoading}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleQuickRecordPayment} 
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-10 px-5 text-xs font-bold gap-2 shadow-sm min-w-[140px]"
+              disabled={isActionLoading}
+            >
+              {isActionLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4" />
                   <span>Confirm Payment</span>
-                )}
-              </Button>
-            </div>
+                </>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -4762,8 +5895,9 @@ const SavedDcs = () => {
               <Button
                 type="button"
                 size="sm"
+                variant="outline"
                 onClick={() => setViewContactModalOpen(false)}
-                className="text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white px-4"
+                className="text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 px-4"
               >
                 Close
               </Button>
@@ -4774,35 +5908,81 @@ const SavedDcs = () => {
 
       {/* Edit DC Details Modal */}
       <Dialog open={editDcModalOpen} onOpenChange={setEditDcModalOpen}>
-        <DialogContent className="max-w-lg p-5">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900">
-              <Edit className="h-4 w-4 text-teal-600" />
-              Edit DC Details — {editingDcTarget?.dcNo}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Update the hospital/customer name, doctor, DC number, date, or personnel for this delivery challan.
+        <DialogContent 
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-[540px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Edit DC Details</DialogTitle>
+            <DialogDescription>
+              Update hospital, doctor, DC number, date, or personnel.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3.5 py-2">
+          {/* Clean Light Header */}
+          <div className="bg-gradient-to-r from-teal-50 via-emerald-50/60 to-slate-50/50 dark:from-slate-850 dark:via-teal-950/30 dark:to-slate-900 border-b border-teal-100 dark:border-slate-800 px-5 py-4">
+            <div className="flex items-start gap-3.5">
+              <div className="h-10 w-10 rounded-xl bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 border border-teal-200/80 shadow-xs">
+                <Edit className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-300 border border-teal-200">
+                    DC #{editingDcTarget?.dcNo}
+                  </span>
+                  <span className="text-[10px] font-bold text-teal-800 dark:text-teal-300 bg-teal-100/90 dark:bg-teal-950/80 border border-teal-200/90 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Registry Editor
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-snug">
+                  Edit Delivery Challan Details
+                </h3>
+                <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-400 mt-1 flex-wrap">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{editingDcTarget?.hospitalName || "Hospital"}</span>
+                  {editingDcTarget?.doctorName && (
+                    <span className="flex items-center gap-1">
+                      <Stethoscope className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                      Dr. {editingDcTarget.doctorName}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Info Card */}
+          <div className="px-5 pt-4 pb-1">
+            <div className="rounded-xl border border-teal-200/80 dark:border-teal-900/40 bg-teal-50/60 dark:bg-teal-950/20 p-3 space-y-1 text-xs text-teal-950 dark:text-teal-200">
+              <div className="flex items-center gap-1.5 font-bold text-teal-900 dark:text-teal-200">
+                <Edit className="w-3.5 h-3.5 text-teal-600" />
+                <span>Active Register Update</span>
+              </div>
+              <p className="leading-relaxed text-slate-600 dark:text-slate-400">
+                Changes will sync across local storage and cloud records.
+              </p>
+            </div>
+          </div>
+
+          {/* Form Body */}
+          <div className="px-5 py-3.5 space-y-3 max-h-[60vh] overflow-y-auto">
             <div>
-              <Label className="text-xs font-bold text-slate-800">
+              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 Hospital / Customer Name <span className="text-rose-500">*</span>
               </Label>
-              <div className="mt-1">
+              <div className="mt-1.5">
                 <HospitalSelect
                   value={editHospitalName}
                   onChange={setEditHospitalName}
                   placeholder="Select or enter hospital name..."
+                  autoFocus={false}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-bold text-slate-800">Doctor Name</Label>
-                <div className="mt-1">
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Doctor Name</Label>
+                <div className="mt-1.5">
                   <DoctorSelect
                     value={editDoctorName}
                     onChange={setEditDoctorName}
@@ -4813,7 +5993,7 @@ const SavedDcs = () => {
               </div>
 
               <div>
-                <Label className="text-xs font-bold text-slate-800">
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
                   DC Number <span className="text-rose-500">*</span>
                 </Label>
                 <Input
@@ -4829,28 +6009,28 @@ const SavedDcs = () => {
                   data-bwignore="true"
                   data-form-type="other"
                   aria-autocomplete="none"
-                  className="mt-1 h-9 text-xs font-semibold"
+                  className="mt-1.5 h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-semibold"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-bold text-slate-800">DC Date</Label>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">DC Date</Label>
                 <Input
                   type="date"
                   value={editDcDate}
                   onChange={(e) => setEditDcDate(e.target.value)}
-                  className="mt-1 h-9 text-xs"
+                  className="mt-1.5 h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs"
                 />
               </div>
 
               <div>
-                <Label className="text-xs font-bold text-slate-800">Material Type</Label>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Material Type</Label>
                 <select
                   value={editMaterialType}
                   onChange={(e) => setEditMaterialType(e.target.value)}
-                  className="mt-1 w-full h-9 px-3 rounded-md border border-slate-300 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="mt-1.5 w-full h-10 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-teal-600"
                 >
                   <option value="SS">SS (Stainless Steel)</option>
                   <option value="TITANIUM">TITANIUM</option>
@@ -4861,8 +6041,8 @@ const SavedDcs = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-bold text-slate-800">Delivered By</Label>
-                <div className="mt-1">
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Delivered By</Label>
+                <div className="mt-1.5">
                   <PersonnelSelect
                     role="delivery"
                     value={editDeliveredBy}
@@ -4873,53 +6053,52 @@ const SavedDcs = () => {
               </div>
 
               <div>
-                <Label className="text-xs font-bold text-slate-800">Received By</Label>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Received By</Label>
                 <Input
                   value={editReceivedBy}
                   onChange={(e) => setEditReceivedBy(e.target.value)}
                   placeholder="Receiver name / phone"
-                  className="mt-1 h-9 text-xs"
+                  className="mt-1.5 h-10 rounded-xl border-slate-300 dark:border-slate-700 text-xs"
                 />
               </div>
             </div>
 
             <div>
-              <Label className="text-xs font-bold text-slate-800">Remarks / Notes</Label>
+              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Remarks / Notes</Label>
               <Textarea
                 value={editRemarks}
                 onChange={(e) => setEditRemarks(e.target.value)}
                 placeholder="Optional notes or instructions..."
-                className="mt-1 text-xs min-h-[60px]"
+                className="mt-1.5 text-xs rounded-xl border-slate-300 dark:border-slate-700 min-h-[60px]"
               />
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+          {/* Action Footer */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
             <Button
               type="button"
               variant="outline"
-              size="sm"
               onClick={() => setEditDcModalOpen(false)}
-              className="text-xs"
+              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
             >
               Cancel
             </Button>
             <Button
               type="button"
-              size="sm"
               disabled={isSavingDcEdit}
               onClick={handleSaveDcEdit}
-              className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs gap-1.5"
+              className="rounded-xl h-10 px-5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-sm gap-2 min-w-[130px]"
             >
               {isSavingDcEdit ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  Saving Changes...
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Saving Changes...</span>
                 </>
               ) : (
                 <>
-                  <Check className="w-3.5 h-3.5" />
-                  Save Changes
+                  <Check className="w-4 h-4" />
+                  <span>Save Changes</span>
                 </>
               )}
             </Button>
