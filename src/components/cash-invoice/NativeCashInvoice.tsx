@@ -420,8 +420,9 @@ export const NativeCashInvoice: React.FC = () => {
   };
 
   // Reset / Clear form
-  const handleClearInvoice = () => {
-    const nextNum = computeNextInvoiceNumber(savedInvoices);
+  const resetInvoiceForm = (invsList?: CashInvoiceData[], notify = false) => {
+    const list = invsList || savedInvoices;
+    const nextNum = computeNextInvoiceNumber(list);
     setInvNumber(nextNum);
     setDcNumber("");
     setInvDate(new Date().toISOString().split("T")[0]);
@@ -433,6 +434,10 @@ export const NativeCashInvoice: React.FC = () => {
     setIsHikedBill(false);
     setActualReceivable(0);
     setPaymentReceived(0);
+    setCustomerSearchQuery("");
+    setShowCustomerDropdown(false);
+    setActiveItemRowIndex(null);
+    setActiveSizeRowIndex(null);
     setItems([
       {
         id: `item-${Date.now()}`,
@@ -445,8 +450,12 @@ export const NativeCashInvoice: React.FC = () => {
         amount: 0,
       },
     ]);
-    toast.info("Started new Cash Memo draft");
+    if (notify) {
+      toast.info("Started new Cash Memo draft");
+    }
   };
+
+  const handleClearInvoice = () => resetInvoiceForm(undefined, true);
 
   // Active Invoice Object for Preview & Saving
   const currentInvoiceData: CashInvoiceData = useMemo(() => {
@@ -618,6 +627,9 @@ export const NativeCashInvoice: React.FC = () => {
           setIsSaving(false);
           setSaveProgress(0);
 
+          // Clear all invoice data & prepare fresh draft
+          resetInvoiceForm(refreshed, false);
+
           const fromDcTracker = sessionStorage.getItem("from_dc_tracker") === "true";
           if (fromDcTracker) {
             sessionStorage.removeItem("from_dc_tracker");
@@ -625,8 +637,11 @@ export const NativeCashInvoice: React.FC = () => {
             const effectiveAmount = isHikedBill && actualReceivable > 0 ? actualReceivable : grandTotal;
             const isFullyPaid = effectiveAmount > 0 && paymentReceived >= effectiveAmount;
             navigate(isFullyPaid ? "/saved?queue=completed" : "/saved?queue=cash");
+          } else {
+            // Take to saved invoices tab
+            setActiveTab("saved");
           }
-        }, 800);
+        }, 850);
 
         return true;
       } else {
@@ -907,26 +922,55 @@ export const NativeCashInvoice: React.FC = () => {
 
   return (
     <div className="w-full flex-1 flex flex-col space-y-4 font-sans text-foreground">
-      {/* Top Progress Loading Bar for Saving */}
+      {/* Full-Screen Loading Overlay with Progress Bar */}
       {isSaving && (
-        <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
-          <div className="w-full h-1.5 bg-teal-100 dark:bg-teal-950 overflow-hidden shadow-sm">
+        <div className="fixed inset-0 z-[99999] bg-slate-950/75 dark:bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-200 select-none">
+          {/* Top animated thin edge indicator */}
+          <div className="fixed top-0 left-0 right-0 h-1.5 bg-teal-950/40 overflow-hidden z-10">
             <div
-              className="h-full bg-gradient-to-r from-teal-500 via-emerald-500 to-amber-500 transition-all duration-300 ease-out"
+              className="h-full bg-gradient-to-r from-teal-400 via-emerald-400 to-teal-500 transition-all duration-300 ease-out"
               style={{ width: `${saveProgress}%` }}
             />
           </div>
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-auto">
-            <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/95 dark:bg-slate-900/95 border border-teal-500/40 shadow-xl backdrop-blur-md text-xs font-semibold text-slate-800 dark:text-slate-100 animate-in fade-in slide-in-from-top-3 duration-200">
-              {saveProgress < 100 ? (
-                <div className="w-4 h-4 rounded-full border-2 border-teal-600 border-t-transparent animate-spin shrink-0" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              )}
-              <span className="truncate max-w-[280px] sm:max-w-md">{saveStatusText}</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-bold shrink-0">
-                {saveProgress}%
-              </span>
+
+          {/* Central Premium Loading Card */}
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-teal-500/30 dark:border-teal-700/50 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl flex flex-col items-center text-center space-y-5 animate-in zoom-in-95 duration-200">
+            {/* Animated Icon Glow Container */}
+            <div className="relative flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-teal-500/20 blur-xl animate-pulse" />
+              <div className="relative w-16 h-16 rounded-2xl bg-teal-50 dark:bg-teal-950/80 border border-teal-300 dark:border-teal-700/60 flex items-center justify-center shadow-inner">
+                {saveProgress < 100 ? (
+                  <div className="w-8 h-8 rounded-full border-3 border-teal-600 dark:border-teal-400 border-t-transparent animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-9 h-9 text-emerald-600 dark:text-emerald-400 animate-in zoom-in duration-200" />
+                )}
+              </div>
+            </div>
+
+            {/* Header Text */}
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white tracking-tight">
+                {saveProgress < 100 ? "Saving Cash Memo..." : "Cash Memo Saved!"}
+              </h3>
+              <p className="text-xs sm:text-sm text-muted-foreground font-medium px-2">
+                {saveStatusText || "Synchronizing data with cloud & DC records..."}
+              </p>
+            </div>
+
+            {/* Main Progress Bar */}
+            <div className="w-full space-y-2">
+              <div className="w-full h-3.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-border/80 shadow-inner">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-600 shadow-sm transition-all duration-300 ease-out relative overflow-hidden"
+                  style={{ width: `${saveProgress}%` }}
+                >
+                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                </div>
+              </div>
+              <div className="flex justify-between items-center text-xs font-semibold text-muted-foreground px-1">
+                <span>{saveProgress < 100 ? "Saving in progress..." : "Switching to Saved Invoices..."}</span>
+                <span className="font-mono text-teal-600 dark:text-teal-400 font-bold">{saveProgress}%</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1217,13 +1261,13 @@ export const NativeCashInvoice: React.FC = () => {
                 <table className="w-full text-xs table-fixed min-w-[700px]">
                   <thead>
                     <tr className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">
-                      <th className="p-2 text-center w-[3.5%]">#</th>
-                      <th className="p-2 text-left w-[45%]">Item Description</th>
-                      <th className="p-2 text-center w-[25%]">Size</th>
+                      <th className="p-2 text-center w-[3%]">#</th>
+                      <th className="p-2 text-left w-[50%]">Item Description</th>
+                      <th className="p-2 text-center w-[15%]">Size</th>
                       <th className="p-2 text-center w-[6%]">Qty</th>
-                      <th className="p-2 text-right w-[9%]">Rate (₹)</th>
+                      <th className="p-2 text-right w-[14%]">Rate (₹)</th>
                       <th className="p-2 text-right w-[9%]">Amount (₹)</th>
-                      <th className="p-2 text-center w-[3.5%]"></th>
+                      <th className="p-2 text-center w-[3%]"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -1236,13 +1280,19 @@ export const NativeCashInvoice: React.FC = () => {
                           {index + 1}
                         </td>
                         <td className="p-2 relative desc-cell">
-                          <Input
-                            type="text"
+                          <textarea
+                            rows={(item.description || "").length > 35 ? 2 : 1}
                             value={item.description}
                             onChange={(e) => {
-                              handleItemChange(index, "description", e.target.value);
-                              setItemSearchQuery(e.target.value);
+                              const val = e.target.value.replace(/\r?\n/g, " ");
+                              handleItemChange(index, "description", val);
+                              setItemSearchQuery(val);
                               setActiveItemRowIndex(index);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                              }
                             }}
                             onFocus={() => {
                               setActiveItemRowIndex(index);
@@ -1252,7 +1302,7 @@ export const NativeCashInvoice: React.FC = () => {
                               setActiveItemRowIndex(index);
                               setItemSearchQuery(item.description);
                             }}
-                            className="h-8 text-xs font-semibold rounded-none w-full"
+                            className="min-h-[32px] text-[11px] font-semibold py-1.5 px-2 rounded-none w-full leading-snug resize-none bg-background border border-input focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring break-words"
                             placeholder="Search or pick implant..."
                             autoComplete="off"
                           />
@@ -1265,7 +1315,7 @@ export const NativeCashInvoice: React.FC = () => {
                                 handleItemChange(index, "subDescription", e.target.value);
                               }}
                               onFocus={() => setActiveItemRowIndex(null)}
-                              className="h-6 text-[11px] text-muted-foreground placeholder:text-muted-foreground/60 rounded-none w-full border border-dashed border-border/80 bg-muted/20 focus-visible:bg-background focus-visible:text-foreground focus-visible:border-solid px-2 font-normal"
+                              className="h-6 text-[10px] text-muted-foreground placeholder:text-muted-foreground/60 rounded-none w-full border border-dashed border-border/80 bg-muted/20 focus-visible:bg-background focus-visible:text-foreground focus-visible:border-solid px-2 font-normal"
                               placeholder="Item note / description (e.g. batch, remarks)..."
                               autoComplete="off"
                             />
@@ -1318,7 +1368,7 @@ export const NativeCashInvoice: React.FC = () => {
                               setActiveSizeRowIndex(index);
                               setSizeSearchQuery("");
                             }}
-                            className="h-8 text-xs text-center rounded-none font-medium w-full"
+                            className="h-8 text-[11px] text-center rounded-none font-medium w-full"
                             placeholder={getSizesForDescription(catalog, item.description).length > 0 ? "Select size..." : "Size"}
                             autoComplete="off"
                           />
@@ -1364,7 +1414,7 @@ export const NativeCashInvoice: React.FC = () => {
                             min="1"
                             value={item.qty}
                             onChange={(e) => handleItemChange(index, "qty", parseInt(e.target.value) || 0)}
-                            className="h-8 text-xs text-center font-bold rounded-none w-full mx-auto px-1"
+                            className="h-8 text-[11px] text-center font-bold rounded-none w-full mx-auto px-1"
                           />
                         </td>
                         <td className="p-2">
@@ -1374,11 +1424,11 @@ export const NativeCashInvoice: React.FC = () => {
                             step="any"
                             value={item.rate || ""}
                             onChange={(e) => handleItemChange(index, "rate", parseFloat(e.target.value) || 0)}
-                            className="h-8 text-xs text-right font-mono rounded-none w-full"
+                            className="h-8 text-[11px] text-right font-mono rounded-none w-full"
                             placeholder="0.00"
                           />
                         </td>
-                        <td className="p-2 text-right font-bold font-mono text-foreground truncate">
+                        <td className="p-2 text-right font-bold font-mono text-[11px] text-foreground truncate">
                           ₹{(item.amount || 0).toFixed(2)}
                         </td>
                         <td className="p-2 text-center">

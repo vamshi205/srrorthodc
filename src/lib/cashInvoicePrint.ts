@@ -36,14 +36,14 @@ export function generateCashMemoPrintHtml(inv: CashInvoiceData): string {
       return `
         <tr style="border-bottom: 1px solid #e2e8f0;">
           <td style="padding: 6px 8px; text-align: center; color: #64748b; font-size: 11px;">${idx + 1}</td>
-          <td style="padding: 6px 8px; font-weight: 700; color: #0f172a; font-size: 11px;">
+          <td style="padding: 6px 8px; font-weight: 700; color: #0f172a; font-size: 11px; word-break: break-word; overflow-wrap: break-word;">
             <div>
               ${item.description}
               ${item.sku ? `<span style="color:#64748b; font-size:10px; font-weight:400;"> [${item.sku}]</span>` : ""}
             </div>
-            ${note ? `<div style="font-size: 10px; color: #64748b; font-weight: normal; font-style: italic; margin-top: 2px;">${note}</div>` : ""}
+            ${note ? `<div style="font-size: 10px; color: #64748b; font-weight: normal; font-style: italic; margin-top: 2px; word-break: break-word;">${note}</div>` : ""}
           </td>
-          <td style="padding: 6px 8px; text-align: center; color: #475569; font-size: 11px;">${item.size || "-"}</td>
+          <td style="padding: 6px 8px; text-align: center; color: #475569; font-size: 11px; word-break: break-word;">${item.size || "-"}</td>
           <td style="padding: 6px 8px; text-align: center; font-weight: 600; color: #0f172a; font-size: 11px;">${qty}</td>
           <td style="padding: 6px 8px; text-align: right; color: #334155; font-size: 11px;">₹${rate.toFixed(2)}</td>
           <td style="padding: 6px 8px; text-align: right; font-weight: 700; color: #0f172a; font-size: 11px;">₹${amt.toFixed(2)}</td>
@@ -144,14 +144,14 @@ export function generateCashMemoPrintHtml(inv: CashInvoiceData): string {
     </div>
 
     <!-- Items Table -->
-    <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
+    <table style="width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
       <thead>
         <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
           <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 4%;">#</th>
-          <th style="padding: 8px; text-align: left; color: #334155; font-weight: 800; width: 45%;">ITEM DESCRIPTION</th>
-          <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 25%;">SIZE</th>
+          <th style="padding: 8px; text-align: left; color: #334155; font-weight: 800; width: 50%;">ITEM DESCRIPTION</th>
+          <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 15%;">SIZE</th>
           <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 6%;">QTY</th>
-          <th style="padding: 8px; text-align: right; color: #334155; font-weight: 800; width: 10%;">RATE (₹)</th>
+          <th style="padding: 8px; text-align: right; color: #334155; font-weight: 800; width: 15%;">RATE (₹)</th>
           <th style="padding: 8px; text-align: right; color: #334155; font-weight: 800; width: 10%;">AMOUNT (₹)</th>
         </tr>
       </thead>

@@ -188,14 +188,14 @@ export const CashInvoicePreview: React.FC<CashInvoicePreviewProps> = ({
         </div>
 
         {/* Items Table */}
-        <table className="w-full border-collapse text-xs mb-4 border border-slate-300 rounded-none overflow-hidden">
+        <table className="w-full border-collapse text-xs mb-4 border border-slate-300 rounded-none overflow-hidden table-fixed">
           <thead>
             <tr className="bg-slate-100 border-b-2 border-slate-300">
               <th className="p-2 text-center text-slate-700 font-bold w-[4%]">#</th>
-              <th className="p-2 text-left text-slate-700 font-bold w-[45%]">ITEM DESCRIPTION</th>
-              <th className="p-2 text-center text-slate-700 font-bold w-[25%]">SIZE</th>
+              <th className="p-2 text-left text-slate-700 font-bold w-[50%]">ITEM DESCRIPTION</th>
+              <th className="p-2 text-center text-slate-700 font-bold w-[15%]">SIZE</th>
               <th className="p-2 text-center text-slate-700 font-bold w-[6%]">QTY</th>
-              <th className="p-2 text-right text-slate-700 font-bold w-[10%]">RATE (₹)</th>
+              <th className="p-2 text-right text-slate-700 font-bold w-[15%]">RATE (₹)</th>
               <th className="p-2 text-right text-slate-700 font-bold w-[10%]">AMOUNT (₹)</th>
             </tr>
           </thead>
@@ -216,8 +216,8 @@ export const CashInvoicePreview: React.FC<CashInvoicePreviewProps> = ({
                     <td className="p-2 text-center text-slate-500 font-mono text-[11px]">
                       {idx + 1}
                     </td>
-                    <td className="p-2 font-semibold text-slate-900">
-                      <div>
+                    <td className="p-2 font-semibold text-slate-900 break-words text-[11px] leading-snug">
+                      <div className="break-words whitespace-normal">
                         {item.description}
                         {item.sku && (
                           <span className="text-[10px] text-slate-500 font-normal ml-1">
@@ -226,17 +226,17 @@ export const CashInvoicePreview: React.FC<CashInvoicePreviewProps> = ({
                         )}
                       </div>
                       {(item.note || (item as any).subDescription) && (
-                        <div className="text-[11px] text-slate-500 font-normal italic mt-0.5 whitespace-pre-wrap">
+                        <div className="text-[10px] text-slate-500 font-normal italic mt-0.5 whitespace-pre-wrap break-words">
                           {item.note || (item as any).subDescription}
                         </div>
                       )}
                     </td>
-                    <td className="p-2 text-center text-slate-600">{item.size || "-"}</td>
-                    <td className="p-2 text-center font-bold text-slate-900">{qty}</td>
-                    <td className="p-2 text-right text-slate-700 font-mono">
+                    <td className="p-2 text-center text-slate-600 text-[11px]">{item.size || "-"}</td>
+                    <td className="p-2 text-center font-bold text-slate-900 text-[11px]">{qty}</td>
+                    <td className="p-2 text-right text-slate-700 font-mono text-[11px]">
                       ₹{rate.toFixed(2)}
                     </td>
-                    <td className="p-2 text-right font-bold text-slate-900 font-mono">
+                    <td className="p-2 text-right font-bold text-slate-900 font-mono text-[11px]">
                       ₹{amt.toFixed(2)}
                     </td>
                   </tr>

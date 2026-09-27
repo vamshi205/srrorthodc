@@ -220,6 +220,7 @@ const SavedDcs = () => {
   const [viewingCashMemoRef, setViewingCashMemoRef] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
   const [deletePassword, setDeletePassword] = useState("");
+  const [moveToPendingDialog, setMoveToPendingDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
   const [adminPasswordOpen, setAdminPasswordOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [paymentDialog, setPaymentDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
@@ -626,7 +627,7 @@ const SavedDcs = () => {
     setPaymentAmountInput(dc.cashAmount ? String(dc.cashAmount) : "");
     setPaymentRemarksInput("");
     setPaymentMethod(dc.paymentMethod || "cash");
-    setPaymentCollectedBy(dc.collectedBy || dc.returnedBy || dc.deliveredBy || "");
+    setPaymentCollectedBy(dc.collectedBy || "");
   };
 
   const handleQuickRecordPayment = async () => {
@@ -1209,6 +1210,11 @@ const SavedDcs = () => {
           returnedAt: new Date().toISOString(),
           returnedRemarks: returnedRemarksInput.trim() || "",
         },
+        meta: {
+          returnedBy,
+          returnedAt: new Date().toISOString(),
+          returnedRemarks: returnedRemarksInput.trim() || "",
+        }
       });
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
@@ -1461,6 +1467,10 @@ const SavedDcs = () => {
         toStatus: "pending",
         action: "MOVE_BACK_TO_PENDING",
         clear: ["returnedBy", "returnedAt", "returnedRemarks"],
+        meta: {
+          previousReturnedBy: dc.returnedBy,
+          previousReturnedAt: dc.returnedAt,
+        }
       });
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
@@ -2061,6 +2071,18 @@ const SavedDcs = () => {
                           </Button>
                         )}
 
+                        {selectedDc.status === "returned" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-slate-300 hover:text-white hover:bg-white/10 gap-1 px-2"
+                            onClick={() => setMoveToPendingDialog({ open: true, dc: selectedDc })}
+                            title="Move back to Pending"
+                          >
+                            <Undo2 className="h-3.5 w-3.5" /> Move to Pending
+                          </Button>
+                        )}
+
                         {selectedDc.status === "completed" && (
                           <Button
                             size="sm"
@@ -2424,9 +2446,9 @@ const SavedDcs = () => {
                                           </>
                                         )}
                                         {dc.status === "returned" && (
-                                          <DropdownMenuItem onClick={() => cancelReturnToPending(dc)} className="gap-2">
+                                          <DropdownMenuItem onClick={() => setMoveToPendingDialog({ open: true, dc })} className="gap-2">
                                             <Undo2 className="h-4 w-4" />
-                                            Cancel Return
+                                            Move back to Pending
                                           </DropdownMenuItem>
                                         )}
                                         <DropdownMenuSeparator />
@@ -2973,9 +2995,9 @@ const SavedDcs = () => {
                                               </DropdownMenuItem>
                                             )}
                                             {dc.status === "returned" && (
-                                              <DropdownMenuItem onClick={() => cancelReturnToPending(dc)} className="gap-2">
+                                              <DropdownMenuItem onClick={() => setMoveToPendingDialog({ open: true, dc })} className="gap-2">
                                                 <Undo2 className="h-4 w-4" />
-                                                Cancel Return (Back to Pending)
+                                                Move back to Pending
                                               </DropdownMenuItem>
                                             )}
                                             <DropdownMenuSeparator />
@@ -4633,144 +4655,221 @@ const SavedDcs = () => {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                     {/* Vertical Activity Timeline */}
                     <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-3">Activity</div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="text-xs font-semibold text-slate-700">Activity Timeline</div>
+                        <Badge variant="outline" className="text-[10px] text-slate-500 font-mono">
+                          {(selectedDc.history || []).length || 1} step{((selectedDc.history || []).length || 1) > 1 ? "s" : ""}
+                        </Badge>
+                      </div>
                       <div className="relative pl-5 space-y-4">
+                        {(selectedDc.history && selectedDc.history.length > 0) ? (
+                          selectedDc.history.map((h, idx) => {
+                            if (h.action === "CREATED" || h.action === "PURCHASE") {
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-slate-800">DC Created</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  {selectedDc.deliveredBy && (
+                                    <div className="text-[10px] text-slate-600 mt-0.5">
+                                      Delivered by: <span className="font-medium text-slate-800">{selectedDc.deliveredBy}</span>
+                                    </div>
+                                  )}
+                                  {selectedDc.receivedBy && (
+                                    <div className="text-[10px] text-slate-600">
+                                      Received by: <span className="font-medium text-slate-800">{selectedDc.receivedBy}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
 
-                        {/* Created */}
-                        <div className="relative">
-                          <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
-                          <div className="text-xs font-semibold text-slate-800">DC Created</div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(selectedDc.savedAt)}</div>
-                          {selectedDc.deliveredBy && (
-                            <div className="text-[10px] text-slate-600 mt-0.5">
-                              Delivered by: <span className="font-medium text-slate-800">{selectedDc.deliveredBy}</span>
-                            </div>
-                          )}
-                          {selectedDc.receivedBy && (
-                            <div className="text-[10px] text-slate-600">
-                              Received by: <span className="font-medium text-slate-800">{selectedDc.receivedBy}</span>
-                            </div>
-                          )}
-                        </div>
+                            if (h.action === "MARK_RETURNED") {
+                              const retPerson = (h.meta?.returnedBy as string) || (h.meta?.cleared as any)?.returnedBy || selectedDc.returnedBy;
+                              const retRemarks = (h.meta?.returnedRemarks as string) || (h.meta?.cleared as any)?.returnedRemarks;
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-teal-600 border-2 border-white ring-1 ring-teal-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-slate-800">Returned from Hospital</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  {retPerson && (
+                                    <div className="text-[10px] text-slate-600 mt-0.5">
+                                      Returned by: <span className="font-medium text-slate-800">{retPerson}</span>
+                                    </div>
+                                  )}
+                                  {retRemarks && (
+                                    <div className="text-[10px] text-slate-500 italic mt-0.5">"{retRemarks}"</div>
+                                  )}
+                                </div>
+                              );
+                            }
 
-                        {/* Returned */}
-                        {selectedDc.returnedAt ? (
-                          <div className="relative">
-                            <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-teal-600 border-2 border-white ring-1 ring-teal-200 shadow-sm" />
-                            <div className="text-xs font-semibold text-slate-800">Returned</div>
-                            <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(selectedDc.returnedAt)}</div>
-                            {selectedDc.returnedBy && (
-                              <div className="text-[10px] text-slate-600 mt-0.5">
-                                Returned by: <span className="font-medium text-slate-800">{selectedDc.returnedBy}</span>
+                            if (h.action === "MOVE_BACK_TO_PENDING") {
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-amber-500 border-2 border-white ring-1 ring-amber-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-amber-800">Moved Back to Pending</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  <div className="text-[10px] text-slate-600 mt-0.5">
+                                    Return status cancelled • Restored to Pending queue
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            if (h.action === "MOVE_TO_CASH") {
+                              const cashAmt = (h.meta?.cashAmount as number) || (h.meta?.paidAmount as number);
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-slate-800">Moved to Cash Queue</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  {cashAmt ? (
+                                    <div className="text-[10px] text-slate-600 mt-0.5">
+                                      Expected Cash: <span className="font-bold text-emerald-700">₹{cashAmt.toLocaleString("en-IN")}</span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            }
+
+                            if (h.action === "MOVE_BACK_TO_RETURNED") {
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-teal-600 border-2 border-white ring-1 ring-teal-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-teal-800">Moved Back to Returned</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  <div className="text-[10px] text-slate-600 mt-0.5">
+                                    Removed from invoice/cash • Restored to Returned queue
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            if (h.action === "LINK_INVOICE") {
+                              const invRef = (h.meta?.invoiceRef as string) || selectedDc.invoiceRef;
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-green-600 border-2 border-white ring-1 ring-green-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-slate-800">Tax Invoice Linked</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  {invRef && (
+                                    <div className="text-[10px] text-slate-600 mt-0.5">
+                                      Invoice Ref: <span className="font-mono font-medium text-slate-800">{invRef}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            if (h.action === "MOVE_CASH_TO_COMPLETED") {
+                              const method = (h.meta?.paymentMethod as string) || selectedDc.paymentMethod || "cash";
+                              const collector = (h.meta?.collectedBy as string) || selectedDc.collectedBy;
+                              const paid = (h.meta?.paidAmount as number) || (h.meta?.cashAmount as number) || selectedDc.cashAmount;
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-emerald-600 border-2 border-white ring-1 ring-emerald-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-emerald-800">
+                                    Payment Recorded & Settled
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                    {method === "cash" ? (
+                                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                                        <Banknote className="h-3 w-3" /> Cash
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 font-semibold text-indigo-700">
+                                        <Landmark className="h-3 w-3" /> Bank Transfer / UPI
+                                      </span>
+                                    )}
+                                    {collector && <span>• Collected by <strong className="text-slate-800">{collector}</strong></span>}
+                                    {paid ? <span>• Paid: <strong className="text-emerald-700">₹{paid.toLocaleString("en-IN")}</strong></span> : null}
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            if (h.action === "CANCEL_CASE") {
+                              const reason = (h.meta?.cancelledRemarks as string) || selectedDc.cancelledRemarks;
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-white ring-1 ring-red-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-red-700">Case Cancelled</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  {reason && (
+                                    <div className="text-[10px] text-slate-600 mt-0.5 italic">Reason: {reason}</div>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            if (h.action === "RESTORE_FROM_CANCELLED") {
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative">
+                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-amber-500 border-2 border-white ring-1 ring-amber-200 shadow-sm" />
+                                  <div className="text-xs font-semibold text-amber-800">Restored from Cancelled</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
+                                  <div className="text-[10px] text-slate-600 mt-0.5">Cancellation revoked • Restored to Pending queue</div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div key={`${h.at}-${idx}`} className="relative">
+                                <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-slate-500 border-2 border-white ring-1 ring-slate-200 shadow-sm" />
+                                <div className="text-xs font-semibold text-slate-800">{h.action.replace(/_/g, " ")}</div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
                               </div>
-                            )}
-                          </div>
-                        ) : selectedDc.status === "pending" && (
-                          <div className="relative">
-                            <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-white border-2 border-amber-400 shadow-sm" />
-                            <div className="text-xs font-semibold text-amber-700">Pending Return</div>
-                            <div className="text-[10px] text-slate-500 mt-0.5">Awaiting return from hospital</div>
-                          </div>
-                        )}
-
-                        {/* Cash Queue: Generated & Awaiting Payment */}
-                        {selectedDc.status === "cash" && (
+                            );
+                          })
+                        ) : (
                           <>
                             <div className="relative">
                               <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
-                              <div className="text-xs font-semibold text-slate-800">Cash Memo Generated</div>
-                              {selectedDc.invoiceRef && (
-                                <div className="text-[10px] text-slate-600 mt-0.5">
-                                  Ref: <span className="font-mono font-medium text-slate-800">{selectedDc.invoiceRef}</span>
-                                </div>
-                              )}
-                              {(selectedDc as any).billedAmount ? (
-                                <div className="text-[10px] text-slate-500">
-                                  Printed Bill: ₹{(selectedDc as any).billedAmount.toLocaleString("en-IN")}
-                                </div>
-                              ) : null}
+                              <div className="text-xs font-semibold text-slate-800">DC Created</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(selectedDc.savedAt)}</div>
                             </div>
-
-                            <div className="relative">
-                              <span className="absolute -left-5 top-0.5 flex h-3 w-3 items-center justify-center">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 border border-white"></span>
-                              </span>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-xs font-bold text-amber-800">Awaiting Payment</span>
-                                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 uppercase">
-                                  UNPAID
-                                </span>
+                            {selectedDc.status === "pending" && (
+                              <div className="relative">
+                                <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-white border-2 border-amber-400 shadow-sm" />
+                                <div className="text-xs font-semibold text-amber-700">Pending Return</div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">Awaiting return from hospital</div>
                               </div>
-                              <div className="text-[10px] text-slate-600 mt-0.5">
-                                Pending in Cash Queue • Aging: {getCashMemoAgingDays(selectedDc)} day{getCashMemoAgingDays(selectedDc) === 1 ? '' : 's'}
-                              </div>
-                              {(selectedDc as any).cashAmount ? (
-                                <div className="text-[11px] font-bold text-amber-900 mt-0.5">
-                                  Net Cash Due: ₹{(selectedDc as any).cashAmount.toLocaleString("en-IN")}
-                                </div>
-                              ) : null}
-                            </div>
+                            )}
                           </>
                         )}
 
-                        {/* Completed / Settled Invoiced */}
-                        {selectedDc.status !== "cash" && selectedDc.invoiceRef && (
+                        {/* Current pending indicator if active and ended on move back to pending */}
+                        {selectedDc.status === "pending" && selectedDc.history && selectedDc.history.length > 0 && selectedDc.history[selectedDc.history.length - 1].action === "MOVE_BACK_TO_PENDING" && (
                           <div className="relative">
-                            <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-green-600 border-2 border-white ring-1 ring-green-200 shadow-sm" />
-                            <div className="text-xs font-semibold text-slate-800">
-                              {selectedIsTaxInvoice ? "Tax Invoice Linked" : "Payment Received & Settled"}
+                            <span className="absolute -left-5 top-0.5 flex h-3 w-3 items-center justify-center">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 border border-white"></span>
+                            </span>
+                            <div className="text-xs font-bold text-amber-800">Currently in Pending Queue</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">Awaiting fresh return from hospital</div>
+                          </div>
+                        )}
+
+                        {/* Current cash indicator if active in cash queue */}
+                        {selectedDc.status === "cash" && (
+                          <div className="relative">
+                            <span className="absolute -left-5 top-0.5 flex h-3 w-3 items-center justify-center">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 border border-white"></span>
+                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-bold text-amber-800">Awaiting Payment</span>
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 uppercase">
+                                UNPAID
+                              </span>
                             </div>
                             <div className="text-[10px] text-slate-600 mt-0.5">
-                              Ref: <span className="font-medium text-slate-800">{selectedDc.invoiceRef}</span>
+                              Pending in Cash Queue • Aging: {getCashMemoAgingDays(selectedDc)} day{getCashMemoAgingDays(selectedDc) === 1 ? '' : 's'}
                             </div>
-                            {(selectedDc as any).cashAmount && (
-                              <div className="text-[10px] text-green-700 font-medium">
-                                ₹{(selectedDc as any).cashAmount.toLocaleString("en-IN")}
-                              </div>
-                            )}
-                            {selectedDc.paymentMethod && (
-                              <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-1 flex-wrap">
-                                {selectedDc.paymentMethod === "cash" ? (
-                                  <>
-                                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
-                                      <Banknote className="h-3 w-3" /> Cash
-                                    </span>
-                                    {selectedDc.collectedBy && (
-                                      <span>• Collected by <strong className="text-slate-800">{selectedDc.collectedBy}</strong></span>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 font-semibold text-indigo-700">
-                                    <Landmark className="h-3 w-3" /> Bank Transfer / UPI
-                                  </span>
-                                )}
-                              </div>
-                            )}
                           </div>
                         )}
-
-                        {/* Cancelled */}
-                        {selectedDc.status === "cancelled" && (
-                          <div className="relative">
-                            <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-white ring-1 ring-red-200 shadow-sm" />
-                            <div className="text-xs font-semibold text-red-700">Case Cancelled</div>
-                            <div className="text-[10px] text-slate-500 mt-0.5">
-                              {selectedDc.cancelledAt ? formatDateTime(selectedDc.cancelledAt) : "-"}
-                            </div>
-                            {selectedDc.returnedBy && (
-                              <div className="text-[10px] text-slate-700 mt-1 font-medium">
-                                Items Returned by: <span className="font-bold text-slate-900">{selectedDc.returnedBy}</span>
-                              </div>
-                            )}
-                            {selectedDc.cancelledRemarks && (
-                              <div className="text-[10px] text-slate-500 mt-0.5 italic">
-                                Reason: {selectedDc.cancelledRemarks}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
                       </div>
                     </div>
 
@@ -5177,6 +5276,90 @@ const SavedDcs = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Confirm Move Back to Pending Dialog */}
+      <Dialog
+        open={moveToPendingDialog.open}
+        onOpenChange={(open) => setMoveToPendingDialog({ open, dc: open ? moveToPendingDialog.dc : null })}
+      >
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-[420px] p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Move Back to Pending</DialogTitle>
+            <DialogDescription>
+              Confirm moving DC {moveToPendingDialog.dc?.dcNo} back to pending.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 1. TOP HEADER */}
+          <div className="bg-slate-50/90 dark:bg-slate-850 border-b border-slate-200/80 dark:border-slate-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                    DC #{moveToPendingDialog.dc?.dcNo}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 bg-slate-200/70 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Currently Returned
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5 mt-1">
+                  <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-700/60">
+                    <RotateCcw className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+                    Move Back to Pending?
+                  </h3>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. BODY / INFO BOTTOM */}
+          <div className="p-5 space-y-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1 bg-slate-50 dark:bg-slate-850/60 p-3 rounded-xl border border-slate-200/70 dark:border-slate-800">
+              <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate">
+                <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>{moveToPendingDialog.dc?.hospitalName || moveToPendingDialog.dc?.partyName || "Hospital Record"}</span>
+              </div>
+              {moveToPendingDialog.dc?.doctorName && (
+                <div className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5 truncate pl-5">
+                  <span>Dr. {moveToPendingDialog.dc.doctorName}</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed px-1">
+              This will clear the returned status and move DC #{moveToPendingDialog.dc?.dcNo} back into the active pending list.
+            </p>
+          </div>
+
+          {/* 3. FOOTER */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setMoveToPendingDialog({ open: false, dc: null })}
+              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                const dc = moveToPendingDialog.dc;
+                if (!dc) return;
+                setMoveToPendingDialog({ open: false, dc: null });
+                await cancelReturnToPending(dc);
+              }}
+              className="rounded-xl h-10 px-5 text-xs font-bold gap-1.5 bg-amber-600 hover:bg-amber-700 text-white shadow-xs"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Confirm &amp; Move</span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Admin Password Dialog */}
       <Dialog open={adminPasswordOpen} onOpenChange={setAdminPasswordOpen}>
         <DialogContent
@@ -5287,56 +5470,50 @@ const SavedDcs = () => {
       >
         <DialogContent 
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[490px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="sm:max-w-[520px] p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>Record Payment</DialogTitle>
+            <DialogTitle>Record Payment Collection</DialogTitle>
             <DialogDescription>
               Record payment settlement for DC {paymentDialog.dc?.dcNo}.
             </DialogDescription>
           </DialogHeader>
 
-          {/* 1. TOP HEADER: Clean Light Themed Context */}
-          <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-slate-50/50 dark:from-slate-850 dark:via-emerald-950/30 dark:to-slate-900 border-b border-emerald-100 dark:border-slate-800 px-5 py-4">
-            <div className="flex items-start gap-3.5">
-              <div className="h-10 w-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-200/80 shadow-xs">
-                {paymentMethod === "bank_transfer" ? (
-                  <Landmark className="h-5 w-5 text-indigo-700 dark:text-indigo-400" />
-                ) : (
-                  <Wallet className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200">
-                      DC #{paymentDialog.dc?.dcNo}
+          {/* 1. TOP HEADER */}
+          <div className="bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200/80 dark:border-slate-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-3 pr-6">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200">
+                    DC #{paymentDialog.dc?.dcNo}
+                  </span>
+                  {paymentDialog.dc?.invoiceRef && (
+                    <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      Memo #{paymentDialog.dc.invoiceRef}
                     </span>
-                    {paymentDialog.dc?.invoiceRef && (
-                      <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200">
-                        Memo: {paymentDialog.dc.invoiceRef}
-                      </span>
-                    )}
-                  </div>
+                  )}
                   <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
                     Awaiting Settlement
                   </span>
                 </div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-snug">
-                  {paymentMethod === "bank_transfer" ? "Record Bank Transfer / UPI" : "Record Cash Payment"}
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+                  Record Payment Collection
                 </h3>
                 <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-400 mt-1 flex-wrap">
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{paymentDialog.dc?.hospitalName || "Hospital Record"}</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                    <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    {paymentDialog.dc?.hospitalName || "Hospital Record"}
+                  </span>
                   {paymentDialog.dc?.doctorName && (
                     <span className="flex items-center gap-1">
-                      <Stethoscope className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <Stethoscope className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       Dr. {paymentDialog.dc.doctorName}
                     </span>
                   )}
                   {paymentDialog.dc?.patientName && (
                     <span className="flex items-center gap-1">
-                      <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      Patient: {paymentDialog.dc.patientName}
+                      <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      Pt: {paymentDialog.dc.patientName}
                     </span>
                   )}
                 </div>
@@ -5344,71 +5521,69 @@ const SavedDcs = () => {
             </div>
           </div>
 
-          {/* 2. TOP INFO CARD: Financial & Bill Breakdown */}
-          <div className="px-5 pt-4 pb-1">
+          {/* 2. BODY CONTENT */}
+          <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+            {/* Financial Receivable Banner */}
             {Boolean(paymentDialog.dc?.billedAmount && paymentDialog.dc.billedAmount > (paymentDialog.dc.cashAmount || 0)) ? (
-              <div className="rounded-xl border border-amber-200/90 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/30 p-3.5 space-y-2">
+              <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                    <Receipt className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                    Hiked Bill Settlement Breakdown
+                    <Receipt className="w-3.5 h-3.5 text-amber-600" />
+                    Hiked Bill Settlement
                   </span>
-                  <span className="text-[10px] bg-amber-200/80 dark:bg-amber-900/80 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
-                    Hospital Cut
+                  <span className="text-[10px] bg-amber-200/70 dark:bg-amber-900/60 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
+                    Margin Deducted
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-amber-200/70 dark:border-amber-900/40">
-                  <div className="text-slate-600 dark:text-slate-400">
-                    <span className="block text-[10px] text-slate-400 dark:text-slate-500 uppercase">Printed Bill</span>
-                    <span className="font-semibold line-through text-slate-700 dark:text-slate-300">
+                <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-amber-200/60 dark:border-amber-900/30">
+                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
+                    <span className="block text-[10px] text-slate-500 uppercase font-semibold">Printed Bill</span>
+                    <span className="font-bold text-slate-700 dark:text-slate-300">
                       ₹{paymentDialog.dc?.billedAmount?.toLocaleString('en-IN')}
                     </span>
                   </div>
-                  <div className="text-right text-amber-800 dark:text-amber-300">
-                    <span className="block text-[10px] text-amber-600/80 dark:text-amber-400/80 uppercase">Hospital Margin</span>
-                    <span className="font-semibold">
-                      - ₹{(paymentDialog.dc?.hospitalMargin || (paymentDialog.dc!.billedAmount! - (paymentDialog.dc!.cashAmount || 0))).toLocaleString('en-IN')}
+                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
+                    <span className="block text-[10px] text-amber-700 dark:text-amber-400 uppercase font-semibold">Hospital Cut</span>
+                    <span className="font-bold text-amber-800 dark:text-amber-300">
+                      -₹{(paymentDialog.dc?.hospitalMargin || (paymentDialog.dc!.billedAmount! - (paymentDialog.dc!.cashAmount || 0))).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-900/30 text-center">
+                    <span className="block text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold">Net Due</span>
+                    <span className="font-black text-emerald-800 dark:text-emerald-300">
+                      ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center justify-between pt-2 border-t border-amber-200/80 dark:border-amber-900/50">
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Actual Cash to Collect:</span>
-                  <span className="text-base font-extrabold text-emerald-700 dark:text-emerald-400">
-                    ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
-                  </span>
-                </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-3.5 flex items-center justify-between">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/60 p-3.5 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                     Outstanding Receivable
                   </span>
-                  <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
-                    Total payment due for this delivery challan
+                  <span className="text-xs text-slate-600 dark:text-slate-400">
+                    Total payment due for this DC
                   </span>
                 </div>
                 <div className="text-right">
-                  <span className="text-lg font-black text-emerald-700 dark:text-emerald-400">
+                  <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono">
                     ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* 3. BOTTOM OPTIONS: Selection & Form Inputs */}
-          <div className="px-5 py-3 space-y-3.5">
-            {/* Payment Method Selector */}
+            {/* Payment Mode Selector */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Payment Method *
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Payment Mode *
               </Label>
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("cash")}
-                  className={`flex items-center justify-center gap-2 h-11 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                     paymentMethod === "cash"
                       ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs"
                       : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -5416,11 +5591,12 @@ const SavedDcs = () => {
                 >
                   <Banknote className={`w-4 h-4 shrink-0 ${paymentMethod === "cash" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`} />
                   <span>Cash Payment</span>
+                  {paymentMethod === "cash" && <Check className="w-3.5 h-3.5 ml-auto text-emerald-600" />}
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("bank_transfer")}
-                  className={`flex items-center justify-center gap-2 h-11 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                     paymentMethod === "bank_transfer"
                       ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
                       : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -5428,58 +5604,69 @@ const SavedDcs = () => {
                 >
                   <Landmark className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
                   <span>Bank Transfer / UPI</span>
+                  {paymentMethod === "bank_transfer" && <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />}
                 </button>
               </div>
             </div>
 
-            {/* Conditional Collector Field (if cash selected) */}
+            {/* Cash Collector Selection (Only when Cash is selected) */}
             {paymentMethod === "cash" && (
-              <div className="space-y-2 rounded-xl border border-emerald-200/90 bg-emerald-50/50 dark:bg-emerald-950/30 dark:border-emerald-900/40 p-3">
+              <div className="space-y-2 pt-0.5">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
+                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                    <User className="w-3.5 h-3.5 text-emerald-600" />
                     Who Collected the Cash? *
                   </Label>
-                  <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
                     Required
                   </span>
                 </div>
                 <PersonnelSelect
                   value={paymentCollectedBy}
                   onChange={setPaymentCollectedBy}
-                  placeholder="Select or enter person who collected cash..."
+                  placeholder="Select or type collector name..."
                   showQuickPicks={false}
                 />
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-0.5">Quick Select:</span>
-                  {TRANSPORT_MODES.map((mode) => {
-                    const isSelected = paymentCollectedBy.trim().toLowerCase() === mode.name.toLowerCase();
-                    return (
-                      <button
-                        key={mode.name}
-                        type="button"
-                        onClick={() => setPaymentCollectedBy(mode.name)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                          isSelected
-                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                            : "bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:border-emerald-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
-                        }`}
-                      >
-                        {mode.name}
-                      </button>
-                    );
-                  })}
+                {/* Clean Quick Picks */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="text-[11px] font-medium text-slate-400 mr-0.5">Quick:</span>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentCollectedBy("Self")}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      paymentCollectedBy.trim().toLowerCase() === "self"
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                    }`}
+                  >
+                    Self
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentCollectedBy("Office")}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      paymentCollectedBy.trim().toLowerCase() === "office"
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                    }`}
+                  >
+                    Office
+                  </button>
                   {paymentDialog.dc?.deliveredBy && !isDisallowedPersonnel(paymentDialog.dc.deliveredBy) && (
                     <button
                       type="button"
                       onClick={() => setPaymentCollectedBy(paymentDialog.dc?.deliveredBy || "")}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 cursor-pointer"
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        paymentCollectedBy.trim().toLowerCase() === (paymentDialog.dc?.deliveredBy || "").toLowerCase()
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                      }`}
                     >
-                      <User className="w-3 h-3 text-teal-600" />
+                      <UserCheck className="w-3 h-3 text-teal-600" />
                       <span>Delivery: {paymentDialog.dc.deliveredBy}</span>
                     </button>
                   )}
-                  {topReturnPersons.map((p) => {
+                  {topReturnPersons.slice(0, 4).map((p) => {
                     const isSelected = paymentCollectedBy.trim().toLowerCase() === p.name.toLowerCase();
                     return (
                       <button
@@ -5489,7 +5676,7 @@ const SavedDcs = () => {
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                           isSelected
                             ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                            : "bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:border-emerald-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
                         }`}
                       >
                         <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-emerald-600"}`} />
@@ -5501,53 +5688,58 @@ const SavedDcs = () => {
               </div>
             )}
 
-            {/* Paid Amount Input */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="payment-amount" className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  Amount Received (INR) *
-                </Label>
-                {paymentDialog.dc?.cashAmount && (
-                  <button
-                    type="button"
-                    onClick={() => setPaymentAmountInput(String(paymentDialog.dc?.cashAmount || ''))}
-                    className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-bold cursor-pointer inline-flex items-center gap-1"
-                  >
-                    <span>Fill Full Due: ₹{paymentDialog.dc.cashAmount.toLocaleString('en-IN')}</span>
-                  </button>
-                )}
+            {/* Amount Received & Remarks */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Paid Amount */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="payment-amount" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Amount Received *
+                  </Label>
+                  {paymentDialog.dc?.cashAmount && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentAmountInput(String(paymentDialog.dc?.cashAmount || ''))}
+                      className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
+                    >
+                      Full Due
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">
+                    ₹
+                  </span>
+                  <Input
+                    id="payment-amount"
+                    type="number"
+                    value={paymentAmountInput}
+                    onChange={(e) => setPaymentAmountInput(e.target.value)}
+                    placeholder={paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "0"}
+                    className="pl-7 h-10 font-bold text-sm bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
               </div>
-              <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 h-10 px-3">
-                <span className="text-sm font-bold text-slate-500 dark:text-slate-400 mr-2">₹</span>
+
+              {/* Payment Remarks */}
+              <div className="space-y-1.5">
+                <Label htmlFor="payment-remarks" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Notes / Ref <span className="font-normal text-slate-400">(Optional)</span>
+                </Label>
                 <Input
-                  id="payment-amount"
-                  type="number"
-                  value={paymentAmountInput}
-                  onChange={(e) => setPaymentAmountInput(e.target.value)}
-                  placeholder={paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "Enter amount"}
-                  className="h-full border-0 bg-transparent p-0 focus-visible:ring-0 focus-visible:ring-offset-0 font-bold text-slate-900 dark:text-slate-100 text-sm"
+                  id="payment-remarks"
+                  type="text"
+                  value={paymentRemarksInput}
+                  onChange={(e) => setPaymentRemarksInput(e.target.value)}
+                  placeholder={paymentMethod === "cash" ? "e.g. Received at billing" : "e.g. UTR / UPI Ref"}
+                  className="h-10 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
                 />
               </div>
             </div>
-
-            {/* Payment Notes Input */}
-            <div className="space-y-1.5">
-              <Label htmlFor="payment-remarks" className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Payment Notes <span className="font-normal text-slate-500">(Optional)</span>
-              </Label>
-              <Input
-                id="payment-remarks"
-                type="text"
-                value={paymentRemarksInput}
-                onChange={(e) => setPaymentRemarksInput(e.target.value)}
-                placeholder={paymentMethod === "cash" ? "e.g. Received full cash at hospital counter" : "e.g. Received via UPI / NEFT to company account"}
-                className="rounded-xl border-slate-300 dark:border-slate-700 text-xs h-10"
-              />
-            </div>
           </div>
 
-          {/* 4. FOOTER: Clear Action Buttons */}
-          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+          {/* 3. FOOTER ACTION BAR */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
             <Button 
               variant="outline" 
               onClick={() => {
@@ -5564,7 +5756,7 @@ const SavedDcs = () => {
             </Button>
             <Button 
               onClick={handleQuickRecordPayment} 
-              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-10 px-5 text-xs font-bold gap-2 shadow-sm min-w-[140px]"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-10 px-5 text-xs font-bold gap-1.5 shadow-sm min-w-[150px]"
               disabled={isActionLoading}
             >
               {isActionLoading ? (
