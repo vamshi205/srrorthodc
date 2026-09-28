@@ -300,30 +300,28 @@ export default function OrthoApp() {
       prev.map((p) => {
         if (p.name !== procedureName) return p;
 
+        const qtyMap = new Map(p.fixedQtyEdits);
+        const selectedMap = new Map(p.selectedFixedItems);
+        const locationMap = { ...(p.fixedItemLocationMapping || {}) };
+        const imageMap = { ...(p.fixedItemImageMapping || {}) };
+
         // Find the fixed item and remove the part
         const updatedFixedItems = p.fixedItems.map((item) => {
           if (item.name === itemName) {
             const partToRemoveTrimmed = partToRemove.trim();
-
-            // Simple approach: find the part in the string and remove it along with any comma
-            // Handle cases like "120° DHS Plate Short Barrell 4hole,5hole,6hole"
-            // The partToRemove might be just "4hole" but the actual part in the array is "120° DHS Plate Long Barrell 4hole"
             let newName = itemName;
 
             // Split by comma to get individual parts
-            const parts = newName.split(',').map(p => p.trim());
+            const parts = newName.split(',').map(part => part.trim()).filter(Boolean);
 
             // Find which part contains the part to remove
             let foundAndRemoved = false;
-            const updatedParts = parts.map((part, index) => {
+            const updatedParts = parts.map((part) => {
               // If this is the part being removed
               if (part === partToRemoveTrimmed) {
-                // First, try to detect if it has a suffix pattern (like "4hole", "5hole" at the end)
-                // Pattern: space + number + word(s) at the end (e.g., " 4hole", " 5hole")
                 const suffixPattern = /\s+(\d+\w+)$/; // Matches space + number + word at the end
                 const match = part.match(suffixPattern);
                 if (match) {
-                  // Found a suffix pattern, remove just the suffix
                   const beforeSuffix = part.slice(0, -match[0].length).trim();
                   if (beforeSuffix.length > 0) {
                     foundAndRemoved = true;
@@ -331,20 +329,16 @@ export default function OrthoApp() {
                   }
                 }
 
-                // If no suffix pattern found, check if it's a short standalone part (like "5hole")
-                // Remove the entire part if it's short and simple
                 if (part.length < 15 && /^\d+\w+$/.test(part)) {
                   foundAndRemoved = true;
                   return null;
                 }
 
-                // Otherwise, if it's a longer part without a clear suffix pattern, remove the entire part
                 foundAndRemoved = true;
                 return null;
               }
 
               // If the part ends with the partToRemove and has content before it, remove just the suffix
-              // This handles edge cases where partToRemove might be a substring
               if (part.endsWith(partToRemoveTrimmed) && part.length > partToRemoveTrimmed.length) {
                 const charBeforeIndex = part.length - partToRemoveTrimmed.length - 1;
                 const charBefore = charBeforeIndex >= 0 ? part[charBeforeIndex] : null;
@@ -362,41 +356,56 @@ export default function OrthoApp() {
             }).filter(p => p !== null && p.length > 0);
 
             if (updatedParts.length > 0 && foundAndRemoved) {
-              // Join parts with commas
-              newName = updatedParts.join(',');
+              newName = updatedParts.join(', ');
             } else if (!foundAndRemoved) {
-              // If we didn't find the part to remove, don't update
               return item;
             } else {
-              // If all parts were removed, don't update
               return item;
             }
 
             // Only update if name actually changed
             if (newName !== itemName && newName.trim().length > 0) {
-              // Update fixedQtyEdits if it exists
-              const qtyMap = new Map(p.fixedQtyEdits);
-              const oldQty = qtyMap.get(itemName);
-              if (oldQty) {
-                qtyMap.delete(itemName);
-                qtyMap.set(newName.trim(), oldQty);
-              }
+              // Update quantity: decrement current quantity by 1 based on removed size/part
+              const currentQtyStr = qtyMap.get(itemName) ?? item.qty ?? '1';
+              const currentQtyNum = parseInt(currentQtyStr, 10);
+              const newQtyNum = !isNaN(currentQtyNum) && currentQtyNum > 1 ? currentQtyNum - 1 : 1;
+              const newQtyStr = String(newQtyNum);
+
+              // Update fixedQtyEdits
+              qtyMap.delete(itemName);
+              qtyMap.set(newName.trim(), newQtyStr);
 
               // Update selectedFixedItems
-              const selectedMap = new Map(p.selectedFixedItems);
               const wasSelected = selectedMap.get(itemName);
               if (wasSelected !== undefined) {
                 selectedMap.delete(itemName);
                 selectedMap.set(newName.trim(), wasSelected);
               }
 
-              return { ...item, name: newName.trim() };
+              // Update location & image mappings
+              if (locationMap[itemName]) {
+                locationMap[newName.trim()] = locationMap[itemName];
+                delete locationMap[itemName];
+              }
+              if (imageMap[itemName]) {
+                imageMap[newName.trim()] = imageMap[itemName];
+                delete imageMap[itemName];
+              }
+
+              return { ...item, name: newName.trim(), qty: newQtyStr };
             }
           }
           return item;
         });
 
-        return { ...p, fixedItems: updatedFixedItems };
+        return {
+          ...p,
+          fixedItems: updatedFixedItems,
+          fixedQtyEdits: qtyMap,
+          selectedFixedItems: selectedMap,
+          fixedItemLocationMapping: locationMap,
+          fixedItemImageMapping: imageMap,
+        };
       })
     );
   }, []);

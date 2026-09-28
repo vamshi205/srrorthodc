@@ -2071,17 +2071,7 @@ const SavedDcs = () => {
                           </Button>
                         )}
 
-                        {selectedDc.status === "returned" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-xs text-slate-300 hover:text-white hover:bg-white/10 gap-1 px-2"
-                            onClick={() => setMoveToPendingDialog({ open: true, dc: selectedDc })}
-                            title="Move back to Pending"
-                          >
-                            <Undo2 className="h-3.5 w-3.5" /> Move to Pending
-                          </Button>
-                        )}
+
 
                         {selectedDc.status === "completed" && (
                           <Button
