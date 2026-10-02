@@ -25,6 +25,7 @@ import {
   Receipt,
   ArrowLeft,
   Building2,
+  Landmark,
 } from 'lucide-react';
 
 type TopToolbarProps = {
@@ -66,6 +67,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   const isLandingScreen = pathname === '/' && !currentMode;
   const isImageDb = pathname === '/images';
   const isCashInvoice = pathname === '/cash-invoice';
+  const isBankAccounts = pathname === '/bank-accounts';
   const isCustomers = pathname === '/customers';
   const isQuotation = pathname === '/quotation';
   const isDcTracker = pathname === '/saved';
@@ -76,9 +78,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   }
 
   const getNavBtnClass = (isActive: boolean) =>
-    `gap-2 text-xs font-bold h-8 rounded-lg transition-all ${
+    `gap-1.5 text-xs font-bold h-8 px-2.5 rounded-lg transition-all ${
       isActive
-        ? 'bg-white text-sky-700 shadow-md border-2 border-white scale-[1.03]'
+        ? 'bg-white text-teal-800 shadow-sm border border-white'
         : 'text-white/80 hover:bg-white/15 hover:text-white'
     }`;
 
@@ -91,10 +93,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
   return (
     <header className="sticky top-0 z-30 w-full mb-3 sm:mb-4">
-      <div className="w-full rounded-2xl border border-white/20 dark:border-white/10 bg-gradient-to-r from-teal-600/95 via-teal-700/95 to-cyan-800/95 dark:from-slate-900/95 dark:via-teal-950/95 dark:to-slate-900/95 backdrop-blur-xl shadow-lg px-3.5 sm:px-5 py-2.5 sm:py-3 flex items-center justify-between gap-3 sm:gap-4 text-white">
+      <div className="w-full h-14 sm:h-16 rounded-2xl border border-white/20 dark:border-white/10 bg-gradient-to-r from-teal-600/95 via-teal-700/95 to-cyan-800/95 dark:from-slate-900/95 dark:via-teal-950/95 dark:to-slate-900/95 backdrop-blur-xl shadow-lg px-3 sm:px-4 flex items-center justify-between gap-2.5 sm:gap-3 text-white select-none">
         
         {/* Left Side: Back button, Logo & Brand */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
           <Button
             variant="ghost"
             size="sm"
@@ -106,28 +108,28 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               }
               navigate(-1);
             }}
-            className="h-8 sm:h-9 px-2 sm:px-3 rounded-lg sm:rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs flex items-center gap-1.5 border border-white/25 shadow-xs transition-all active:scale-95 shrink-0"
+            className="h-8 sm:h-9 px-2 sm:px-2.5 rounded-lg sm:rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs flex items-center gap-1 border border-white/25 shadow-xs transition-all active:scale-95 shrink-0"
             title="Go Back to Previous Screen"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden sm:inline">Back</span>
           </Button>
 
-          <div className="flex items-center gap-2.5 min-w-0 cursor-pointer" onClick={() => navigate('/')} title="Return to Dashboard Home">
-            <div className="w-10 h-10 rounded-xl bg-white p-0.5 border border-white/40 flex items-center justify-center shadow-md shrink-0 overflow-hidden">
+          <div className="flex items-center gap-2 min-w-0 cursor-pointer" onClick={() => navigate('/')} title="Return to Dashboard Home">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white p-0.5 border border-white/40 flex items-center justify-center shadow-md shrink-0 overflow-hidden">
               <img src="/srr-favicon.png" alt="SRR Ortho Logo" className="w-full h-full object-contain" />
             </div>
-            <div className="min-w-0">
-              <div className="font-display font-bold text-lg tracking-tight text-white leading-tight truncate">
-                SRR Ortho Plus Portal
+            <div className="min-w-0 hidden md:block">
+              <div className="font-display font-bold text-base sm:text-lg tracking-tight text-white leading-tight truncate">
+                SRR Ortho Plus
               </div>
-              <div className="text-xs text-teal-100/70 truncate hidden sm:block">Operations & Inventory Portal</div>
+              <div className="text-[11px] text-teal-100/70 truncate">Operations Portal</div>
             </div>
           </div>
         </div>
 
         {/* Desktop Navigation Links */}
-        <div className="hidden lg:flex items-center gap-1.5 bg-black/10 dark:bg-white/5 p-1 rounded-xl border border-white/10">
+        <div className="hidden lg:flex items-center gap-1 bg-black/10 dark:bg-white/5 p-1 rounded-xl border border-white/10">
             <Button
               variant="ghost"
               size="sm"
@@ -178,6 +180,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             <Button
               variant="ghost"
               size="sm"
+              className={getNavBtnClass(isBankAccounts)}
+              onClick={() => navigate('/bank-accounts')}
+            >
+              <Landmark className={`w-3.5 h-3.5 ${isBankAccounts ? 'text-teal-800' : 'text-teal-200'}`} /> Bank Accounts
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
               className={getNavBtnClass(isCustomers)}
               onClick={() => navigate('/customers')}
             >
@@ -190,17 +201,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               className={getNavBtnClass(isQuotation)}
               onClick={() => navigate('/quotation')}
             >
-              <FileText className={`w-3.5 h-3.5 ${isQuotation ? 'text-sky-700' : 'text-teal-200'}`} /> Quotation
+              <FileText className={`w-3.5 h-3.5 ${isQuotation ? 'text-teal-800' : 'text-teal-200'}`} /> Quotation
             </Button>
 
-            {/* DC Tracker - Unique Amber Glow Badge */}
+            {/* DC Tracker - Uniform Height Amber Button */}
             <Button
               variant="ghost"
               size="sm"
-              className={`gap-2 text-xs font-extrabold h-8 rounded-lg transition-all border ${
+              className={`gap-1.5 text-xs font-bold h-8 px-2.5 rounded-lg transition-all border ${
                 isDcTracker
-                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg shadow-amber-400/30 scale-[1.05]'
-                  : 'bg-amber-400/20 text-amber-200 border-amber-300/40 hover:bg-amber-400/30 hover:text-amber-100 shadow-sm'
+                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-sm font-extrabold'
+                  : 'bg-amber-400/20 text-amber-200 border-amber-300/40 hover:bg-amber-400/30 hover:text-amber-100'
               }`}
               onClick={() => navigate('/saved')}
             >
@@ -209,84 +220,85 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           </div>
 
           {/* Right Side: Quick Actions & Utilities */}
-          <div className="flex items-center gap-2">
-            {/* Refresh Data - only on procedure list or manual DC */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Refresh Data on DC routes */}
             {(isProcedureList || isManualDc) && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="hidden sm:flex text-white hover:bg-white/15 hover:text-white h-9 px-3 gap-1.5 text-xs font-medium border border-white/10"
+                className="hidden sm:flex text-white hover:bg-white/15 hover:text-white h-8 px-2.5 gap-1.5 text-xs font-medium border border-white/10 rounded-lg"
                 onClick={() => fetchProcedures(true)}
                 disabled={loading}
                 title="Refresh Procedures"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-teal-200 ${loading ? 'animate-spin' : ''}`} />
-                <span className="hidden md:inline">{loading ? 'Refreshing...' : 'Refresh'}</span>
+                <span className="hidden xl:inline">{loading ? '...' : 'Refresh'}</span>
               </Button>
             )}
 
-            {/* Print Action */}
+            {/* Print Action on DC routes */}
             {(isProcedureList || isManualDc) && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="hidden sm:flex text-white hover:bg-white/15 hover:text-white h-9 px-3 gap-1.5 text-xs font-medium border border-white/10"
+                className="hidden sm:flex text-white hover:bg-white/15 hover:text-white h-8 px-2.5 gap-1.5 text-xs font-medium border border-white/10 rounded-lg"
                 onClick={handlePrint}
                 title="Print Challan"
               >
                 <Printer className="w-3.5 h-3.5 text-teal-200" />
-                <span className="hidden md:inline">Print</span>
+                <span className="hidden xl:inline">Print</span>
               </Button>
             )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-9 w-9 text-amber-300 hover:text-white hover:bg-white/15 border border-white/10 rounded-lg transition-all ${
-              isAdmin ? 'bg-white/20 border-white/40 scale-105' : ''
-            }`}
-            onClick={() => navigate('/admin')}
-            title="Admin Panel"
-          >
-            <Wrench className="w-4 h-4 text-amber-300" />
-          </Button>
 
-          {/* Logout Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden sm:flex text-rose-200 hover:text-white hover:bg-rose-500/20 border border-rose-400/20 h-9 px-3 gap-1.5 text-xs font-medium"
-            onClick={handleLogout}
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Logout</span>
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 text-amber-300 hover:text-white hover:bg-white/15 border border-white/10 rounded-lg transition-all ${
+                isAdmin ? 'bg-white/20 border-white/40' : ''
+              }`}
+              onClick={() => navigate('/admin')}
+              title="Admin Panel"
+            >
+              <Wrench className="w-3.5 h-3.5 text-amber-300" />
+            </Button>
 
-          {/* Mobile Drawer Navigation Menu */}
-          <div className="lg:hidden">
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9 text-white hover:bg-white/15 border border-white/10 rounded-lg">
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="p-5 border-l border-white/10 bg-slate-900/95 text-white backdrop-blur-2xl">
-                <SheetHeader className="text-left border-b border-white/10 pb-4">
-                  <SheetTitle className="text-white font-display text-lg flex items-center gap-2.5">
-                    <img src="/srr-favicon.png" alt="SRR Ortho Logo" className="w-6 h-6 object-contain rounded-full bg-white p-0.5" />
-                    <span>SRR Ortho Plus Portal Menu</span>
-                  </SheetTitle>
-                </SheetHeader>
-                <div className="mt-6 space-y-6">
-                  {/* Navigation Group */}
-                  <div className="space-y-2">
-                    <div className="text-xs font-bold uppercase tracking-wider text-teal-400/80 px-1">Navigation</div>
-                    <SheetClose asChild>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start gap-3 h-10 text-sm font-bold rounded-lg text-slate-200 hover:text-white hover:bg-white/10 border border-white/15"
-                        onClick={() => {
-                          if (pathname === '/cash-invoice' && searchParams.get('tab') && searchParams.get('tab') !== 'editor') {
-                            navigate('/cash-invoice');
+            {/* Logout Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden sm:flex text-rose-200 hover:text-white hover:bg-rose-500/20 border border-rose-400/20 h-8 px-2.5 gap-1 text-xs font-medium rounded-lg"
+              onClick={handleLogout}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Logout</span>
+            </Button>
+
+            {/* Mobile Drawer Navigation Menu */}
+            <div className="lg:hidden">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/15 border border-white/10 rounded-lg">
+                    <Menu className="h-4 w-4" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="p-5 border-l border-white/10 bg-slate-900/95 text-white backdrop-blur-2xl">
+                  <SheetHeader className="text-left border-b border-white/10 pb-4">
+                    <SheetTitle className="text-white font-display text-lg flex items-center gap-2.5">
+                      <img src="/srr-favicon.png" alt="SRR Ortho Logo" className="w-6 h-6 object-contain rounded-full bg-white p-0.5" />
+                      <span>SRR Ortho Plus Portal Menu</span>
+                    </SheetTitle>
+                  </SheetHeader>
+                  <div className="mt-6 space-y-6">
+                    {/* Navigation Group */}
+                    <div className="space-y-2">
+                      <div className="text-xs font-bold uppercase tracking-wider text-teal-400/80 px-1">Navigation</div>
+                      <SheetClose asChild>
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-start gap-3 h-10 text-sm font-bold rounded-lg text-slate-200 hover:text-white hover:bg-white/10 border border-white/15"
+                          onClick={() => {
+                            if (pathname === '/cash-invoice' && searchParams.get('tab') && searchParams.get('tab') !== 'editor') {
+                              navigate('/cash-invoice');
                             return;
                           }
                           navigate(-1);
@@ -349,6 +361,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                         onClick={() => navigate('/cash-invoice')}
                       >
                         <Receipt className="w-4 h-4 text-teal-400" /> Cash Invoice
+                      </Button>
+                    </SheetClose>
+                    <SheetClose asChild>
+                      <Button
+                        variant="ghost"
+                        className={getMobileNavClass(isBankAccounts)}
+                        onClick={() => navigate('/bank-accounts')}
+                      >
+                        <Landmark className="w-4 h-4 text-teal-400" /> Bank Accounts
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>

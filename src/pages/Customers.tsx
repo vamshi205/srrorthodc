@@ -657,31 +657,34 @@ export default function Customers() {
           setCollapsedProcedures={() => {}}
         />
 
-        <div className="space-y-6 pt-4 pb-12">
-          {/* Header & KPI Summary */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md p-5 rounded-2xl border border-white/40 dark:border-slate-800 shadow-sm">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-md">
-                  <Building2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h1 className="text-xl sm:text-2xl font-display font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+        <div className="space-y-4 pt-1 pb-12">
+          {/* Header & KPI Summary matching Standard Secondary Toolbar */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-4 rounded-xl border border-border shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 flex items-center justify-center text-teal-800 dark:text-teal-200 shadow-sm shrink-0">
+                <Building2 className="w-5 h-5 text-teal-700 dark:text-teal-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg sm:text-xl font-bold font-display text-foreground tracking-tight">
                     Hospital &amp; Customer Directory
                   </h1>
-                  <p className="text-xs text-muted-foreground">
-                    Maintain complete hospital profiles with OT Numbers, Hospital Landlines, Personal Surgeon Numbers, and staff contacts.
-                  </p>
+                  <Badge variant="outline" className="bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 border-teal-300 text-[11px] font-bold rounded-full">
+                    Directory
+                  </Badge>
                 </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Maintain complete hospital profiles with OT Numbers, Landlines, Personal Surgeon Numbers, and staff contacts.
+                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => openMergeModal()}
-                className="h-9 text-xs gap-1.5 border-amber-300 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950 font-bold"
+                className="h-9 text-xs gap-1.5 border-amber-300 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950 font-bold rounded-md shadow-2xs"
                 title="Merge duplicate customer accounts and combine all phone numbers"
               >
                 <GitMerge className="w-3.5 h-3.5 text-amber-600" />
@@ -691,7 +694,7 @@ export default function Customers() {
               <Button
                 size="sm"
                 onClick={openAddModal}
-                className="h-9 text-xs gap-1.5 bg-teal-700 hover:bg-teal-800 text-white font-bold shadow-md shadow-teal-700/20"
+                className="h-9 text-xs gap-1.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-md shadow-xs"
               >
                 <Plus className="w-4 h-4" />
                 Add Hospital / Customer
@@ -701,49 +704,37 @@ export default function Customers() {
 
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-4 rounded-xl border border-slate-200/80 bg-white/80 dark:bg-slate-900/60 dark:border-slate-800">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-muted-foreground uppercase">Hospitals</span>
-                <span className="text-teal-600 font-bold text-sm">🏥</span>
-              </div>
-              <div className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 font-display mt-1">
+            <Card className="border-border shadow-sm p-4 rounded-xl">
+              <div className="text-[11px] font-bold text-muted-foreground uppercase">Hospitals</div>
+              <div className="text-xl sm:text-2xl font-black font-display font-mono text-foreground mt-1">
                 {totalHospitals}
               </div>
               <p className="text-[10px] text-muted-foreground mt-0.5">Registered accounts</p>
-            </div>
+            </Card>
 
-            <div className="p-4 rounded-xl border border-teal-200/80 bg-teal-50/50 dark:bg-teal-950/20 dark:border-teal-900/50">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300 uppercase">OT Direct Lines</span>
-                <span className="text-teal-600 font-bold text-sm">🩺</span>
-              </div>
-              <div className="text-2xl font-extrabold text-teal-900 dark:text-teal-200 font-display mt-1">
+            <Card className="border-border shadow-sm p-4 rounded-xl">
+              <div className="text-[11px] font-bold text-teal-700 dark:text-teal-400 uppercase">OT Direct Lines</div>
+              <div className="text-xl sm:text-2xl font-black font-display font-mono text-teal-700 dark:text-teal-400 mt-1">
                 {totalOtNumbers}
               </div>
-              <p className="text-[10px] text-teal-700/80 dark:text-teal-400 mt-0.5">Operation theatre desks</p>
-            </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Direct OT contacts</p>
+            </Card>
 
-            <div className="p-4 rounded-xl border border-purple-200/80 bg-purple-50/50 dark:bg-purple-950/20 dark:border-purple-900/50">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-purple-800 dark:text-purple-300 uppercase">Staff Contacts</span>
-                <span className="text-purple-600 font-bold text-sm">👥</span>
-              </div>
-              <div className="text-2xl font-extrabold text-purple-900 dark:text-purple-200 font-display mt-1">
+            <Card className="border-border shadow-sm p-4 rounded-xl">
+              <div className="text-[11px] font-bold text-indigo-700 dark:text-indigo-400 uppercase">Total Contacts</div>
+              <div className="text-xl sm:text-2xl font-black font-display font-mono text-indigo-700 dark:text-indigo-400 mt-1">
                 {totalDirectContacts}
               </div>
-              <p className="text-[10px] text-purple-700/80 dark:text-purple-400 mt-0.5">Doctors, sisters &amp; stores</p>
-            </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Doctors, OT &amp; Purchase</p>
+            </Card>
 
-            <div className="p-4 rounded-xl border border-amber-200/80 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-900/50">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 uppercase">Total Dues</span>
-                <span className="text-amber-600 font-bold text-sm">⏳</span>
+            <Card className="border-border shadow-sm p-4 rounded-xl">
+              <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase">Unpaid Outstanding</div>
+              <div className="text-xl sm:text-2xl font-black font-display font-mono text-rose-600 dark:text-rose-400 mt-1">
+                ₹{totalOutstanding.toLocaleString("en-IN")}
               </div>
-              <div className="text-2xl font-extrabold text-amber-900 dark:text-amber-200 font-display mt-1">
-                ₹{totalOutstanding.toFixed(0)}
-              </div>
-              <p className="text-[10px] text-amber-700/80 dark:text-amber-400 mt-0.5">Pending collection total</p>
-            </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Pending across hospitals</p>
+            </Card>
           </div>
 
           {/* Outdated or Unmatched DC Names Reconciliation Banner */}

@@ -13,6 +13,7 @@ import ImageDatabase from "./pages/ImageDatabase";
 import CashInvoice from "./pages/CashInvoice";
 import Quotation from "./pages/Quotation";
 import Customers from "./pages/Customers";
+import BankAccounts from "./pages/BankAccounts";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -77,6 +78,7 @@ const App = () => {
               <Route path="/saved" element={<ProtectedRoute><SavedDcs /></ProtectedRoute>} />
               <Route path="/images" element={<ProtectedRoute><ImageDatabase /></ProtectedRoute>} />
               <Route path="/cash-invoice" element={<ProtectedRoute><CashInvoice /></ProtectedRoute>} />
+              <Route path="/bank-accounts" element={<ProtectedRoute><BankAccounts /></ProtectedRoute>} />
               <Route path="/quotation" element={<ProtectedRoute><Quotation /></ProtectedRoute>} />
               <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />

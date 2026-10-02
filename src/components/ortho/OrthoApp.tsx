@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
-import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon, FileText, Receipt, Building2, AlertCircle, Check, ArrowRight, ShieldCheck, MapPin, Phone, Stethoscope } from 'lucide-react';
+import { Activity, Printer, Download, Trash2, Plus, ChevronDown, ChevronUp, Wrench, RefreshCw, Bookmark, Save, LogOut, List, Search, X, Menu, Images, Sun, Moon, FileText, Receipt, Building2, AlertCircle, Check, ArrowRight, ShieldCheck, MapPin, Phone, Stethoscope, Landmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -987,7 +987,7 @@ export default function OrthoApp() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 w-full">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-2 w-full">
                     {/* Card 1: Create DC */}
                     <button
                       onClick={() => {
@@ -1025,6 +1025,24 @@ export default function OrthoApp() {
                         </h3>
                         <p className="text-xs text-muted-foreground mt-0.5 leading-snug hidden sm:block">
                           Create cash bills for walk-in sales.
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Card 3: Bank Accounts */}
+                    <button
+                      onClick={() => navigate('/bank-accounts')}
+                      className="group flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 hover:border-emerald-500 transition-all duration-200 shadow-sm text-center"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow group-hover:scale-110 transition-transform flex-shrink-0">
+                        <Landmark className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 leading-tight">
+                          Bank Accounts
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug hidden sm:block">
+                          Ledger &amp; link cash receipts.
                         </p>
                       </div>
                     </button>

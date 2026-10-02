@@ -292,32 +292,45 @@ export default function ImageDatabase() {
           />
 
           <div className="space-y-4">
-            {selectedProcedure && !showProcedurePicker ? (
-              <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 via-slate-50 to-indigo-50/70 p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3">
+            {/* Standard Secondary Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-4 rounded-xl border border-border shadow-sm">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold shrink-0">
+                  <Images className="w-5 h-5" />
+                </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Badge className="bg-blue-600 text-white font-bold text-xs">Selected Procedure</Badge>
-                    <span className="text-xs text-slate-500 font-semibold">{selectedProcedure.type || "General"}</span>
-                  </div>
-                  <h2 className="text-base sm:text-lg font-bold text-slate-900 mt-1 truncate">{selectedProcedure.name}</h2>
-                  <p className="text-xs text-slate-600 font-medium">
-                    {gallery.all.length} total images ({gallery.items.length} items, {gallery.instruments.length} instruments)
+                  <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                    <span>Image Database</span>
+                    {selectedProcedure ? (
+                      <Badge variant="secondary" className="text-xs font-semibold bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/20 truncate max-w-[200px] sm:max-w-xs">
+                        {selectedProcedure.name}
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-xs font-semibold">{procedures.length} Procedures</Badge>
+                    )}
+                  </h1>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {selectedProcedure 
+                      ? `${gallery.all.length} total images (${gallery.items.length} items, ${gallery.instruments.length} instruments)`
+                      : 'Visual implant catalog, instruments, box locations & packing checklist'}
                   </p>
                 </div>
+              </div>
 
+              {selectedProcedure && (
                 <div className="flex items-center gap-2 shrink-0">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 px-3 border-blue-300 text-blue-800 hover:bg-blue-100 bg-white font-bold text-xs shadow-xs"
+                    className="h-8 px-3 text-xs font-semibold"
                     onClick={() => setShowProcedurePicker(true)}
                   >
                     Change Procedure
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="h-8 px-3 border-red-200 text-red-700 hover:bg-red-50 bg-white font-bold text-xs shadow-xs"
+                    className="h-8 px-3 text-xs font-semibold text-destructive hover:bg-destructive/10"
                     onClick={() => {
                       setSelectedName(null);
                       setShowProcedurePicker(true);
@@ -326,8 +339,10 @@ export default function ImageDatabase() {
                     Clear
                   </Button>
                 </div>
-              </div>
-            ) : (
+              )}
+            </div>
+
+            {selectedProcedure && !showProcedurePicker ? null : (
               <Card className="glass-card rounded-xl border-2 border-border/60 shadow-md flex-1 min-h-[calc(100vh-180px)] flex flex-col">
                 <CardHeader className="p-4">
                   <CardTitle className="text-base flex items-center justify-between gap-3">

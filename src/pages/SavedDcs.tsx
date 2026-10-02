@@ -1541,25 +1541,22 @@ const SavedDcs = () => {
             setCollapsedProcedures={() => {}}
           />
 
-          {/* DC Tracker Operations & Reminders Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 py-2.5 px-3.5 sm:px-4.5 rounded-2xl bg-gradient-to-r from-white via-teal-50/40 to-white dark:from-slate-900 dark:via-teal-950/20 dark:to-slate-900 border border-teal-200/70 dark:border-slate-800 shadow-xs backdrop-blur-md transition-all">
-            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-              <div className="w-8 h-8 rounded-xl bg-teal-500/15 dark:bg-teal-500/20 border border-teal-500/30 flex items-center justify-center shrink-0">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-600 dark:bg-teal-400"></span>
-                </span>
+          {/* DC Tracker Operations & Reminders Toolbar matching Standard Secondary Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-card border border-border shadow-sm">
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 flex items-center justify-center text-teal-800 dark:text-teal-200 shadow-sm shrink-0">
+                <List className="w-5 h-5 text-teal-700 dark:text-teal-400" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-display font-extrabold text-xs sm:text-sm tracking-tight text-slate-900 dark:text-slate-100">
-                    DC Operations & Inventory Tracker
-                  </span>
-                  <Badge variant="outline" className="hidden sm:inline-flex text-[10px] h-5 border-teal-300 dark:border-teal-700 bg-teal-100/80 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-bold px-1.5">
+                  <h1 className="text-lg sm:text-xl font-bold font-display text-foreground tracking-tight">
+                    DC Operations &amp; Inventory Tracker
+                  </h1>
+                  <Badge variant="outline" className="bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 border-teal-300 text-[11px] font-bold rounded-full">
                     Live Status
                   </Badge>
                 </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden md:block">
+                <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">
                   Automated cutoff alerts, collection follow-ups &amp; cash invoices
                 </p>
               </div>
