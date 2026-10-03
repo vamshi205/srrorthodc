@@ -1311,16 +1311,19 @@ export const BankAccountsView: React.FC = () => {
     }
   };
 
-  // Live Background Auto-Sync Interval (Polls every 30s when enabled)
+  // Live Background Auto-Sync Interval (Polls immediately on mount + every 30s when enabled)
   useEffect(() => {
     if (!isAutoSyncEnabled || !appsScriptUrl.trim()) return;
+
+    // Immediately fetch new emails on app open / page reload to catch up on missed transactions
+    handleSyncFromAppsScript(true);
 
     const intervalId = setInterval(() => {
       handleSyncFromAppsScript(true);
     }, 30000); // 30 seconds
 
     return () => clearInterval(intervalId);
-  }, [isAutoSyncEnabled, appsScriptUrl, gmailSyncTargetAccountId, accounts]);
+  }, [isAutoSyncEnabled, appsScriptUrl, gmailSyncTargetAccountId, accounts.length]);
 
 
 

@@ -1,151 +1,286 @@
 /**
  * ============================================================================
- * SRR ORTHO PLUS - SECURE MULTI-ACCOUNT HDFC GMAIL CONNECTOR (LAST 200 EMAILS)
+ * SRR ORTHO PLUS - 100% AUTOMATIC GMAIL TO FIRESTORE DIRECT INGESTION
  * ============================================================================
  * 
- * SECURITY GUARANTEES:
- * 1. READ-ONLY: Uses https://www.googleapis.com/auth/gmail.readonly
- * 2. STRICT LABEL ISOLATION: Scans ONLY emails with "label:HDFC-Bank"
+ * HOW IT WORKS:
+ * 1. Email arrives in Gmail (Account A).
+ * 2. Time Trigger runs every 1-5 minutes 24/7 in Google Cloud (No browser/app needed).
+ * 3. Authenticates with your Firebase Project (Account B).
+ * 4. Inserts the transaction DIRECTLY into Firestore DB ("bank_transactions").
+ * 5. Marks email as "HDFC-Synced" so it never scans it again (0% Quota Waste).
  * 
- * 1-MINUTE DEPLOYMENT INSTRUCTIONS:
- * 1. Go to https://script.google.com and click "+ New project".
- * 2. In "Code.gs", DELETE everything and paste this entire file.
- * 3. Click "Project Settings" (⚙️ icon on the left) -> check "Show 'appsscript.json' manifest file".
- * 4. In "appsscript.json", ensure it has:
- *    "oauthScopes": ["https://www.googleapis.com/auth/gmail.readonly"]
+ * ============================================================================
+ * SETUP INSTRUCTIONS (2 Minutes):
+ * ============================================================================
+ * 1. Open https://script.google.com in your Gmail account.
+ * 2. Click "+ New project".
+ * 3. In "Code.gs", SELECT ALL (Ctrl+A / Cmd+A), DELETE, and paste this entire code.
+ * 4. Fill in your Firebase login email and password in SETTINGS below:
+ *      FIREBASE_AUTH_EMAIL: 'your-app-login-email@example.com',
+ *      FIREBASE_AUTH_PASSWORD: 'your-password',
  * 5. Click Save (💾).
- * 6. Select function "testRunAndLog" from the top dropdown and click "▶ Run".
- *    -> Click "Review permissions" -> select your Google account -> "Advanced" -> "Go to Untitled project (unsafe)" -> "Allow".
- * 7. Click "Deploy" (top right blue button) -> "New deployment" -> Select type "Web app":
- *    - Description: HDFC Bank Connector
- *    - Execute as: Me (<your-email>)
- *    - Who has access: Anyone (CRITICAL!)
- * 8. Click "Deploy", copy the Web App URL (ends in /exec), and paste it in your app!
+ * 6. Select "runAutoSyncOnce" from top dropdown and click "▶ Run".
+ *    -> Review permissions -> Allow.
+ *    -> Execution log will show: "✅ INSERTED TO DB: [CREDIT] ₹...".
+ * 7. SET UP 24/7 AUTOMATIC TRIGGER:
+ *    -> Click the ⏰ Alarm Clock icon ("Triggers") on the left sidebar.
+ *    -> Click "+ Add Trigger" (bottom right blue button).
+ *    -> Choose which function to run: "runAutoSyncOnce"
+ *    -> Select event source: "Time-driven"
+ *    -> Select type of time based trigger: "Minutes timer"
+ *    -> Select minute interval: "Every 5 minutes" (or "Every minute")
+ *    -> Click Save!
+ * 
+ * YOU ARE DONE! Every incoming bank alert will insert into your DB automatically 24/7!
  */
 
-const CONFIG = {
-  GMAIL_LABEL_QUERY: "label:HDFC-Bank",
-  PAGE_SIZE: 50,
-  MAX_TRANSACTIONS: 200, // Strictly caps at the newest 200 transactions
+const SETTINGS = {
+  FIREBASE_PROJECT_ID: 'srrorthodc-antigravity',
+  FIREBASE_API_KEY: 'AIzaSyDuK5kOP_WsiFTgMQE7B2qyYaAPDwdi_hY',
+  
+  // Enter the email and password you use to log into your SRR Ortho app:
+  FIREBASE_AUTH_EMAIL: 'admin@srrortho.com', // <-- REPLACE WITH YOUR APP LOGIN EMAIL
+  FIREBASE_AUTH_PASSWORD: 'your_password_here', // <-- REPLACE WITH YOUR APP LOGIN PASSWORD
+
+  GMAIL_SEARCH_QUERY: 'label:HDFC-Bank -label:HDFC-Synced',
+  FALLBACK_QUERY: '(from:alerts@hdfcbank.net OR subject:"HDFC Bank") -label:HDFC-Synced',
+  PROCESSED_LABEL: 'HDFC-Synced',
+  BATCH_LIMIT: 20,
 };
 
 /**
- * Main Web App Handler (Supports direct GET & JSONP)
+ * 24/7 AUTOMATIC SYNC FUNCTION (Runs automatically via Cloud Timer Trigger)
  */
-function doGet(e) {
+function runAutoSyncOnce() {
+  Logger.log("Starting automatic background Gmail -> Firestore direct ingestion...");
+
+  // 1. Get Firebase Auth Token to authenticate with Account B's Firestore
+  const idToken = getFirebaseIdToken();
+  if (!idToken) {
+    Logger.log("❌ Authentication failed. Please check FIREBASE_AUTH_EMAIL and FIREBASE_AUTH_PASSWORD in SETTINGS.");
+    return { success: false, error: "Auth failed" };
+  }
+  Logger.log("✅ Authenticated with Firebase successfully.");
+
+  // 2. Create the HDFC-Synced label if it doesn't exist
+  let syncedLabel;
   try {
-    const transactions = syncHdfcBankAlerts();
-    const callback = e && e.parameter && e.parameter.callback;
-    const output = JSON.stringify({
-      success: true,
-      timestamp: new Date().toISOString(),
-      count: transactions.length,
-      transactions: transactions,
-    });
-
-    if (callback) {
-      return ContentService
-        .createTextOutput(callback + "(" + output + ")")
-        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    syncedLabel = GmailApp.getUserLabelByName(SETTINGS.PROCESSED_LABEL);
+    if (!syncedLabel) {
+      syncedLabel = GmailApp.createLabel(SETTINGS.PROCESSED_LABEL);
     }
-
-    return ContentService
-      .createTextOutput(output)
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    const errorOutput = JSON.stringify({
-      success: false,
-      error: err.toString(),
-      transactions: [],
-    });
-    return ContentService.createTextOutput(errorOutput).setMimeType(ContentService.MimeType.JSON);
+  } catch (e) {
+    Logger.log("Label notice: " + e);
   }
-}
 
-/**
- * Scans label:HDFC-Bank and extracts the newest 200 transactions
- */
-function syncHdfcBankAlerts() {
-  const parsedTransactions = [];
-  const seenTxKeys = new Set();
-  
-  // Directly retrieve the latest 200 threads matching label:HDFC-Bank
-  const threads = GmailApp.search(CONFIG.GMAIL_LABEL_QUERY, 0, CONFIG.MAX_TRANSACTIONS);
+  // 3. Pre-fetch Accounts to map 1538 / 6569 to correct account IDs
+  const accountsMap = fetchFirestoreAccounts(idToken);
+  Logger.log("Mapped " + Object.keys(accountsMap).length + " bank account target(s).");
+
+  // 4. Search for only NEW un-synced emails
+  let threads = GmailApp.search(SETTINGS.GMAIL_SEARCH_QUERY, 0, SETTINGS.BATCH_LIMIT);
   if (!threads || threads.length === 0) {
-    Logger.log("No emails found for query: " + CONFIG.GMAIL_LABEL_QUERY);
-    return [];
+    threads = GmailApp.search(SETTINGS.FALLBACK_QUERY, 0, SETTINGS.BATCH_LIMIT);
   }
 
-  for (let i = 0; i < threads.length; i++) {
-    if (parsedTransactions.length >= CONFIG.MAX_TRANSACTIONS) break;
+  if (!threads || threads.length === 0) {
+    Logger.log("All caught up! 0 new transaction emails to process.");
+    return { success: true, count: 0 };
+  }
 
-    const messages = threads[i].getMessages();
+  Logger.log("Found " + threads.length + " new email thread(s). Batch fetching...");
+  const messagesByThread = GmailApp.getMessagesForThreads(threads);
+  let savedCount = 0;
+
+  for (let i = 0; i < messagesByThread.length; i++) {
+    const thread = threads[i];
+    const messages = messagesByThread[i];
+
     for (let j = 0; j < messages.length; j++) {
-      if (parsedTransactions.length >= CONFIG.MAX_TRANSACTIONS) break;
-
       const msg = messages[j];
-      let body = msg.getPlainBody() || "";
+      const subject = msg.getSubject() || "";
+      const msgDate = msg.getDate();
+
+      const plainBody = msg.getPlainBody() || "";
+      let htmlText = "";
       
-      // If plain body is minimal, extract from HTML
-      if (!body || body.trim().length < 30) {
+      // Extract from HTML table if plain text is minimal
+      if (!plainBody || plainBody.length < 250 || !/INR|Rs|deposited|debited|credited/i.test(plainBody)) {
         const rawHtml = msg.getBody() || "";
-        body = rawHtml
+        htmlText = rawHtml
           .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
           .replace(/<br\s*[\/]?>/gi, "\n")
           .replace(/<\/p>/gi, "\n")
           .replace(/<\/tr>/gi, "\n")
           .replace(/<td[^>]*>/gi, "  ")
-          .replace(/<[^>]+>/g, "")
+          .replace(/<[^>]+>/g, " ")
           .replace(/&nbsp;/gi, " ")
           .replace(/&amp;/gi, "&")
           .replace(/&lt;/gi, "<")
           .replace(/&gt;/gi, ">")
-          .replace(/[ \t]+/g, " ")
-          .trim();
+          .replace(/[ \t]+/g, " ");
       }
 
-      const subject = msg.getSubject() || "";
-      const msgDate = msg.getDate();
+      const combinedBody = (plainBody + "\n\n" + htmlText).trim();
+      const tx = parseHdfcEmail(combinedBody, subject, msgDate);
 
-      const parsed = parseHdfcEmail(body, subject, msgDate);
-      if (parsed) {
-        const uniqueKey = `${parsed.date}_${parsed.amount}_${parsed.referenceNumber}_${parsed.accountSuffix}`;
-        if (!seenTxKeys.has(uniqueKey)) {
-          seenTxKeys.add(uniqueKey);
-          parsedTransactions.push(parsed);
+      if (tx) {
+        // Map account ID
+        let targetAccId = accountsMap[tx.accountSuffix] || accountsMap['default'] || '';
+        tx.accountId = targetAccId;
+
+        // Insert DIRECTLY into Firestore DB
+        const inserted = insertTransactionToFirestore(tx, idToken);
+        if (inserted) {
+          savedCount++;
+          Logger.log(`✅ INSERTED TO DB: [${tx.type.toUpperCase()}] ₹${tx.amount} | Ref: ${tx.referenceNumber} | A/c: ..${tx.accountSuffix}`);
         }
       }
     }
-  }
 
-  const result = parsedTransactions.slice(0, CONFIG.MAX_TRANSACTIONS);
-  Logger.log(`Scanned ${threads.length} newest email threads -> Extracted ${result.length} transactions (strictly capped at 200).`);
-  return result;
-}
-
-/**
- * TEST FUNCTION: Select this and click "▶ Run" to test in the script console
- */
-function testRunAndLog() {
-  Logger.log("Testing HDFC Bank sync for last 200 emails...");
-  const txs = syncHdfcBankAlerts();
-  Logger.log("Total Transactions Parsed: " + txs.length);
-  
-  if (txs.length > 0) {
-    Logger.log("--- SAMPLE PARSED RECORD #1 ---");
-    Logger.log(JSON.stringify(txs[0], null, 2));
-    Logger.log("--- SAMPLE PARSED RECORD #2 ---");
-    if (txs.length > 1) {
-      Logger.log(JSON.stringify(txs[1], null, 2));
+    // Mark email as synced so it is NEVER processed again
+    if (syncedLabel) {
+      thread.addLabel(syncedLabel);
     }
-  } else {
-    Logger.log("No transactions found. Check if label 'HDFC-Bank' contains emails in your Gmail.");
+  }
+
+  Logger.log(`🎉 Ingestion Complete! Saved ${savedCount} transactions directly into Firestore DB.`);
+  return { success: true, count: savedCount };
+}
+
+/**
+ * Authenticates with Firebase REST API and retrieves idToken
+ */
+function getFirebaseIdToken() {
+  try {
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${SETTINGS.FIREBASE_API_KEY}`;
+    const payload = {
+      email: SETTINGS.FIREBASE_AUTH_EMAIL,
+      password: SETTINGS.FIREBASE_AUTH_PASSWORD,
+      returnSecureToken: true
+    };
+    const options = {
+      method: 'POST',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+    };
+    const response = UrlFetchApp.fetch(url, options);
+    if (response.getResponseCode() === 200) {
+      const data = JSON.parse(response.getContentText());
+      return data.idToken;
+    } else {
+      Logger.log("Firebase Auth error: " + response.getContentText());
+      return null;
+    }
+  } catch (err) {
+    Logger.log("Error during Firebase Auth: " + err);
+    return null;
   }
 }
 
 /**
- * Intelligent HDFC Multi-Account Parser (Tailored for 1538 & 6569)
+ * Inserts a transaction object directly into Firestore via REST API
+ */
+function insertTransactionToFirestore(tx, idToken) {
+  try {
+    const docId = tx.id;
+    const url = `https://firestore.googleapis.com/v1/projects/${SETTINGS.FIREBASE_PROJECT_ID}/databases/(default)/documents/bank_transactions/${docId}`;
+
+    const firestoreDoc = {
+      fields: {
+        id: { stringValue: tx.id },
+        accountId: { stringValue: tx.accountId || '' },
+        type: { stringValue: tx.type },
+        amount: { doubleValue: Number(tx.amount) },
+        date: { stringValue: tx.date },
+        time: { stringValue: tx.time || '12:00' },
+        category: { stringValue: tx.category || 'Invoice Collection' },
+        description: { stringValue: tx.description || 'HDFC Bank Alert' },
+        referenceNumber: { stringValue: tx.referenceNumber || '' },
+        accountSuffix: { stringValue: tx.accountSuffix || '' },
+        createdSource: { stringValue: 'gmail_auto_trigger' },
+        emailSubject: { stringValue: tx.emailSubject || '' },
+        rawEmailBody: { stringValue: (tx.rawEmailBody || '').slice(0, 1500) },
+        createdAt: { integerValue: String(tx.createdAt || Date.now()) },
+        updatedAt: { integerValue: String(Date.now()) },
+      }
+    };
+
+    if (tx.availableBalance !== undefined && tx.availableBalance !== null) {
+      firestoreDoc.fields.availableBalance = { doubleValue: Number(tx.availableBalance) };
+    }
+
+    const options = {
+      method: 'PATCH',
+      contentType: 'application/json',
+      headers: {
+        'Authorization': 'Bearer ' + idToken
+      },
+      payload: JSON.stringify(firestoreDoc),
+      muteHttpExceptions: true,
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
+    if (code === 200) {
+      return true;
+    } else {
+      Logger.log(`Firestore Insert Error (HTTP ${code}): ` + response.getContentText());
+      return false;
+    }
+  } catch (err) {
+    Logger.log("Error inserting transaction to Firestore: " + err);
+    return false;
+  }
+}
+
+/**
+ * Fetches bank accounts from Firestore
+ */
+function fetchFirestoreAccounts(idToken) {
+  const map = {};
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${SETTINGS.FIREBASE_PROJECT_ID}/databases/(default)/documents/bank_accounts`;
+    const options = {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + idToken
+      },
+      muteHttpExceptions: true
+    };
+    const response = UrlFetchApp.fetch(url, options);
+    if (response.getResponseCode() === 200) {
+      const data = JSON.parse(response.getContentText());
+      if (data && data.documents) {
+        data.documents.forEach(doc => {
+          const f = doc.fields;
+          const accId = f.id ? f.id.stringValue : doc.name.split('/').pop();
+          const accNum = f.accountNumber ? f.accountNumber.stringValue : '';
+          const accName = f.accountName ? f.accountName.stringValue : '';
+          
+          if (!map['default']) map['default'] = accId;
+
+          if (accNum.includes('1538') || accName.includes('1538')) map['1538'] = accId;
+          if (accNum.includes('6569') || accName.includes('6569')) map['6569'] = accId;
+          
+          const cleanDigits = accNum.replace(/[^0-9]/g, '');
+          if (cleanDigits.length >= 4) {
+            map[cleanDigits.slice(-4)] = accId;
+          }
+        });
+      }
+    }
+  } catch (e) {
+    Logger.log("Could not pre-fetch accounts map: " + e);
+  }
+  return map;
+}
+
+/**
+ * Intelligent HDFC Multi-Account Parser (1538 & 6569)
  */
 function parseHdfcEmail(body, subject, dateObj) {
   const fullText = (subject + "\n" + body).trim();
@@ -154,13 +289,13 @@ function parseHdfcEmail(body, subject, dateObj) {
   let isCredit = false;
   let isDebit = false;
 
-  if (/is\s+deducted\s+from|deducted\s+from|is\s+debited\s+from|debited\s+from|withdrawn\s+from|spent|sent|NEFT\s+Dr|IMPS\s+Dr|RTGS\s+Dr/i.test(fullText)) {
+  if (/is\s+deducted\s+from|deducted\s+from|is\s+debited\s+from|debited\s+from|withdrawn\s+from|spent|sent|paid\s+to|NEFT\s+Dr|IMPS\s+Dr|RTGS\s+Dr|debited\s+by|debited\s+with/i.test(fullText)) {
     isDebit = true;
-  } else if (/received\s+a\s+credit|amount\s+received|credited\s+to|is\s+credited|fund\s+transfer\s+received|deposited|NEFT\s+Cr|IMPS\s+Cr|RTGS\s+Cr/i.test(fullText)) {
+  } else if (/received\s+a\s+credit|amount\s+received|credited\s+to|is\s+credited|fund\s+transfer\s+received|deposited|NEFT\s+Cr|IMPS\s+Cr|RTGS\s+Cr|credited\s+by|credited\s+with/i.test(fullText)) {
     isCredit = true;
-  } else if (/credit|received|inward|cr\b/i.test(fullText)) {
+  } else if (/\bcredit\b|\breceived\b|\binward\b|\bcr\b|\bdeposited\b/i.test(fullText)) {
     isCredit = true;
-  } else if (/debit|deducted|outward|dr\b/i.test(fullText)) {
+  } else if (/\bdebit\b|\bdeducted\b|\boutward\b|\bdr\b|\bdebited\b/i.test(fullText)) {
     isDebit = true;
   }
 
@@ -168,15 +303,16 @@ function parseHdfcEmail(body, subject, dateObj) {
 
   // 2. Extract Amount
   const amountMatch =
-    fullText.match(/(?:Amount\s*received:\s*(?:INR|Rs\.?|₹)?\s*|Rs\.?\s*INR\s*|Rs\.?\s*|INR\s*|₹\s*)([0-9,]+(?:\.[0-9]{2})?)/i) ||
-    fullText.match(/amount\s*(?:of)?\s*(?:Rs\.?|INR|₹)?\s*([0-9,]+(?:\.[0-9]{2})?)/i) ||
-    fullText.match(/for\s*(?:Rs\.?|INR|₹)\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+    fullText.match(/(?:Amount\s*(?:received|debited|credited)?\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*|Rs\.?\s*INR\s*|Rs\.?\s*|INR\s*|₹\s*)([0-9,]+(?:\.[0-9]{1,2})?)/i) ||
+    fullText.match(/(?:amount|amt)\s*(?:of)?\s*[:\-]?\s*(?:Rs\.?|INR|₹)?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i) ||
+    fullText.match(/(?:for|with|by)\s*(?:Rs\.?|INR|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i) ||
+    fullText.match(/\b(?:INR|Rs\.?|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)\b/i);
 
   if (!amountMatch) return null;
   const rawAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
   if (isNaN(rawAmount) || rawAmount <= 0) return null;
 
-  // 3. Extract Specific Account Suffix (1538 or 6569 with any X/XX/* prefix)
+  // 3. Extract Account Suffix (1538 or 6569)
   let matchedAccountSuffix = "";
   if (/[*xX]*6569\b/i.test(fullText) || /6569\b/.test(fullText)) {
     matchedAccountSuffix = "6569";
@@ -236,7 +372,7 @@ function parseHdfcEmail(body, subject, dateObj) {
     refNo = "HDFC-" + (matchedAccountSuffix ? matchedAccountSuffix + "-" : "") + dateObj.getTime().toString().slice(-6);
   }
 
-  // 6. Extract Sender / Beneficiary / Counterparty Narration
+  // 6. Extract Sender / Beneficiary Narration
   let narration = isCredit ? "HDFC Bank Credit Alert" : "HDFC Bank Debit Alert";
 
   const senderMatch = fullText.match(/Sender\s*:\s*([^\n\r]+)/i);
@@ -304,7 +440,7 @@ function parseHdfcEmail(body, subject, dateObj) {
     }
   }
 
-  // 7. Extract Exact Transaction Date from Text (e.g. 02-10-26, 27-SEP-2026, 01-OCT-2026)
+  // 7. Extract Exact Transaction Date from Text
   let yyyy = dateObj.getFullYear();
   let mm = String(dateObj.getMonth() + 1).padStart(2, '0');
   let dd = String(dateObj.getDate()).padStart(2, '0');
@@ -345,7 +481,7 @@ function parseHdfcEmail(body, subject, dateObj) {
     referenceNumber: refNo,
     emailSubject: subject,
     rawEmailBody: body.trim(),
-    createdSource: "gmail_connector",
+    createdSource: "gmail_auto_trigger",
     createdAt: dateObj.getTime(),
     updatedAt: Date.now(),
   };

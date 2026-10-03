@@ -123,23 +123,24 @@ export function parseHdfcEmailAlert(
   let isCredit = false;
   let isDebit = false;
 
-  if (/is\s+deducted\s+from|deducted\s+from|is\s+debited\s+from|debited\s+from|withdrawn\s+from|spent|sent|NEFT\s+Dr|IMPS\s+Dr|RTGS\s+Dr/i.test(text)) {
+  if (/is\s+deducted\s+from|deducted\s+from|is\s+debited\s+from|debited\s+from|withdrawn\s+from|spent|sent|paid\s+to|NEFT\s+Dr|IMPS\s+Dr|RTGS\s+Dr|debited\s+by|debited\s+with/i.test(text)) {
     isDebit = true;
-  } else if (/received\s+a\s+credit|amount\s+received|credited\s+to|is\s+credited|fund\s+transfer\s+received|deposited|NEFT\s+Cr|IMPS\s+Cr|RTGS\s+Cr/i.test(text)) {
+  } else if (/received\s+a\s+credit|amount\s+received|credited\s+to|is\s+credited|fund\s+transfer\s+received|deposited|NEFT\s+Cr|IMPS\s+Cr|RTGS\s+Cr|credited\s+by|credited\s+with/i.test(text)) {
     isCredit = true;
-  } else if (/credit|received|inward|cr\b/i.test(text)) {
+  } else if (/\bcredit\b|\breceived\b|\binward\b|\bcr\b|\bdeposited\b/i.test(text)) {
     isCredit = true;
-  } else if (/debit|deducted|outward|dr\b/i.test(text)) {
+  } else if (/\bdebit\b|\bdeducted\b|\boutward\b|\bdr\b|\bdebited\b/i.test(text)) {
     isDebit = true;
   }
 
   if (!isCredit && !isDebit) return null;
 
-  // 2. Amount Extraction (supports "Rs. 52,500.00", "Rs 52500", "INR 52,500.00", "Rs.125.00")
+  // 2. Amount Extraction (supports "Rs. 52,500.00", "Rs 52500", "INR 52,500.00", "₹500.00", "Amount: 1,000.00")
   const amountMatch =
-    text.match(/(?:Amount\s*received:\s*(?:INR|Rs\.?|₹)?\s*|Rs\.?\s*INR\s*|Rs\.?\s*|INR\s*|₹\s*)([0-9,]+(?:\.[0-9]{2})?)/i) ||
-    text.match(/amount\s*(?:of)?\s*(?:Rs\.?|INR|₹)?\s*([0-9,]+(?:\.[0-9]{2})?)/i) ||
-    text.match(/for\s*(?:Rs\.?|INR|₹)\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+    text.match(/(?:Amount\s*(?:received|debited|credited)?\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*|Rs\.?\s*INR\s*|Rs\.?\s*|INR\s*|₹\s*)([0-9,]+(?:\.[0-9]{1,2})?)/i) ||
+    text.match(/(?:amount|amt)\s*(?:of)?\s*[:\-]?\s*(?:Rs\.?|INR|₹)?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i) ||
+    text.match(/(?:for|with|by)\s*(?:Rs\.?|INR|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i) ||
+    text.match(/\b(?:INR|Rs\.?|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)\b/i);
 
   if (!amountMatch) return null;
 
