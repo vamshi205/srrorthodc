@@ -40,13 +40,13 @@ const SETTINGS = {
   FIREBASE_API_KEY: 'AIzaSyDuK5kOP_WsiFTgMQE7B2qyYaAPDwdi_hY',
   
   // Enter the email and password you use to log into your SRR Ortho app:
-  FIREBASE_AUTH_EMAIL: 'admin@srrortho.com', // <-- REPLACE WITH YOUR APP LOGIN EMAIL
-  FIREBASE_AUTH_PASSWORD: 'your_password_here', // <-- REPLACE WITH YOUR APP LOGIN PASSWORD
+  FIREBASE_AUTH_EMAIL: 'hivamshikrishna@gmail.com',
+  FIREBASE_AUTH_PASSWORD: 'Cnx@$02081994',
 
-  GMAIL_SEARCH_QUERY: 'label:HDFC-Bank -label:HDFC-Synced',
-  FALLBACK_QUERY: '(from:alerts@hdfcbank.net OR subject:"HDFC Bank") -label:HDFC-Synced',
+  GMAIL_SEARCH_QUERY: 'label:HDFC-Bank -label:HDFC-Synced newer_than:14d',
+  FALLBACK_QUERY: '(from:alerts@hdfcbank.net OR subject:"HDFC Bank") -label:HDFC-Synced newer_than:14d',
   PROCESSED_LABEL: 'HDFC-Synced',
-  BATCH_LIMIT: 20,
+  BATCH_LIMIT: 10,
 };
 
 /**
@@ -78,10 +78,17 @@ function runAutoSyncOnce() {
   const accountsMap = fetchFirestoreAccounts(idToken);
   Logger.log("Mapped " + Object.keys(accountsMap).length + " bank account target(s).");
 
-  // 4. Search for only NEW un-synced emails
-  let threads = GmailApp.search(SETTINGS.GMAIL_SEARCH_QUERY, 0, SETTINGS.BATCH_LIMIT);
-  if (!threads || threads.length === 0) {
-    threads = GmailApp.search(SETTINGS.FALLBACK_QUERY, 0, SETTINGS.BATCH_LIMIT);
+  // 4. Search for only NEW un-synced emails (limited to recent 14 days)
+  let threads = [];
+  try {
+    threads = GmailApp.search(SETTINGS.GMAIL_SEARCH_QUERY, 0, SETTINGS.BATCH_LIMIT);
+    if (!threads || threads.length === 0) {
+      threads = GmailApp.search(SETTINGS.FALLBACK_QUERY, 0, SETTINGS.BATCH_LIMIT);
+    }
+  } catch (err) {
+    Logger.log("❌ Gmail API Quota Error: " + err);
+    Logger.log("Google daily limit reached for GmailApp. The quota will reset automatically in a few hours. Set trigger interval to 10-15 minutes.");
+    return { success: false, error: err.toString() };
   }
 
   if (!threads || threads.length === 0) {
