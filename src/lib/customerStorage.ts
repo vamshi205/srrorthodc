@@ -111,17 +111,17 @@ export const harmonizeCustomerRecord = (cust: Partial<Customer>): Customer => {
     ? cust.contacts.filter((c) => c && (c.name?.trim() || c.phone?.trim()))
     : [];
 
-  // Extract from contacts only if primary fields are completely undefined
+  // Extract from contacts if primary fields are missing or empty
   const otContact = rawContacts.find((c) => c.phone?.trim() && (/ot|theatre|sister|nurse/i.test(c.role) || /ot|sister/i.test(c.name)));
   const hospContact = rawContacts.find((c) => c.phone?.trim() && (/hosp|board|recept|landline/i.test(c.role) || /hosp|board|recept/i.test(c.name)));
   const persContact = rawContacts.find((c) => c.phone?.trim() && (/person|doc|dr|surg|mobile/i.test(c.role) || /doc|dr|surgeon/i.test(c.name)));
 
-  const otNumber = (cust.otNumber !== undefined ? cust.otNumber : (otContact?.phone || "")).trim();
-  const hospitalNumber = (cust.hospitalNumber !== undefined ? cust.hospitalNumber : (hospContact?.phone || "")).trim();
-  const personalNumber = (cust.personalNumber !== undefined ? cust.personalNumber : (persContact?.phone || "")).trim();
-  const contactPerson = (cust.contactPerson !== undefined ? cust.contactPerson : (persContact?.name || otContact?.name || "")).trim();
-  const mobile = (cust.mobile !== undefined ? cust.mobile : (personalNumber || otNumber || hospitalNumber || rawContacts.find(c => c.phone?.trim())?.phone || "")).trim();
-  const phone = (cust.phone !== undefined ? cust.phone : (cust.mobile !== undefined ? cust.mobile : (mobile || personalNumber))).trim();
+  const otNumber = (cust.otNumber ? cust.otNumber : (otContact?.phone || "")).trim();
+  const hospitalNumber = (cust.hospitalNumber ? cust.hospitalNumber : (hospContact?.phone || "")).trim();
+  const personalNumber = (cust.personalNumber ? cust.personalNumber : (persContact?.phone || "")).trim();
+  const contactPerson = (cust.contactPerson ? cust.contactPerson : (persContact?.name || otContact?.name || "")).trim();
+  const mobile = (cust.mobile ? cust.mobile : (personalNumber || otNumber || hospitalNumber || rawContacts.find(c => c.phone?.trim())?.phone || "")).trim();
+  const phone = (cust.phone ? cust.phone : (cust.mobile ? cust.mobile : (mobile || personalNumber))).trim();
 
   // Ensure primary numbers are represented in contacts list
   const contacts: HospitalContact[] = [...rawContacts];
@@ -169,6 +169,61 @@ export const harmonizeCustomerRecord = (cust: Partial<Customer>): Customer => {
     createdAt: cust.createdAt || new Date().toISOString(),
     updatedAt: cust.updatedAt || new Date().toISOString(),
   };
+};
+
+export const mergeCustomerRecords = (local: Customer, remote: Partial<Customer>): Customer => {
+  const localContacts = Array.isArray(local.contacts) ? local.contacts : [];
+  const remoteContacts = Array.isArray(remote.contacts) ? remote.contacts : [];
+
+  const mergedContacts: HospitalContact[] = [...localContacts];
+  remoteContacts.forEach((rc) => {
+    if (rc && (rc.phone?.trim() || rc.name?.trim())) {
+      const matchIndex = mergedContacts.findIndex(
+        (lc) =>
+          (rc.phone && lc.phone && lc.phone.trim() === rc.phone.trim()) ||
+          (rc.role && lc.role && lc.role.toLowerCase() === rc.role.toLowerCase() && rc.name && lc.name && lc.name.toLowerCase() === rc.name.toLowerCase())
+      );
+      if (matchIndex < 0) {
+        mergedContacts.push(rc);
+      } else {
+        mergedContacts[matchIndex] = {
+          ...mergedContacts[matchIndex],
+          name: mergedContacts[matchIndex].name || rc.name || "",
+          phone: mergedContacts[matchIndex].phone || rc.phone || "",
+          role: mergedContacts[matchIndex].role || rc.role || "Others",
+        };
+      }
+    }
+  });
+
+  const otNumber = (local.otNumber || remote.otNumber || "").trim();
+  const hospitalNumber = (local.hospitalNumber || remote.hospitalNumber || "").trim();
+  const personalNumber = (local.personalNumber || remote.personalNumber || "").trim();
+  const contactPerson = (local.contactPerson || remote.contactPerson || "").trim();
+  const mobile = (local.mobile || remote.mobile || personalNumber || otNumber || hospitalNumber || "").trim();
+  const phone = (local.phone || remote.phone || mobile).trim();
+
+  const mergedPartial: Partial<Customer> = {
+    ...remote,
+    ...local,
+    id: local.id || remote.id || createId(),
+    name: local.name || remote.name || "",
+    mobile,
+    phone,
+    otNumber,
+    hospitalNumber,
+    personalNumber,
+    contactPerson,
+    address: (local.address || remote.address || "").trim(),
+    email: (local.email || remote.email || "").trim(),
+    gstNumber: (local.gstNumber || remote.gstNumber || "").trim(),
+    notes: (local.notes || remote.notes || "").trim(),
+    contacts: mergedContacts,
+    createdAt: local.createdAt || remote.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  return harmonizeCustomerRecord(mergedPartial);
 };
 
 export const normalizeCustomerContacts = (customer: Partial<Customer>): HospitalContact[] => {
@@ -365,17 +420,12 @@ export const fetchUnifiedCustomers = async (): Promise<Customer[]> => {
         if (!existing) {
           map.set(key, harmonizeCustomerRecord(fc as any));
         } else {
-          // Compare timestamps: if local has been updated more recently or equal, local wins!
-          const localTime = new Date(existing.updatedAt || 0).getTime();
-          const remoteTime = new Date((fc as any).updatedAt || 0).getTime();
-          if (localTime >= remoteTime) {
-            // Local is newer: ensure Firestore is also synced with the new local state!
-            saveCashCustomerToFirestore(existing as CashCustomerData).catch(() => {});
-            return;
-          }
-
-          // If remote is strictly newer, accept remote record
-          map.set(key, harmonizeCustomerRecord(fc as any));
+          // Smart merge: ALWAYS combine local populated numbers with remote data so numbers are NEVER lost!
+          const merged = mergeCustomerRecords(existing, fc as any);
+          map.set(key, merged);
+          
+          // Sync merged record back to Firestore so remote DB stays complete as well
+          saveCashCustomerToFirestore(merged as CashCustomerData).catch(() => {});
         }
       }
     });
@@ -524,17 +574,17 @@ export const saveCustomer = async (
     deleteCashCustomerFromFirestore(existing?.id || oldCleanName, oldCleanName).catch(() => {});
   }
 
-  // Prefer explicitly provided data fields (even if empty string ""), then fallback to existing
-  const otNumber = (data.otNumber !== undefined ? data.otNumber : (existing?.otNumber || "")).trim();
-  const hospitalNumber = (data.hospitalNumber !== undefined ? data.hospitalNumber : (existing?.hospitalNumber || "")).trim();
-  const personalNumber = (data.personalNumber !== undefined ? data.personalNumber : (existing?.personalNumber || "")).trim();
-  const contactPerson = (data.contactPerson !== undefined ? data.contactPerson : (existing?.contactPerson || "")).trim();
-  const mobile = (data.mobile !== undefined ? data.mobile : (personalNumber || otNumber || hospitalNumber || existing?.mobile || "")).trim();
-  const phone = (data.phone !== undefined ? data.phone : (data.mobile !== undefined ? data.mobile : (mobile || existing?.phone || ""))).trim();
-  const address = (data.address !== undefined ? data.address : (existing?.address || "")).trim();
-  const email = (data.email !== undefined ? data.email : (existing?.email || "")).trim();
-  const gstNumber = (data.gstNumber !== undefined ? data.gstNumber : (existing?.gstNumber || "")).trim();
-  const notes = (data.notes !== undefined ? data.notes : (existing?.notes || "")).trim();
+  // Prefer explicitly provided non-empty data fields, then fallback to existing
+  const otNumber = (data.otNumber ? data.otNumber : (existing?.otNumber || "")).trim();
+  const hospitalNumber = (data.hospitalNumber ? data.hospitalNumber : (existing?.hospitalNumber || "")).trim();
+  const personalNumber = (data.personalNumber ? data.personalNumber : (existing?.personalNumber || "")).trim();
+  const contactPerson = (data.contactPerson ? data.contactPerson : (existing?.contactPerson || "")).trim();
+  const mobile = (data.mobile ? data.mobile : (personalNumber || otNumber || hospitalNumber || existing?.mobile || "")).trim();
+  const phone = (data.phone ? data.phone : (data.mobile ? data.mobile : (mobile || existing?.phone || ""))).trim();
+  const address = (data.address ? data.address : (existing?.address || "")).trim();
+  const email = (data.email ? data.email : (existing?.email || "")).trim();
+  const gstNumber = (data.gstNumber ? data.gstNumber : (existing?.gstNumber || "")).trim();
+  const notes = (data.notes ? data.notes : (existing?.notes || "")).trim();
 
   let contacts = Array.isArray(data.contacts) ? data.contacts : (existing?.contacts || []);
 

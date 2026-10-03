@@ -59,7 +59,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
-import { getSavedCustomers, saveCustomer, Customer, HospitalContact, normalizeHospitalName } from "@/lib/customerStorage";
+import { getSavedCustomers, saveCustomer, Customer, HospitalContact, normalizeHospitalName, fetchUnifiedCustomers } from "@/lib/customerStorage";
 import { HospitalSelect } from "@/components/ortho/HospitalSelect";
 import { DoctorSelect } from "@/components/ortho/DoctorSelect";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -258,6 +258,12 @@ const SavedDcs = () => {
   } | null>(null);
 
   useEffect(() => {
+    fetchUnifiedCustomers()
+      .then((unified) => {
+        setCustomers(unified);
+      })
+      .catch((err) => console.warn("Failed to fetch unified customers in DC Tracker:", err));
+
     const handleCustUpdate = () => {
       setCustomers(getSavedCustomers());
     };
