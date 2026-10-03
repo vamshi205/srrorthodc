@@ -270,3 +270,87 @@ export const findNearDuplicateHospital = (
   };
 };
 
+export interface DuplicateClusterPair {
+  target: Customer;
+  source: Customer;
+  score: number;
+  reason: string;
+}
+
+/**
+ * Scan a list of registered customers and identify all candidate duplicate clusters
+ * using stripped name matching and hospital similarity score (default threshold 0.70).
+ */
+export const findAllDuplicateClusters = (
+  customers: Customer[],
+  threshold = 0.70
+): DuplicateClusterPair[] => {
+  const results: DuplicateClusterPair[] = [];
+  const processedIds = new Set<string>();
+
+  for (let i = 0; i < customers.length; i++) {
+    const custA = customers[i];
+    if (!custA || !custA.name || processedIds.has(custA.id)) continue;
+
+    for (let j = i + 1; j < customers.length; j++) {
+      const custB = customers[j];
+      if (!custB || !custB.name || processedIds.has(custB.id)) continue;
+
+      const normA = custA.name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      const normB = custB.name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      let isDuplicate = false;
+      let score = 0;
+      let reason = "";
+
+      if (normA === normB) {
+        isDuplicate = true;
+        score = 1.0;
+        reason = "Exact stripped match (punctuation/casing)";
+      } else {
+        score = calculateHospitalSimilarity(custA.name, custB.name);
+        if (score >= threshold) {
+          isDuplicate = true;
+          reason = score >= 0.90 ? "High confidence name match" : "Near-duplicate spelling / branch match";
+        }
+      }
+
+      if (isDuplicate) {
+        const scoreA =
+          (custA.otNumber ? 2 : 0) +
+          (custA.personalNumber ? 2 : 0) +
+          (custA.mobile ? 1 : 0) +
+          (custA.contacts?.length || 0) +
+          (custA.notes !== "From DC History" ? 3 : 0);
+
+        const scoreB =
+          (custB.otNumber ? 2 : 0) +
+          (custB.personalNumber ? 2 : 0) +
+          (custB.mobile ? 1 : 0) +
+          (custB.contacts?.length || 0) +
+          (custB.notes !== "From DC History" ? 3 : 0);
+
+        let target = custA;
+        let source = custB;
+
+        if (scoreB > scoreA) {
+          target = custB;
+          source = custA;
+        }
+
+        results.push({
+          target,
+          source,
+          score,
+          reason,
+        });
+
+        processedIds.add(source.id);
+      }
+    }
+  }
+
+  return results;
+};
+
+

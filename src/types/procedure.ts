@@ -41,6 +41,8 @@ export interface ActiveProcedure extends Procedure {
   fixedQtyEdits: Map<string, string>;
   instruments: string[];
   boxNumbers: string[];
+  originalFixedItems?: FixedItem[];
+  originalItems?: string[];
   instrumentImageMapping?: Record<string, string | null>;
   fixedItemImageMapping?: Record<string, string | null>;
   itemImageMapping?: Record<string, string | null>;

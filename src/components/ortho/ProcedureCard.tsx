@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
+  RotateCcw,
   Trash2,
   Package,
   Wrench,
@@ -17,11 +18,12 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ActiveProcedure, SizeQty } from '@/types/procedure';
+import { ActiveProcedure, Procedure, SizeQty } from '@/types/procedure';
 import { InstrumentImageModal } from './InstrumentImageModal';
 
 interface ProcedureCardProps {
   procedure: ActiveProcedure;
+  masterProcedures?: Procedure[];
   index?: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -40,6 +42,8 @@ interface ProcedureCardProps {
   onSearchInstruments: (query: string) => Array<{ instrument: string; procedureName: string }>;
   onRemoveFixedItemPart: (itemName: string, partToRemove: string) => void;
   onRemoveSelectableItemPart: (itemName: string, partToRemove: string) => void;
+  onResetFixedItem?: (itemName: string) => void;
+  onResetSelectableItem?: (itemName: string) => void;
   onAddBox: (boxNumber: string) => void;
   onRemoveBox: (index: number) => void;
 }
@@ -67,8 +71,84 @@ function splitItemNameByComma(itemName: string): { parts: string[]; hasCommas: b
   return { parts, hasCommas: parts.length > 1 };
 }
 
+export function parseItemNameParts(itemName: string): {
+  title: string;
+  parts: Array<{ display: string; partToRemove: string }>;
+} {
+  if (!itemName) {
+    return { title: '', parts: [] };
+  }
+
+  // Split raw chunks by commas or newlines
+  const rawChunks = itemName.split(/[,\r\n]+/).map((p) => p.trim()).filter(Boolean);
+
+  if (rawChunks.length > 1) {
+    const first = rawChunks[0];
+
+    // Match the size token at the end of first chunk, e.g. "4H", "37mm", "4hole", "10mm"
+    const lastTokenMatch = first.match(/\s+([^\s,\(\)]+)\)?$/);
+
+    if (lastTokenMatch) {
+      const title = first.slice(0, -lastTokenMatch[0].length).trim();
+      const rawFirstSize = lastTokenMatch[1].trim();
+      const cleanFirstSize = rawFirstSize.replace(/^\(/, '').replace(/\)$/, '').trim();
+
+      const parts: Array<{ display: string; partToRemove: string }> = [];
+      if (cleanFirstSize) {
+        parts.push({ display: cleanFirstSize, partToRemove: cleanFirstSize });
+      }
+
+      for (let i = 1; i < rawChunks.length; i++) {
+        const raw = rawChunks[i].trim();
+        const clean = raw.replace(/\)+$/, '').replace(/^\(/, '').trim();
+        if (clean) {
+          parts.push({ display: clean, partToRemove: clean });
+        }
+      }
+
+      return { title, parts };
+    }
+
+    const parts = rawChunks.map((p) => {
+      const clean = p.replace(/\)+$/, '').replace(/^\(/, '').trim();
+      return { display: clean, partToRemove: clean };
+    });
+
+    return {
+      title: '',
+      parts,
+    };
+  }
+
+  // If rawChunks.length <= 1, check if inside parentheses there is a size list like "(3.5mm x 4H 5H 6H 7H 8H 9H 10H)"
+  const parenMatch = itemName.match(/^(.*?\()(.*?)\)?$/);
+  if (parenMatch) {
+    const prefix = parenMatch[1]; // e.g. "Clavicle Locking Plate S Type - RIGHT ("
+    const inside = parenMatch[2].trim(); // e.g. "3.5mm x 4H 5H 6H 7H 8H 9H 10H"
+
+    // Check if inside has "3.5mm x 4H 5H..." or similar
+    const xMatch = inside.match(/^(.*?\bx\s+)(.+)$/i);
+    if (xMatch) {
+      const title = `${prefix}${xMatch[1].trim()}`;
+      const sizeTokens = xMatch[2].trim().split(/\s+/).filter(Boolean);
+      if (sizeTokens.length > 1) {
+        return {
+          title,
+          parts: sizeTokens.map((st) => {
+            const clean = st.replace(/\)+$/, '').replace(/^\(/, '').trim();
+            return { display: clean, partToRemove: clean };
+          }),
+        };
+      }
+    }
+  }
+
+  return { title: itemName, parts: [] };
+}
+
 export function ProcedureCard({
   procedure,
+  masterProcedures,
   index,
   isCollapsed,
   onToggleCollapse,
@@ -86,6 +166,8 @@ export function ProcedureCard({
   onSearchInstruments,
   onRemoveFixedItemPart,
   onRemoveSelectableItemPart,
+  onResetFixedItem,
+  onResetSelectableItem,
   onAddBox,
   onRemoveBox,
 }: ProcedureCardProps) {
@@ -544,34 +626,35 @@ export function ProcedureCard({
                       />
                       <div className="flex-1 flex items-center gap-1.5 min-w-0 flex-wrap">
                         {(() => {
-                          const { parts, hasCommas } = splitItemNameByComma(fixedItem.name);
-                          if (hasCommas) {
+                          const { title, parts } = parseItemNameParts(fixedItem.name);
+                          if (parts.length > 0) {
                             return (
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {parts.map((part, idx) => (
-                                  <span key={`${procedure.name}-${fixedItem.name}-${idx}-${part}`} className="inline-flex items-baseline gap-0.5">
-                                    <span className={`text-sm ${isSelected ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}`}>
-                                      {part}
-                                    </span>
-                                    <sup className="inline-block">
+                              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                <span className={`text-sm font-extrabold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
+                                  {title}
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {parts.map((p, idx) => (
+                                    <span
+                                      key={`${procedure.name}-${fixedItem.name}-${idx}-${p.display}`}
+                                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100/90 hover:bg-rose-100 text-emerald-950 hover:text-rose-800 border border-emerald-300/80 hover:border-rose-400 transition-all shadow-2xs group"
+                                    >
+                                      <span>{p.display}</span>
                                       <button
+                                        type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           e.preventDefault();
-                                          onRemoveFixedItemPart(fixedItem.name, part);
+                                          onRemoveFixedItemPart(fixedItem.name, p.partToRemove);
                                         }}
-                                        className="hover:bg-rose-100 rounded-full p-0.5 text-rose-600 flex-shrink-0 ml-0.5"
-                                        title={`Remove ${part}`}
-                                        type="button"
+                                        className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-emerald-700 group-hover:text-rose-700 hover:bg-rose-200/90 transition-colors ml-0.5 shrink-0"
+                                        title={`Remove size ${p.display}`}
                                       >
                                         <X className="w-2.5 h-2.5" />
                                       </button>
-                                    </sup>
-                                    {idx < parts.length - 1 && (
-                                      <span className="text-slate-400 font-bold">,</span>
-                                    )}
-                                  </span>
-                                ))}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
                             );
                           }
@@ -584,12 +667,47 @@ export function ProcedureCard({
                         {procedure.fixedItemImageMapping?.[fixedItem.name] && (
                           <button
                             onClick={() => handleShowFixedItemImage(fixedItem.name)}
-                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-full p-1 transition-colors shrink-0 border border-emerald-300"
+                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-full p-1 transition-colors shrink-0 border border-emerald-300 cursor-pointer"
                             title={`View image of ${fixedItem.name}`}
                           >
                             <Info className="w-3.5 h-3.5" />
                           </button>
                         )}
+                        {(() => {
+                          const masterProc = masterProcedures?.find(
+                            (mp) => mp.name === procedure.name || (mp.docId && mp.docId === procedure.docId)
+                          );
+                          const origList = procedure.originalFixedItems || masterProc?.fixedItems || [];
+                          const currentTitle = parseItemNameParts(fixedItem.name).title;
+
+                          const origMatch = origList.find((fi) => {
+                            if (fi.name === fixedItem.name) return true;
+                            const origTitle = parseItemNameParts(fi.name).title;
+                            return (
+                              currentTitle &&
+                              origTitle &&
+                              currentTitle.toLowerCase() === origTitle.toLowerCase()
+                            );
+                          });
+
+                          const isModified = origMatch && origMatch.name !== fixedItem.name;
+                          if (!isModified) return null;
+
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                onResetFixedItem?.(fixedItem.name);
+                              }}
+                              className="bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-full p-1 transition-all shrink-0 border border-amber-300 shadow-2xs group flex items-center justify-center cursor-pointer"
+                              title={`Reset "${fixedItem.name}" back to original state (${origMatch.name})`}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-amber-700 group-hover:rotate-[-90deg] transition-transform duration-300" />
+                            </button>
+                          );
+                        })()}
                         {procedure.fixedItemLocationMapping?.[fixedItem.name] && (
                           <span 
                             className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300"
@@ -671,34 +789,35 @@ export function ProcedureCard({
                         />
                         <div className="flex-1 flex items-center gap-1.5 min-w-0 flex-wrap">
                           {(() => {
-                            const { parts, hasCommas } = splitItemNameByComma(parsed.name);
-                            if (hasCommas) {
+                            const { title, parts } = parseItemNameParts(parsed.name);
+                            if (parts.length > 0) {
                               return (
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  {parts.map((part, idx) => (
-                                    <span key={`${procedure.name}-${parsed.name}-${idx}-${part}`} className="inline-flex items-baseline gap-0.5">
-                                      <span className={`text-sm ${isSelected ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}`}>
-                                        {part}
-                                      </span>
-                                      <sup className="inline-block">
+                                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                  <span className={`text-sm font-extrabold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
+                                    {title}
+                                  </span>
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    {parts.map((p, idx) => (
+                                      <span
+                                        key={`${procedure.name}-${parsed.name}-${idx}-${p.display}`}
+                                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100/90 hover:bg-rose-100 text-blue-950 hover:text-rose-800 border border-blue-300/80 hover:border-rose-400 transition-all shadow-2xs group"
+                                      >
+                                        <span>{p.display}</span>
                                         <button
+                                          type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             e.preventDefault();
-                                            onRemoveSelectableItemPart(parsed.name, part);
+                                            onRemoveSelectableItemPart(parsed.name, p.partToRemove);
                                           }}
-                                          className="hover:bg-rose-100 rounded-full p-0.5 text-rose-600 flex-shrink-0 ml-0.5"
-                                          title={`Remove ${part}`}
-                                          type="button"
+                                          className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-blue-700 group-hover:text-rose-700 hover:bg-rose-200/90 transition-colors ml-0.5 shrink-0"
+                                          title={`Remove size ${p.display}`}
                                         >
                                           <X className="w-2.5 h-2.5" />
                                         </button>
-                                      </sup>
-                                      {idx < parts.length - 1 && (
-                                        <span className="text-slate-400 font-bold">,</span>
-                                      )}
-                                    </span>
-                                  ))}
+                                      </span>
+                                    ))}
+                                  </div>
                                 </div>
                               );
                             }
@@ -711,12 +830,48 @@ export function ProcedureCard({
                           {procedure.itemImageMapping?.[parsed.name] && (
                             <button
                               onClick={() => handleShowSelectableItemImage(parsed.name)}
-                              className="bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-full p-1 transition-colors shrink-0 border border-blue-300"
+                              className="bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-full p-1 transition-colors shrink-0 border border-blue-300 cursor-pointer"
                               title={`View image of ${parsed.name}`}
                             >
                               <Info className="w-3.5 h-3.5" />
                             </button>
                           )}
+                          {(() => {
+                            const masterProc = masterProcedures?.find(
+                              (mp) => mp.name === procedure.name || (mp.docId && mp.docId === procedure.docId)
+                            );
+                            const origList = procedure.originalItems || masterProc?.items || [];
+                            const currentTitle = parseItemNameParts(parsed.name).title;
+
+                            const origMatch = origList.find((origStr) => {
+                              const rawOrigName = origStr.replace(/\s*\{.+?\}$/, '').trim();
+                              if (rawOrigName === parsed.name) return true;
+                              const origTitle = parseItemNameParts(rawOrigName).title;
+                              return (
+                                currentTitle &&
+                                origTitle &&
+                                currentTitle.toLowerCase() === origTitle.toLowerCase()
+                              );
+                            });
+
+                            const isModified = origMatch && origMatch.replace(/\s*\{.+?\}$/, '').trim() !== parsed.name;
+                            if (!isModified) return null;
+
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  onResetSelectableItem?.(parsed.name);
+                                }}
+                                className="bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-full p-1 transition-all shrink-0 border border-amber-300 shadow-2xs group flex items-center justify-center cursor-pointer"
+                                title={`Reset "${parsed.name}" back to original state`}
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-amber-700 group-hover:rotate-[-90deg] transition-transform duration-300" />
+                              </button>
+                            );
+                          })()}
                           {procedure.itemLocationMapping?.[parsed.name] && (
                             <span 
                               className="text-[10px] font-bold text-blue-800 bg-blue-100/90 px-2 py-0.5 rounded border border-blue-300"

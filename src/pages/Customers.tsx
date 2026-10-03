@@ -64,9 +64,14 @@ import {
   normalizeHospitalName,
   deduplicateAndCleanCustomers,
   syncCustomersFromDcs,
+  batchMergeCustomers,
 } from "@/lib/customerStorage";
 import { loadSavedDcs, SavedDc } from "@/lib/savedDcStorage";
-import { findNearDuplicateHospital } from "@/lib/hospitalDuplicateDetector";
+import {
+  findNearDuplicateHospital,
+  findAllDuplicateClusters,
+  DuplicateClusterPair,
+} from "@/lib/hospitalDuplicateDetector";
 
 export default function Customers() {
   const navigate = useNavigate();
@@ -123,6 +128,59 @@ export default function Customers() {
   const [mergeUpdateDcs, setMergeUpdateDcs] = useState(true);
   const [mergeUpdateInvoices, setMergeUpdateInvoices] = useState(true);
   const [isMerging, setIsMerging] = useState(false);
+
+  // Auto-Deduplicate Directory State
+  const [autoDeduplicateModalOpen, setAutoDeduplicateModalOpen] = useState(false);
+  const [detectedClusters, setDetectedClusters] = useState<DuplicateClusterPair[]>([]);
+  const [selectedClusterIndices, setSelectedClusterIndices] = useState<Set<number>>(new Set());
+  const [isBatchMerging, setIsBatchMerging] = useState(false);
+
+  const handleScanAndShowAutoDeduplicateModal = () => {
+    const clusters = findAllDuplicateClusters(customers, 0.70);
+    setDetectedClusters(clusters);
+    setSelectedClusterIndices(new Set(clusters.map((_, i) => i)));
+    setAutoDeduplicateModalOpen(true);
+  };
+
+  const handleToggleClusterSelection = (index: number) => {
+    const next = new Set(selectedClusterIndices);
+    if (next.has(index)) {
+      next.delete(index);
+    } else {
+      next.add(index);
+    }
+    setSelectedClusterIndices(next);
+  };
+
+  const handleExecuteBatchMerge = async () => {
+    const pairsToMerge = detectedClusters
+      .filter((_, idx) => selectedClusterIndices.has(idx))
+      .map((c) => ({
+        targetId: c.target.id,
+        sourceId: c.source.id,
+        targetName: c.target.name,
+      }));
+
+    if (pairsToMerge.length === 0) {
+      toast.error("No duplicate hospital pairs selected to merge.");
+      return;
+    }
+
+    setIsBatchMerging(true);
+    try {
+      const res = await batchMergeCustomers(pairsToMerge);
+      toast.success(
+        `Successfully merged ${res.mergedCount} duplicate hospital profiles! All historical DCs & Invoices updated with clean names.`
+      );
+      setAutoDeduplicateModalOpen(false);
+      const unified = await fetchUnifiedCustomers();
+      setCustomers(deduplicateAndCleanCustomers(unified));
+    } catch (e: any) {
+      toast.error(e.message || "Failed to perform batch deduplication.");
+    } finally {
+      setIsBatchMerging(false);
+    }
+  };
 
   // Delete Caution Modal State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -681,6 +739,17 @@ export default function Customers() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleScanAndShowAutoDeduplicateModal}
+                className="h-9 text-xs gap-1.5 border-purple-300 text-purple-900 dark:text-purple-300 bg-purple-50/70 hover:bg-purple-100 dark:hover:bg-purple-950 font-bold rounded-md shadow-2xs"
+                title="Scan entire directory and batch merge all detected duplicate hospitals in 1-click"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                Auto-Deduplicate
+              </Button>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -2178,6 +2247,146 @@ export default function Customers() {
                   </Button>
                 )}
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* 1-Click Auto-Deduplicate Directory Modal */}
+        <Dialog open={autoDeduplicateModalOpen} onOpenChange={setAutoDeduplicateModalOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden bg-background border-border">
+            <DialogHeader className="p-5 border-b border-border bg-purple-50/50 dark:bg-purple-950/20 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/60 flex items-center justify-center text-purple-700 dark:text-purple-300 shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
+                    ⚡ 1-Click Auto-Deduplicate Directory
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    Scanned {customers.length} registered hospitals and detected {detectedClusters.length} near-duplicate profile clusters.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {detectedClusters.length === 0 ? (
+                <div className="p-8 text-center space-y-3 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+                  <div className="font-bold text-sm text-emerald-950 dark:text-emerald-200">
+                    No Duplicate Hospital Profiles Detected!
+                  </div>
+                  <p className="text-xs text-emerald-800 dark:text-emerald-400 max-w-md mx-auto">
+                    All registered customer profiles are clean, unified, and free of duplicate punctuation or spelling variations.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between text-xs font-bold text-muted-foreground px-1">
+                    <span>Selected ({selectedClusterIndices.size} of {detectedClusters.length} Duplicate Groups)</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedClusterIndices.size === detectedClusters.length) {
+                          setSelectedClusterIndices(new Set());
+                        } else {
+                          setSelectedClusterIndices(new Set(detectedClusters.map((_, i) => i)));
+                        }
+                      }}
+                      className="text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+                    >
+                      {selectedClusterIndices.size === detectedClusters.length ? "Deselect All" : "Select All"}
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {detectedClusters.map((cluster, idx) => {
+                      const isSelected = selectedClusterIndices.has(idx);
+                      const isExactMatch = cluster.score >= 0.98;
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => handleToggleClusterSelection(idx)}
+                          className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            isSelected
+                              ? "bg-purple-50/40 dark:bg-purple-950/30 border-purple-300 dark:border-purple-800 shadow-2xs"
+                              : "bg-card border-border opacity-70 hover:opacity-100"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              className="w-4 h-4 rounded border-purple-400 text-purple-600 focus:ring-purple-500 shrink-0"
+                            />
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-xs text-foreground truncate">
+                                  {cluster.target.name}
+                                </span>
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px] py-0">
+                                  Keep Primary
+                                </Badge>
+                                {(cluster.target.otNumber || cluster.target.mobile) && (
+                                  <span className="text-[10px] text-muted-foreground font-mono">
+                                    📞 {cluster.target.otNumber || cluster.target.mobile}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <ArrowRight className="w-3 h-3 text-amber-500 shrink-0" />
+                                <span className="line-through text-rose-600 dark:text-rose-400 font-medium truncate">
+                                  {cluster.source.name}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground font-normal shrink-0">
+                                  (Merge duplicate)
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <Badge
+                            className={`shrink-0 text-[10px] font-bold ${
+                              isExactMatch
+                                ? "bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300"
+                                : "bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300"
+                            }`}
+                          >
+                            {Math.round(cluster.score * 100)}% Match
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-border bg-card flex items-center justify-between gap-3 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAutoDeduplicateModalOpen(false)}
+                disabled={isBatchMerging}
+                className="h-9 text-xs font-bold"
+              >
+                Cancel
+              </Button>
+              {detectedClusters.length > 0 && (
+                <Button
+                  size="sm"
+                  onClick={handleExecuteBatchMerge}
+                  disabled={isBatchMerging || selectedClusterIndices.size === 0}
+                  className="h-9 text-xs font-bold gap-1.5 bg-purple-700 hover:bg-purple-800 text-white shadow-xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {isBatchMerging
+                    ? "Merging Duplicates..."
+                    : `Merge & Clean Selected (${selectedClusterIndices.size} Pairs)`}
+                </Button>
+              )}
             </div>
           </DialogContent>
         </Dialog>

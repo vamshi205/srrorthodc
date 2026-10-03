@@ -191,12 +191,12 @@ export const CashInvoicePreview: React.FC<CashInvoicePreviewProps> = ({
         <table className="w-full border-collapse text-xs mb-4 border border-slate-300 rounded-none overflow-hidden table-fixed">
           <thead>
             <tr className="bg-slate-100 border-b-2 border-slate-300">
-              <th className="p-2 text-center text-slate-700 font-bold w-[4%]">#</th>
-              <th className="p-2 text-left text-slate-700 font-bold w-[50%]">ITEM DESCRIPTION</th>
-              <th className="p-2 text-center text-slate-700 font-bold w-[15%]">SIZE</th>
-              <th className="p-2 text-center text-slate-700 font-bold w-[6%]">QTY</th>
+              <th className="p-2 text-center text-slate-700 font-bold w-[5%]">#</th>
+              <th className="p-2 text-left text-slate-700 font-bold w-[44%]">ITEM DESCRIPTION</th>
+              <th className="p-2 text-center text-slate-700 font-bold w-[12%]">SIZE</th>
+              <th className="p-2 text-center text-slate-700 font-bold w-[9%]">QTY</th>
               <th className="p-2 text-right text-slate-700 font-bold w-[15%]">RATE (₹)</th>
-              <th className="p-2 text-right text-slate-700 font-bold w-[10%]">AMOUNT (₹)</th>
+              <th className="p-2 text-right text-slate-700 font-bold w-[15%]">AMOUNT (₹)</th>
             </tr>
           </thead>
           <tbody>
@@ -213,7 +213,7 @@ export const CashInvoicePreview: React.FC<CashInvoicePreviewProps> = ({
                 const amt = item.amount != null ? Number(item.amount) : qty * rate;
                 return (
                   <tr key={idx} className="border-b border-slate-200">
-                    <td className="p-2 text-center text-slate-500 font-mono text-[11px]">
+                    <td className="p-2 text-center text-slate-500 font-mono text-[11px] whitespace-nowrap">
                       {idx + 1}
                     </td>
                     <td className="p-2 font-semibold text-slate-900 break-words text-[11px] leading-snug">
@@ -231,12 +231,12 @@ export const CashInvoicePreview: React.FC<CashInvoicePreviewProps> = ({
                         </div>
                       )}
                     </td>
-                    <td className="p-2 text-center text-slate-600 text-[11px]">{item.size || "-"}</td>
-                    <td className="p-2 text-center font-bold text-slate-900 text-[11px]">{qty}</td>
-                    <td className="p-2 text-right text-slate-700 font-mono text-[11px]">
+                    <td className="p-2 text-center text-slate-600 text-[11px] whitespace-nowrap">{item.size || "-"}</td>
+                    <td className="p-2 text-center font-bold text-slate-900 text-[11px] whitespace-nowrap">{qty}</td>
+                    <td className="p-2 text-right text-slate-700 font-mono text-[11px] whitespace-nowrap">
                       ₹{rate.toFixed(2)}
                     </td>
-                    <td className="p-2 text-right font-bold text-slate-900 font-mono text-[11px]">
+                    <td className="p-2 text-right font-bold text-slate-900 font-mono text-[11px] whitespace-nowrap">
                       ₹{amt.toFixed(2)}
                     </td>
                   </tr>
@@ -335,7 +335,10 @@ export const CashInvoicePreview: React.FC<CashInvoicePreviewProps> = ({
             <div className="text-[11px] font-bold text-slate-900 mb-1">
               For <strong>SRR ORTHO PLUS</strong>
             </div>
-            <div className="font-['Caveat'] text-2xl font-bold text-blue-700 h-7 flex items-center justify-end">
+            <div
+              style={{ fontFamily: "'Caveat', 'Dancing Script', cursive, sans-serif" }}
+              className="text-2xl font-bold text-blue-700 h-8 flex items-center justify-end"
+            >
               A.SATYANARAYANA
             </div>
             <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mt-1">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Papa from 'papaparse';
 import {
@@ -16,16 +16,22 @@ import {
   unlinkBankTransactionFromCashInvoice,
   importBatchBankTransactions,
   subscribeToBankTransactions,
+  revertMatchingDcToCashQueue,
+  recordCashPaymentToCashInHand,
 } from '@/services/bankAccountFirebaseService';
 import {
   CashInvoiceData,
   fetchCashInvoicesFromFirestore,
 } from '@/services/cashInvoiceFirebaseService';
+import { CashInvoicePreview } from '@/components/cash-invoice/CashInvoicePreview';
+import { printCashMemo } from '@/lib/cashInvoicePrint';
 import {
   parseMultipleHdfcEmailAlerts,
   extractHdfcNarration,
   ParsedHdfcEmailResult,
 } from '@/services/gmailConnectorService';
+import { loadSavedDcs, SavedDc, transitionSavedDc } from '@/lib/savedDcStorage';
+import { PersonnelSelect } from '@/components/ortho/PersonnelSelect';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -89,6 +95,7 @@ import {
   Eye,
   Check,
   MoreVertical,
+  Printer,
   X,
   Info,
   RotateCcw,
@@ -98,6 +105,11 @@ import {
   FileSpreadsheet,
   Mail,
   Zap,
+  Banknote,
+  Stethoscope,
+  User,
+  UserCheck,
+  Loader2,
 } from 'lucide-react';
 
 const COMMON_BANKS = [
@@ -144,25 +156,85 @@ const DEBIT_CATEGORIES = [
   'Other Debit',
 ];
 
+function convertDcToCashInvoiceObj(dc: SavedDc, cashInvoicesList: CashInvoiceData[]): CashInvoiceData {
+  const existing = cashInvoicesList.find(
+    (inv) =>
+      (inv.dcNumber && inv.dcNumber.toString().trim() === dc.dcNo.toString().trim()) ||
+      (inv.invNumber && (inv.invNumber === dc.invoiceRef || inv.invNumber === `DC #${dc.dcNo}`))
+  );
+  if (existing) {
+    return existing;
+  }
+
+  const items: CashInvoiceData['items'] = [];
+  if (Array.isArray(dc.items)) {
+    dc.items.forEach((item) => {
+      if (Array.isArray(item.sizes) && item.sizes.length > 0) {
+        item.sizes.forEach((sz) => {
+          items.push({
+            description: `${dc.materialType || 'SS'} ${item.name}`,
+            size: sz.size,
+            subDescription: item.procedure ? `Procedure: ${item.procedure}` : undefined,
+            qty: Number(sz.qty) || 1,
+            rate: Number(sz.rate) || 0,
+            amount: (Number(sz.qty) || 1) * (Number(sz.rate) || 0),
+          });
+        });
+      } else {
+        items.push({
+          description: `${dc.materialType || 'SS'} ${item.name}`,
+          subDescription: item.procedure ? `Procedure: ${item.procedure}` : undefined,
+          qty: 1,
+          rate: 0,
+          amount: 0,
+        });
+      }
+    });
+  }
+
+  const grandTotal = Number(dc.cashAmount) || 0;
+
+  return {
+    invNumber: dc.invoiceRef || `DC #${dc.dcNo}`,
+    dcNumber: dc.dcNo,
+    invDate: dc.savedAt
+      ? new Date(dc.savedAt).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0],
+    clientName: dc.hospitalName || 'Cash Customer',
+    clientAddress: dc.doctorName ? `Doctor: ${dc.doctorName}` : undefined,
+    items:
+      items.length > 0
+        ? items
+        : [{ description: `Delivery Challan DC #${dc.dcNo}`, qty: 1, rate: grandTotal, amount: grandTotal }],
+    subtotal: grandTotal,
+    discount: 0,
+    grandTotal: grandTotal,
+    paymentReceived: 0,
+    status: 'unpaid',
+    savedAt: typeof dc.savedAt === 'number' ? dc.savedAt : Date.now(),
+    remarks: dc.remarks,
+  };
+}
+
 export const BankAccountsView: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Navigation tab with URL synchronization
-  const tabFromUrl = (searchParams.get("tab") as "ledger" | "unlinked" | "import" | "accounts") || "ledger";
-  const [activeTab, setActiveTabState] = useState<"ledger" | "unlinked" | "import" | "accounts">(tabFromUrl);
+  const tabFromUrl = (searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts") || "ledger";
+  const [activeTab, setActiveTabState] = useState<"ledger" | "unlinked" | "linked" | "import" | "accounts">(tabFromUrl);
 
   useEffect(() => {
-    const t = searchParams.get("tab") as "ledger" | "unlinked" | "import" | "accounts";
-    if (t === "unlinked" || t === "import" || t === "accounts") {
+    const t = searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts";
+    if (t === "unlinked" || t === "linked" || t === "import" || t === "accounts") {
       setActiveTabState(t);
     } else {
       setActiveTabState("ledger");
     }
   }, [searchParams]);
 
-  const setActiveTab = (newTab: "ledger" | "unlinked" | "import" | "accounts") => {
+  const setActiveTab = (newTab: "ledger" | "unlinked" | "linked" | "import" | "accounts") => {
     setActiveTabState(newTab);
     const newParams = new URLSearchParams(searchParams);
     if (newTab === "ledger") {
@@ -182,7 +254,7 @@ export const BankAccountsView: React.FC = () => {
 
   // Ledger Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'unlinked' | 'linked'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'unlinked' | 'linked' | 'cash_memo_income'>('all');
   const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
@@ -199,6 +271,37 @@ export const BankAccountsView: React.FC = () => {
   const [targetTransactionForLink, setTargetTransactionForLink] = useState<BankTransaction | null>(null);
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   const [autoUpdateInvoicePayment, setAutoUpdateInvoicePayment] = useState(true);
+
+  // DC Tracker Cash Queue State
+  const [savedDcs, setSavedDcs] = useState<SavedDc[]>([]);
+  const [viewingDcDetails, setViewingDcDetails] = useState<SavedDc | null>(null);
+  const [viewingCashInvoiceModal, setViewingCashInvoiceModal] = useState<CashInvoiceData | null>(null);
+
+  const viewingDcAsCashInvoice = useMemo<CashInvoiceData | null>(() => {
+    if (!viewingDcDetails) return null;
+    return convertDcToCashInvoiceObj(viewingDcDetails, cashInvoices);
+  }, [viewingDcDetails, cashInvoices]);
+
+  const handleViewCandidateInvoice = (inv: CashInvoiceData) => {
+    if (inv.dcNumber) {
+      const matchingDc = savedDcs.find(
+        (d) => d.dcNo.toString().trim() === inv.dcNumber?.toString().trim()
+      );
+      if (matchingDc) {
+        setViewingCashInvoiceModal(convertDcToCashInvoiceObj(matchingDc, cashInvoices));
+        return;
+      }
+    }
+    setViewingCashInvoiceModal(inv);
+  };
+  const [settlingDc, setSettlingDc] = useState<SavedDc | null>(null);
+  const [paymentAmountInput, setPaymentAmountInput] = useState<string>('');
+  const [paymentRemarksInput, setPaymentRemarksInput] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank_transfer'>('cash');
+  const [paymentCollectedBy, setPaymentCollectedBy] = useState<string>('');
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>('');
+  const [selectedCreditTxId, setSelectedCreditTxId] = useState<string>('');
+  const [isSettling, setIsSettling] = useState<boolean>(false);
 
   // Inter-Account Transfer State
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -311,6 +414,37 @@ export const BankAccountsView: React.FC = () => {
 
     return () => unsubscribe();
   }, [fetchLimit]);
+
+  // Load DC Tracker Saved DCs for Cash Queue integration
+  useEffect(() => {
+    const fetchDcs = async () => {
+      try {
+        const dcs = await loadSavedDcs();
+        setSavedDcs(dcs);
+      } catch (err) {
+        console.error('Error loading saved DCs in BankAccountsView:', err);
+      }
+    };
+    fetchDcs();
+
+    const handleDcUpdate = (e: Event) => {
+      const customEvt = e as CustomEvent<SavedDc[]>;
+      if (customEvt.detail) {
+        setSavedDcs(customEvt.detail);
+      }
+    };
+
+    window.addEventListener('srrortho:saved_dcs_updated', handleDcUpdate);
+    return () => window.removeEventListener('srrortho:saved_dcs_updated', handleDcUpdate);
+  }, []);
+
+  const cashQueueDcs = useMemo(() => {
+    return savedDcs.filter((d) => d.status === 'cash');
+  }, [savedDcs]);
+
+  const cashQueueTotalAmount = useMemo(() => {
+    return cashQueueDcs.reduce((acc, d) => acc + (d.cashAmount || 0), 0);
+  }, [cashQueueDcs]);
 
   // Compute live balances per account
   const accountBalances = useMemo(() => {
@@ -458,6 +592,47 @@ export const BankAccountsView: React.FC = () => {
     );
   }, [transactions]);
 
+  // Linked / Reconciled Credit Transactions
+  const linkedCreditTransactions = useMemo(() => {
+    return transactions.filter(
+      (tx) => tx.type === 'credit' && Boolean(tx.linkedInvoiceNumber || tx.linkedInvoiceId)
+    );
+  }, [transactions]);
+
+  // Sorted Executive Bank Accounts (1538 ALWAYS FIRST on far left)
+  const sortedBankAccounts = useMemo(() => {
+    const accs = accounts.filter((a) => a.accountType !== "cash_in_hand");
+    accs.sort((a, b) => {
+      const aSuffix = a.accountNumber ? a.accountNumber.slice(-4) : (a.accountName.match(/\d{4}/)?.[0] || "");
+      const bSuffix = b.accountNumber ? b.accountNumber.slice(-4) : (b.accountName.match(/\d{4}/)?.[0] || "");
+      if (aSuffix === "1538" || a.id.includes("1538")) return -1;
+      if (bSuffix === "1538" || b.id.includes("1538")) return 1;
+      return 0;
+    });
+    return accs;
+  }, [accounts]);
+
+  const availableBankCredits = useMemo(() => {
+    return transactions.filter((t) => t.type === "credit" && !t.linkedInvoiceNumber && !t.linkedInvoiceId);
+  }, [transactions]);
+
+  const filteredBankCredits = useMemo(() => {
+    if (!selectedBankAccountId || selectedBankAccountId === "all") {
+      return availableBankCredits;
+    }
+    return availableBankCredits.filter((t) => t.accountId === selectedBankAccountId);
+  }, [availableBankCredits, selectedBankAccountId]);
+
+  const handleOpenSettleDcModal = (dc: SavedDc) => {
+    setSettlingDc(dc);
+    setPaymentAmountInput(dc.cashAmount ? String(dc.cashAmount) : "");
+    setPaymentRemarksInput("");
+    setPaymentMethod("cash");
+    setPaymentCollectedBy("");
+    setSelectedBankAccountId(sortedBankAccounts[0]?.id || "");
+    setSelectedCreditTxId("");
+  };
+
   // Filtered Ledger Transactions
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
@@ -466,6 +641,7 @@ export const BankAccountsView: React.FC = () => {
       }
       if (typeFilter === 'credit' && tx.type !== 'credit') return false;
       if (typeFilter === 'debit' && tx.type !== 'debit') return false;
+      if (typeFilter === 'cash_memo_income' && tx.type !== 'credit') return false;
       if (typeFilter === 'unlinked' && (tx.type !== 'credit' || tx.linkedInvoiceNumber || tx.linkedInvoiceId)) return false;
       if (typeFilter === 'linked' && (!tx.linkedInvoiceNumber && !tx.linkedInvoiceId)) return false;
       if (categoryFilter !== 'all' && tx.category !== categoryFilter) return false;
@@ -508,34 +684,253 @@ export const BankAccountsView: React.FC = () => {
 
   // Smart Matching Invoices for the Link Modal
   const candidateInvoicesForLink = useMemo(() => {
-    if (!targetTransactionForLink) return cashInvoices;
+    // 1. Collect all invoice numbers & DC numbers currently linked to OTHER bank transactions
+    const alreadyLinkedInvNumbers = new Set<string>();
+    transactions.forEach((tx) => {
+      // Don't exclude the invoice currently linked to this target transaction (so user can see "Currently Linked")
+      if (targetTransactionForLink && tx.id === targetTransactionForLink.id) return;
+      if (tx.linkedInvoiceNumber) {
+        alreadyLinkedInvNumbers.add(tx.linkedInvoiceNumber.toLowerCase().trim());
+      }
+      if (tx.linkedInvoiceId) {
+        alreadyLinkedInvNumbers.add(tx.linkedInvoiceId.toLowerCase().trim());
+      }
+    });
+
+    // 2. Map Cash Queue DCs (only active cash status DCs that aren't already linked)
+    const dcAsInvoices: CashInvoiceData[] = cashQueueDcs
+      .filter((dc) => {
+        const dcKey = `dc #${dc.dcNo}`.toLowerCase();
+        if (alreadyLinkedInvNumbers.has(dcKey) || alreadyLinkedInvNumbers.has(dc.dcNo.toLowerCase())) {
+          return false;
+        }
+        if (dc.status === 'completed' || dc.status === 'cancelled') {
+          return false;
+        }
+        return true;
+      })
+      .map((dc) => ({
+        invNumber: `DC #${dc.dcNo}`,
+        dcNumber: dc.dcNo,
+        clientName: dc.hospitalName,
+        grandTotal: dc.cashAmount || 0,
+        paymentReceived: 0,
+        invDate: dc.savedAt,
+        status: 'unpaid',
+        notes: `Doctor: ${dc.doctorName || 'N/A'}, Items: ${dc.items.length}`,
+      }));
+
+    // 3. Filter cashInvoices to exclude already paid / already linked invoices
+    const filteredCashInvoices = cashInvoices.filter((inv) => {
+      const invNumLower = (inv.invNumber || '').toLowerCase().trim();
+      const dcNumLower = (inv.dcNumber || '').toLowerCase().trim();
+
+      // If currently linked to this target transaction, keep it so it shows "Currently Linked"
+      if (
+        targetTransactionForLink &&
+        (targetTransactionForLink.linkedInvoiceNumber?.toLowerCase().trim() === invNumLower ||
+          targetTransactionForLink.linkedInvoiceId?.toLowerCase().trim() === invNumLower)
+      ) {
+        return true;
+      }
+
+      // Exclude if already linked to another bank transaction
+      if (alreadyLinkedInvNumbers.has(invNumLower) || (dcNumLower && alreadyLinkedInvNumbers.has(dcNumLower))) {
+        return false;
+      }
+
+      // Exclude if status is paid / Paid
+      if (inv.status === 'paid' || inv.status === 'Paid') {
+        return false;
+      }
+
+      // Exclude if fully paid
+      const grandTotal = Number(inv.grandTotal) || 0;
+      const paymentReceived = Number(inv.paymentReceived) || 0;
+      if (grandTotal > 0 && paymentReceived >= grandTotal) {
+        return false;
+      }
+
+      // Exclude if matching DC is completed in DC Tracker
+      if (inv.dcNumber) {
+        const matchingDc = savedDcs.find((d) => d.dcNo === inv.dcNumber);
+        if (matchingDc && (matchingDc.status === 'completed' || matchingDc.status === 'cancelled')) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    // 4. Collect DC numbers covered by filteredCashInvoices to prevent duplicate rows
+    const coveredDcNumbers = new Set<string>();
+    filteredCashInvoices.forEach((inv) => {
+      if (inv.dcNumber) {
+        coveredDcNumbers.add(inv.dcNumber.toLowerCase().trim());
+      }
+      const extractedDc = (inv.invNumber || '').replace(/^DC\s*#?\s*/i, '').toLowerCase().trim();
+      if (extractedDc && extractedDc !== inv.invNumber?.toLowerCase().trim()) {
+        coveredDcNumbers.add(extractedDc);
+      }
+    });
+
+    // 5. Only include dcAsInvoices if not already represented by a Cash Invoice
+    const uniqueDcAsInvoices = dcAsInvoices.filter((dcInv) => {
+      if (!dcInv.dcNumber) return true;
+      const cleanDcNo = dcInv.dcNumber.toLowerCase().trim();
+      return !coveredDcNumbers.has(cleanDcNo);
+    });
+
+    const allCandidates = [...filteredCashInvoices, ...uniqueDcAsInvoices];
+    if (!targetTransactionForLink) return allCandidates;
 
     const txAmount = Number(targetTransactionForLink.amount) || 0;
     const txDesc = (targetTransactionForLink.description || '').toLowerCase();
     const query = invoiceSearchQuery.toLowerCase().trim();
 
-    return [...cashInvoices].sort((a, b) => {
-      const aDue = Math.max(0, Number(a.grandTotal || 0) - Number(a.paymentReceived || 0));
-      const bDue = Math.max(0, Number(b.grandTotal || 0) - Number(b.paymentReceived || 0));
+    return allCandidates
+      .sort((a, b) => {
+        const aDue = Math.max(0, Number(a.grandTotal || 0) - Number(a.paymentReceived || 0));
+        const bDue = Math.max(0, Number(b.grandTotal || 0) - Number(b.paymentReceived || 0));
 
-      const aExactAmount = aDue === txAmount || Number(a.grandTotal || 0) === txAmount ? 1 : 0;
-      const bExactAmount = bDue === txAmount || Number(b.grandTotal || 0) === txAmount ? 1 : 0;
+        const aExactAmount = aDue === txAmount || Number(a.grandTotal || 0) === txAmount ? 1 : 0;
+        const bExactAmount = bDue === txAmount || Number(b.grandTotal || 0) === txAmount ? 1 : 0;
 
-      const aNameMatch = (a.clientName || '').toLowerCase().split(' ').some((w) => w.length > 3 && txDesc.includes(w)) ? 1 : 0;
-      const bNameMatch = (b.clientName || '').toLowerCase().split(' ').some((w) => w.length > 3 && txDesc.includes(w)) ? 1 : 0;
+        const aNameMatch = (a.clientName || '').toLowerCase().split(' ').some((w) => w.length > 3 && txDesc.includes(w)) ? 1 : 0;
+        const bNameMatch = (b.clientName || '').toLowerCase().split(' ').some((w) => w.length > 3 && txDesc.includes(w)) ? 1 : 0;
 
-      const aScore = aExactAmount * 3 + aNameMatch * 2;
-      const bScore = bExactAmount * 3 + bNameMatch * 2;
+        const aScore = aExactAmount * 3 + aNameMatch * 2;
+        const bScore = bExactAmount * 3 + bNameMatch * 2;
 
-      return bScore - aScore;
-    }).filter((inv) => {
-      if (!query) return true;
-      const matchNum = (inv.invNumber || '').toLowerCase().includes(query);
-      const matchDc = (inv.dcNumber || '').toLowerCase().includes(query);
-      const matchClient = (inv.clientName || '').toLowerCase().includes(query);
-      return matchNum || matchDc || matchClient;
-    });
-  }, [cashInvoices, targetTransactionForLink, invoiceSearchQuery]);
+        return bScore - aScore;
+      })
+      .filter((inv) => {
+        if (!query) return true;
+        const matchNum = (inv.invNumber || '').toLowerCase().includes(query);
+        const matchDc = (inv.dcNumber || '').toLowerCase().includes(query);
+        const matchClient = (inv.clientName || '').toLowerCase().includes(query);
+        return matchNum || matchDc || matchClient;
+      });
+  }, [cashInvoices, cashQueueDcs, savedDcs, transactions, targetTransactionForLink, invoiceSearchQuery]);
+
+  // Smart Match Engine: Match a Cash Queue DC with an Unlinked Bank Credit Transaction
+  const findSuggestedBankTransactionForDc = useCallback(
+    (dc: SavedDc) => {
+      const dcAmount = dc.cashAmount || 0;
+      if (dcAmount <= 0) return null;
+
+      const hospTokens = (dc.hospitalName || '')
+        .toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !['hospital', 'hospitals', 'clinic', 'nursing', 'home', 'dr', 'doctor'].includes(w));
+
+      const docTokens = (dc.doctorName || '')
+        .toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !['dr', 'doctor'].includes(w));
+
+      let bestTx: BankTransaction | null = null;
+      let maxScore = 0;
+      let bestReason = '';
+
+      for (const tx of unlinkedCreditTransactions) {
+        if (tx.type !== 'credit') continue;
+
+        const txAmount = Number(tx.amount) || 0;
+        const descLower = (tx.description || '').toLowerCase();
+        const refLower = (tx.referenceNumber || '').toLowerCase();
+        const fullTxText = `${descLower} ${refLower}`;
+
+        const isExactAmount = Math.abs(txAmount - dcAmount) < 0.01;
+        if (!isExactAmount && Math.abs(txAmount - dcAmount) > 5) continue;
+
+        let score = 0;
+        const reasons: string[] = [];
+
+        if (isExactAmount) {
+          score += 5;
+          reasons.push(`Exact Amount ₹${dcAmount.toLocaleString('en-IN')}`);
+        }
+
+        const matchedHospWord = hospTokens.find((word) => fullTxText.includes(word));
+        if (matchedHospWord) {
+          score += 4;
+          reasons.push(`Hospital "${matchedHospWord}"`);
+        }
+
+        const matchedDocWord = docTokens.find((word) => fullTxText.includes(word));
+        if (matchedDocWord) {
+          score += 3;
+          reasons.push(`Doctor "${matchedDocWord}"`);
+        }
+
+        if (score > maxScore && score >= 5) {
+          maxScore = score;
+          bestTx = tx;
+          bestReason = reasons.join(' • ');
+        }
+      }
+
+      if (bestTx) {
+        return { transaction: bestTx, score: maxScore, reason: bestReason };
+      }
+      return null;
+    },
+    [unlinkedCreditTransactions]
+  );
+
+  const handleMatchAndLinkDcToTransaction = async (dc: SavedDc, tx: BankTransaction) => {
+    try {
+      await transitionSavedDc(dc.id, {
+        toStatus: 'completed',
+        action: 'MOVE_CASH_TO_COMPLETED',
+        updates: {
+          paidAt: new Date().toISOString(),
+          paymentMethod: 'bank_transfer',
+        },
+      });
+
+      const mockInvoice: CashInvoiceData = {
+        invNumber: `DC #${dc.dcNo}`,
+        dcNumber: dc.dcNo,
+        clientName: dc.hospitalName,
+        grandTotal: dc.cashAmount || 0,
+        paymentReceived: dc.cashAmount || 0,
+        invDate: dc.savedAt,
+        status: 'paid',
+      };
+
+      await linkBankTransactionToCashInvoice(tx.id, mockInvoice, true);
+
+      toast.success(
+        `⚡ DC #${dc.dcNo} (${dc.hospitalName}) matched & linked with Bank Credit ₹${tx.amount.toLocaleString(
+          'en-IN'
+        )}!`
+      );
+      loadAllData();
+    } catch (err) {
+      console.error('Error linking DC to transaction:', err);
+      toast.error('Failed to link DC to bank transaction');
+    }
+  };
+
+  const handleAutoMatchAllCashQueue = async () => {
+    let matchedCount = 0;
+    for (const dc of cashQueueDcs) {
+      const match = findSuggestedBankTransactionForDc(dc);
+      if (match) {
+        await handleMatchAndLinkDcToTransaction(dc, match.transaction);
+        matchedCount++;
+      }
+    }
+    if (matchedCount > 0) {
+      toast.success(`⚡ Successfully auto-matched & reconciled ${matchedCount} Cash Queue DCs!`);
+    } else {
+      toast.info('No auto-matches found for current Cash Queue DCs.');
+    }
+  };
 
   // Account Operations
   const handleOpenAddAccount = () => {
@@ -739,13 +1134,65 @@ export const BankAccountsView: React.FC = () => {
     }
   };
 
+  const revertDcStatusOnUnlink = async (tx: BankTransaction) => {
+    const invRef = tx.linkedInvoiceNumber || tx.linkedInvoiceId || '';
+    const cleanDcNo = invRef.replace(/^DC\s*#?\s*/i, '').trim().toLowerCase();
+    const txRefNo = (tx.referenceNumber || '').trim().toLowerCase();
+
+    const dcs = savedDcs.length ? savedDcs : await loadSavedDcs();
+    const matchingDc = dcs.find((d) => {
+      const dDcNo = (d.dcNo || '').replace(/^DC\s*#?\s*/i, '').trim().toLowerCase();
+      const dInvRef = (d.invoiceRef || '').trim().toLowerCase();
+      const dUtr = ((d as any).utrNo || '').trim().toLowerCase();
+      const dId = (d.id || '').trim().toLowerCase();
+
+      if (invRef && (dId === invRef.toLowerCase() || dInvRef === invRef.toLowerCase() || dInvRef.replace(/\//g, '_') === invRef.toLowerCase())) {
+        return true;
+      }
+      if (cleanDcNo && (dDcNo === cleanDcNo || d.dcNo?.toLowerCase() === cleanDcNo)) {
+        return true;
+      }
+      if (txRefNo && dUtr && txRefNo === dUtr) {
+        return true;
+      }
+      return false;
+    });
+
+    if (matchingDc && (matchingDc.status === 'completed' || matchingDc.status === 'cash')) {
+      try {
+        await transitionSavedDc(matchingDc.id, {
+          toStatus: 'cash',
+          action: 'MOVE_TO_CASH',
+          updates: {
+            paidAt: undefined,
+            paymentMethod: undefined,
+            bankAccountId: undefined,
+            bankName: undefined,
+            accountNumber: undefined,
+            utrNo: undefined,
+          },
+          clear: ['paidAt', 'paymentMethod', 'bankAccountId', 'bankName', 'accountNumber', 'utrNo'],
+        });
+        toast.info(`⚡ DC #${matchingDc.dcNo} moved back to Cash Queue as Unpaid.`);
+      } catch (e) {
+        console.error('Failed to move DC back to Cash Queue on unlink/delete:', e);
+      }
+    } else {
+      await revertMatchingDcToCashQueue(tx);
+    }
+  };
+
   const handleDeleteTransaction = async (tx: BankTransaction) => {
     const hasInvoice = Boolean(tx.linkedInvoiceNumber || tx.linkedInvoiceId);
     let revert = false;
     if (hasInvoice && tx.type === 'credit') {
-      revert = confirm(`This transaction is linked to Cash Invoice "${tx.linkedInvoiceNumber}". Deduct ₹${tx.amount.toLocaleString('en-IN')} from the invoice paid total?`);
+      revert = confirm(`This transaction is linked to Cash Invoice "${tx.linkedInvoiceNumber}". Deduct ₹${tx.amount.toLocaleString('en-IN')} from the invoice paid total and move matching DC back to Cash Queue?`);
     } else if (!confirm(`Delete this ${tx.type} entry of ₹${tx.amount.toLocaleString('en-IN')}?`)) {
       return;
+    }
+
+    if (tx.type === 'credit') {
+      await revertDcStatusOnUnlink(tx);
     }
 
     const success = await deleteBankTransactionFromFirestore(tx.id, revert, tx);
@@ -967,6 +1414,38 @@ export const BankAccountsView: React.FC = () => {
   const handleConfirmLinkToInvoice = async (inv: CashInvoiceData) => {
     if (!targetTransactionForLink) return;
 
+    // Look up target bank account details for auto-filling
+    const targetBankAcc = accounts.find((a) => a.id === targetTransactionForLink.accountId);
+    const utrNo = targetTransactionForLink.referenceNumber || targetTransactionForLink.id;
+
+    // Look for matching DC in DC Tracker (by dcNumber, invNumber, or invoiceRef)
+    const cleanDcNo = inv.dcNumber || inv.invNumber.replace(/^DC\s*#?\s*/i, '');
+    const matchingDc = savedDcs.find(
+      (d) =>
+        (cleanDcNo && d.dcNo === cleanDcNo) ||
+        (d.invoiceRef && d.invoiceRef === inv.invNumber)
+    );
+
+    if (matchingDc) {
+      try {
+        await transitionSavedDc(matchingDc.id, {
+          toStatus: 'completed',
+          action: 'MOVE_CASH_TO_COMPLETED',
+          updates: {
+            paidAt: new Date().toISOString(),
+            paymentMethod: 'bank_transfer',
+            bankAccountId: targetBankAcc?.id,
+            bankName: targetBankAcc?.bankName || targetBankAcc?.accountName || 'Bank Account',
+            accountNumber: targetBankAcc?.accountNumber || '',
+            utrNo: utrNo,
+            cashAmount: targetTransactionForLink.amount || matchingDc.cashAmount,
+          },
+        });
+      } catch (e) {
+        console.error('Failed to transition DC to completed on link:', e);
+      }
+    }
+
     const res = await linkBankTransactionToCashInvoice(
       targetTransactionForLink.id,
       inv,
@@ -974,7 +1453,9 @@ export const BankAccountsView: React.FC = () => {
     );
 
     if (res.success) {
-      toast.success(`Bank Credit (₹${targetTransactionForLink.amount.toLocaleString('en-IN')}) linked to Invoice ${inv.invNumber}!`);
+      toast.success(
+        `⚡ Linked ${inv.invNumber}! Auto-filled UTR (${utrNo}) & Bank Account (${targetBankAcc?.accountName || 'Bank'}). DC moved to Completed.`
+      );
       setIsLinkModalOpen(false);
       setTargetTransactionForLink(null);
       loadAllData();
@@ -983,8 +1464,104 @@ export const BankAccountsView: React.FC = () => {
     }
   };
 
+  const handleConfirmSettleDc = async () => {
+    if (!settlingDc) return;
+    const paidAmount = parseFloat(paymentAmountInput) || (settlingDc.cashAmount || 0);
+
+    if (paymentMethod === "cash" && !paymentCollectedBy.trim()) {
+      toast.error("Please specify who collected the cash payment.");
+      return;
+    }
+
+    const matchedBankTx = paymentMethod === "bank_transfer" && selectedCreditTxId !== "not_found"
+      ? unlinkedCreditTransactions.find((t) => t.id === selectedCreditTxId)
+      : null;
+
+    const hasHiked = settlingDc.billedAmount && settlingDc.billedAmount > paidAmount;
+    const margin = hasHiked ? Math.round((settlingDc.billedAmount! - paidAmount) * 100) / 100 : settlingDc.hospitalMargin;
+    const methodLabel = paymentMethod === "cash" ? "Cash" : "Bank Transfer";
+    const collectedInfo = paymentMethod === "cash" && paymentCollectedBy.trim()
+      ? ` • Collected by ${paymentCollectedBy.trim()}`
+      : matchedBankTx?.referenceNumber
+      ? ` • Linked to Ref: ${matchedBankTx.referenceNumber}`
+      : "";
+    const defaultRemark = hasHiked
+      ? `Paid ₹${paidAmount.toLocaleString('en-IN')} via ${methodLabel}${collectedInfo} (Hiked Bill ₹${settlingDc.billedAmount!.toLocaleString('en-IN')}, Hospital Cut ₹${margin!.toLocaleString('en-IN')})`
+      : `Paid ₹${paidAmount.toLocaleString('en-IN')} via ${methodLabel}${collectedInfo}`;
+    const finalRemarks = paymentRemarksInput.trim()
+      ? `${paymentRemarksInput.trim()} (${methodLabel}${collectedInfo})`
+      : defaultRemark;
+
+    setIsSettling(true);
+    try {
+      const bankAccountId = matchedBankTx?.accountId;
+      const bankName = matchedBankTx?.description || "Bank Account";
+      const utrNo = matchedBankTx?.referenceNumber || matchedBankTx?.id;
+
+      await transitionSavedDc(settlingDc.id, {
+        toStatus: 'completed',
+        action: 'MOVE_CASH_TO_COMPLETED',
+        updates: {
+          cashAmount: paidAmount,
+          hospitalMargin: margin,
+          paidAt: new Date().toISOString(),
+          paymentMethod,
+          collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+          cashRemarks: finalRemarks,
+          ...(matchedBankTx ? { bankAccountId, bankName, utrNo } : {})
+        },
+        meta: {
+          paidAt: new Date().toISOString(),
+          paidAmount,
+          paymentMethod,
+          collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+          billedAmount: settlingDc.billedAmount,
+          hospitalMargin: margin,
+          remarks: finalRemarks,
+          ...(matchedBankTx ? { bankAccountId, utrNo } : {})
+        }
+      });
+
+      if (paymentMethod === 'cash') {
+        try {
+          await recordCashPaymentToCashInHand(
+            settlingDc,
+            paidAmount,
+            paymentCollectedBy.trim() || 'Counter Desk',
+            `DC #${settlingDc.dcNo} Cash Memo Settled`
+          );
+        } catch (e) {
+          console.error("Failed to record cash transaction in Cash In Hand account:", e);
+        }
+      } else if (matchedBankTx) {
+        try {
+          await saveBankTransactionToFirestore({
+            ...matchedBankTx,
+            linkedInvoiceNumber: settlingDc.invoiceRef || `DC #${settlingDc.dcNo}`,
+            linkedInvoiceId: settlingDc.id,
+            linkedCustomerName: settlingDc.hospitalName,
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (e) {
+          console.error("Failed to link bank transaction:", e);
+        }
+      }
+
+      toast.success(`DC #${settlingDc.dcNo} Cash Memo settled & moved to Completed!`);
+      setSettlingDc(null);
+      loadAllData();
+    } catch (error) {
+      console.error('Failed to settle DC:', error);
+      toast.error('Failed to settle DC');
+    } finally {
+      setIsSettling(false);
+    }
+  };
+
   const handleUnlinkTransaction = async (tx: BankTransaction) => {
-    if (!confirm(`Unlink Invoice "${tx.linkedInvoiceNumber}" from this bank transaction?`)) return;
+    if (!confirm(`Unlink Invoice "${tx.linkedInvoiceNumber}" from this bank transaction? This will move the DC back to Cash Queue as unpaid.`)) return;
+
+    await revertDcStatusOnUnlink(tx);
 
     const success = await unlinkBankTransactionFromCashInvoice(tx.id, true);
     if (success) {
@@ -1483,15 +2060,18 @@ export const BankAccountsView: React.FC = () => {
         {/* Tab switcher buttons matching Cash Invoice exactly */}
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full sm:w-auto">
-            <TabsList className="grid grid-cols-4 w-full sm:w-[500px] h-9 rounded-lg">
+            <TabsList className="grid grid-cols-5 w-full sm:w-[620px] h-9 rounded-lg">
               <TabsTrigger value="ledger" className="text-xs font-semibold gap-1 rounded-md">
                 <FileText className="w-3.5 h-3.5" /> Ledger ({transactions.length})
               </TabsTrigger>
               <TabsTrigger value="unlinked" className="text-xs font-semibold gap-1 rounded-md">
                 <Link2 className="w-3.5 h-3.5" /> Unlinked ({overallSummary.unlinkedCreditCount})
               </TabsTrigger>
+              <TabsTrigger value="linked" className="text-xs font-semibold gap-1 rounded-md">
+                <Receipt className="w-3.5 h-3.5" /> Linked ({linkedCreditTransactions.length})
+              </TabsTrigger>
               <TabsTrigger value="import" className="text-xs font-semibold gap-1 rounded-md">
-                <FileSpreadsheet className="w-3.5 h-3.5" /> Import Sheet
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Import
               </TabsTrigger>
               <TabsTrigger value="accounts" className="text-xs font-semibold gap-1 rounded-md">
                 <Building2 className="w-3.5 h-3.5" /> Accounts ({accounts.length})
@@ -1724,6 +2304,20 @@ export const BankAccountsView: React.FC = () => {
                 className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "unlinked" ? "bg-amber-600 text-white" : "text-amber-800 hover:bg-amber-50"}`}
               >
                 <Link2 className="w-3 h-3 mr-1" /> Unlinked Credits ({overallSummary.unlinkedCreditCount})
+              </Button>
+              <Button
+                size="sm"
+                variant={typeFilter === "cash_memo_income" ? "default" : "outline"}
+                onClick={() => setTypeFilter("cash_memo_income")}
+                className={`h-7 px-2.5 text-xs font-bold rounded-md transition-all ${
+                  typeFilter === "cash_memo_income"
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "text-emerald-800 bg-emerald-50/80 border-emerald-300 hover:bg-emerald-100"
+                }`}
+                title="Hide daily expenses, fuel, logistics and tea payouts. Focus exclusively on incoming UPI/Bank deposits for Cash Memos."
+              >
+                <Zap className="w-3 h-3 mr-1 text-amber-300 fill-amber-300" />
+                ⚡ Cash Memo Income Only
               </Button>
               <Button
                 size="sm"
@@ -2041,59 +2635,79 @@ export const BankAccountsView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: UNLINKED CREDITS MATCHING DESK                                     */}
+      {/* TAB 2: UNLINKED CASH QUEUE TRANSACTIONS                                   */}
       {/* ========================================================================= */}
       {activeTab === "unlinked" && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-amber-500/10 p-3.5 rounded-xl border border-amber-500/30">
             <div>
-              <h2 className="font-display font-bold text-sm text-foreground flex items-center gap-2">
-                <Link2 className="w-4 h-4 text-teal-700" />
-                <span>Unlinked Bank Deposits ({unlinkedCreditTransactions.length})</span>
+              <h2 className="font-display font-bold text-sm text-amber-950 dark:text-amber-200 flex items-center gap-2">
+                <Receipt className="w-4.5 h-4.5 text-amber-600" />
+                <span>Unlinked Cash Queue Transactions ({cashQueueDcs.length})</span>
               </h2>
-              <p className="text-xs text-muted-foreground">
-                Match incoming bank statement credits with unpaid customer invoices in 1 click.
+              <p className="text-xs text-amber-900/80 dark:text-amber-300/80">
+                Active delivery memos from DC Tracker Cash Queue awaiting bank deposit matching or cash settlement.
               </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {(() => {
+                const autoMatchCount = cashQueueDcs.filter((dc) => findSuggestedBankTransactionForDc(dc) !== null).length;
+                if (autoMatchCount === 0) return null;
+                return (
+                  <Button
+                    size="sm"
+                    onClick={handleAutoMatchAllCashQueue}
+                    className="h-8 px-3 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg shadow-sm cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 mr-1.5 animate-pulse" />
+                    Auto-Match All ({autoMatchCount} Pairs Found)
+                  </Button>
+                );
+              })()}
+              <div className="text-right">
+                <div className="text-xs font-semibold text-amber-900/70 dark:text-amber-300/70">Total Cash Pending</div>
+                <div className="text-base sm:text-lg font-black font-mono text-amber-700 dark:text-amber-400">
+                  ₹{cashQueueTotalAmount.toLocaleString('en-IN')}
+                </div>
+              </div>
             </div>
           </div>
 
+          {/* Primary Table: DC Tracker Cash Queue Transactions */}
           <Card className="border-border shadow-sm overflow-hidden rounded-xl">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">
-                    <th className="p-3 text-left">Deposit Date</th>
-                    <th className="p-3 text-left">Bank Account</th>
-                    <th className="p-3 text-left">Statement Narration / UTR</th>
-                    <th className="p-3 text-right">Credit Amount</th>
-                    <th className="p-3 text-right">Quick Match Action</th>
+                    <th className="p-3 text-left">Date</th>
+                    <th className="p-3 text-left">DC #</th>
+                    <th className="p-3 text-left">Hospital / Doctor / Bank Match</th>
+                    <th className="p-3 text-left">Items Breakdown</th>
+                    <th className="p-3 text-right">Cash Amount</th>
+                    <th className="p-3 text-center">Status</th>
+                    <th className="p-3 text-right">Quick Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {unlinkedCreditTransactions.length === 0 ? (
+                  {cashQueueDcs.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                      <td colSpan={7} className="p-8 text-center text-muted-foreground">
                         <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                        <span className="font-bold text-foreground">All bank credits are linked!</span>
+                        <span className="font-bold text-foreground">No pending items in Cash Queue!</span>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          Every incoming deposit has been reconciled with its corresponding Cash Invoice.
+                          All Cash Queue delivery challans have been settled and completed.
                         </p>
                       </td>
                     </tr>
                   ) : (
-                    unlinkedCreditTransactions.map((tx) => {
-                      const acc = accounts.find((a) => a.id === tx.accountId);
-                      // Look for exact amount candidates
-                      const exactMatches = cashInvoices.filter(
-                        (inv) =>
-                          Math.max(0, Number(inv.grandTotal || 0) - Number(inv.paymentReceived || 0)) === tx.amount ||
-                          Number(inv.grandTotal) === tx.amount
-                      );
+                    cashQueueDcs.map((dc) => {
+                      const matchedTxInfo = findSuggestedBankTransactionForDc(dc);
+                      const acc = matchedTxInfo ? accounts.find((a) => a.id === matchedTxInfo.transaction.accountId) : null;
 
                       return (
-                        <tr key={tx.id} className="hover:bg-muted/20">
-                          <td className="p-3 whitespace-nowrap font-bold">
-                            {new Date(tx.date).toLocaleDateString('en-IN', {
+                        <tr key={dc.id} className="hover:bg-muted/20">
+                          <td className="p-3 whitespace-nowrap font-medium">
+                            {new Date(dc.savedAt).toLocaleDateString('en-IN', {
                               day: '2-digit',
                               month: 'short',
                               year: 'numeric',
@@ -2101,26 +2715,296 @@ export const BankAccountsView: React.FC = () => {
                           </td>
 
                           <td className="p-3 whitespace-nowrap">
-                            <Badge variant="outline" className="text-[10px] bg-teal-50 text-teal-800 border-teal-300 rounded-md">
-                              {acc?.accountName}
+                            <Badge variant="outline" className="text-[11px] font-mono bg-blue-50 text-blue-900 border-blue-300 font-bold rounded-md">
+                              DC #{dc.dcNo}
                             </Badge>
                           </td>
 
-                          <td className="p-3 max-w-sm">
-                            <div className="font-medium text-foreground">{tx.description}</div>
-                            {tx.referenceNumber && (
-                              <span className="text-[10px] font-mono text-muted-foreground">Ref: {tx.referenceNumber}</span>
+                          <td className="p-3 max-w-md">
+                            <div className="font-bold text-foreground">{dc.hospitalName}</div>
+                            {dc.doctorName && (
+                              <div className="text-[11px] text-muted-foreground">Dr. {dc.doctorName}</div>
                             )}
-                            {exactMatches.length > 0 && (
-                              <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
-                                <Sparkles className="w-3 h-3" />
-                                <span>Suggested: {exactMatches[0].invNumber} ({exactMatches[0].clientName})</span>
+                            {dc.remarks && (
+                              <div className="text-[10px] text-muted-foreground/80 truncate italic">{dc.remarks}</div>
+                            )}
+
+                            {matchedTxInfo && (
+                              <div className="mt-2 p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-2xs">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-900 dark:text-emerald-200 font-bold">
+                                    <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>
+                                      Bank Deposit Match: +₹{matchedTxInfo.transaction.amount.toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-emerald-800/80 dark:text-emerald-300/80 font-medium">
+                                    Account: {acc?.accountName || 'Bank Account'} • ({matchedTxInfo.reason})
+                                  </div>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleMatchAndLinkDcToTransaction(dc, matchedTxInfo.transaction)}
+                                  className="h-6 px-2.5 text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded shrink-0 shadow-xs cursor-pointer"
+                                >
+                                  ⚡ 1-Click Match &amp; Link
+                                </Button>
                               </div>
                             )}
                           </td>
 
+                          <td className="p-3 whitespace-nowrap">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              {dc.items?.length || 0} items
+                            </span>
+                          </td>
+
+                          <td className="p-3 text-right whitespace-nowrap font-mono font-bold text-sm text-amber-700 dark:text-amber-400">
+                            ₹{(dc.cashAmount || 0).toLocaleString('en-IN')}
+                          </td>
+
+                          <td className="p-3 text-center whitespace-nowrap">
+                            <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                              Cash Queue
+                            </Badge>
+                          </td>
+
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setViewingDcDetails(dc)}
+                                className="h-7 px-2 text-[11px] text-muted-foreground hover:text-teal-700 rounded-md"
+                                title="View DC Details"
+                              >
+                                <Eye className="w-3.5 h-3.5 mr-1 text-teal-600" />
+                                <span>View</span>
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                onClick={() => handleOpenSettleDcModal(dc)}
+                                className="h-7 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Record Payment
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Secondary Table: Unlinked Bank Statement Credits (if any) */}
+          {unlinkedCreditTransactions.length > 0 && (
+            <div className="pt-4 space-y-3">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
+                <div>
+                  <h3 className="font-display font-bold text-sm text-foreground flex items-center gap-2">
+                    <Link2 className="w-4 h-4 text-teal-700" />
+                    <span>Unlinked Bank Statement Credits ({unlinkedCreditTransactions.length})</span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Incoming bank statement deposits that have not yet been linked to an invoice or DC.
+                  </p>
+                </div>
+              </div>
+
+              <Card className="border-border shadow-sm overflow-hidden rounded-xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">
+                        <th className="p-3 text-left">Deposit Date</th>
+                        <th className="p-3 text-left">Bank Account</th>
+                        <th className="p-3 text-left">Statement Narration / UTR</th>
+                        <th className="p-3 text-right">Credit Amount</th>
+                        <th className="p-3 text-right">Quick Match Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {unlinkedCreditTransactions.map((tx) => {
+                        const acc = accounts.find((a) => a.id === tx.accountId);
+                        const exactMatches = cashInvoices.filter(
+                          (inv) =>
+                            Math.max(0, Number(inv.grandTotal || 0) - Number(inv.paymentReceived || 0)) === tx.amount ||
+                            Number(inv.grandTotal) === tx.amount
+                        );
+
+                        return (
+                          <tr key={tx.id} className="hover:bg-muted/20">
+                            <td className="p-3 whitespace-nowrap font-bold">
+                              {new Date(tx.date).toLocaleDateString('en-IN', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </td>
+
+                            <td className="p-3 whitespace-nowrap">
+                              <Badge variant="outline" className="text-[10px] bg-teal-50 text-teal-800 border-teal-300 rounded-md">
+                                {acc?.accountName}
+                              </Badge>
+                            </td>
+
+                            <td className="p-3 max-w-sm">
+                              <div className="font-medium text-foreground">{tx.description}</div>
+                              {tx.referenceNumber && (
+                                <span className="text-[10px] font-mono text-muted-foreground">Ref: {tx.referenceNumber}</span>
+                              )}
+                              {exactMatches.length > 0 && (
+                                <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
+                                  <Sparkles className="w-3 h-3" />
+                                  <span>Suggested: {exactMatches[0].invNumber} ({exactMatches[0].clientName})</span>
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="p-3 text-right whitespace-nowrap font-mono font-bold text-sm text-emerald-600">
+                              +₹{tx.amount.toLocaleString('en-IN')}
+                            </td>
+
+                            <td className="p-3 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setViewingTxDetails(tx)}
+                                  className="h-7 px-2 text-[11px] text-muted-foreground hover:text-teal-700 hover:bg-teal-50/50 rounded-md"
+                                  title="View Email & Verification Details"
+                                >
+                                  <Eye className="w-3.5 h-3.5 mr-1 text-teal-600" />
+                                  <span>View Email</span>
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleOpenLinkModal(tx)}
+                                  className="h-7 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs"
+                                >
+                                  <Link2 className="w-3.5 h-3.5 mr-1" /> Match &amp; Link Invoice
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: LINKED / RECONCILED TRANSACTIONS                                     */}
+      {/* ========================================================================= */}
+      {activeTab === "linked" && (
+        <div className="space-y-3.5">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3.5 rounded-xl border border-border shadow-sm">
+            <div>
+              <h3 className="font-display font-bold text-sm text-foreground flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-teal-700" />
+                <span>Reconciled &amp; Linked Transactions ({linkedCreditTransactions.length})</span>
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Bank deposits linked directly to Cash Memos or Delivery Challans. Unlinking a transaction will move the DC back to Cash Queue as unpaid.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="text-right px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200">
+                <span className="text-[10px] uppercase font-bold text-emerald-800 dark:text-emerald-300 block">Total Linked Value</span>
+                <span className="font-mono font-black text-sm text-emerald-700 dark:text-emerald-400">
+                  ₹{linkedCreditTransactions.reduce((acc, t) => acc + (t.amount || 0), 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <Card className="border-border shadow-sm rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-muted/60 text-muted-foreground font-bold border-b border-border">
+                  <tr>
+                    <th className="p-3">Date &amp; Time</th>
+                    <th className="p-3">Bank Account</th>
+                    <th className="p-3">Linked Invoice / DC Ref</th>
+                    <th className="p-3">Customer / Hospital</th>
+                    <th className="p-3">Reference / UTR #</th>
+                    <th className="p-3 text-right">Amount (+₹)</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {linkedCreditTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                        No linked bank transactions found yet. Use the "Unlinked" tab to match deposits with Cash Memos.
+                      </td>
+                    </tr>
+                  ) : (
+                    linkedCreditTransactions.map((tx) => {
+                      const acc = accounts.find((a) => a.id === tx.accountId);
+                      const invRef = tx.linkedInvoiceNumber || tx.linkedInvoiceId || 'Linked Invoice';
+
+                      return (
+                        <tr key={tx.id} className="hover:bg-muted/30">
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="font-medium text-foreground">{tx.date}</div>
+                            {tx.time && <div className="text-[10px] text-muted-foreground">{tx.time}</div>}
+                          </td>
+
+                          <td className="p-3 whitespace-nowrap font-medium">
+                            <div className="flex items-center gap-1.5 text-foreground">
+                              <Landmark className="w-3.5 h-3.5 text-teal-600" />
+                              <span>{acc?.accountName || 'Bank Account'}</span>
+                            </div>
+                            {acc?.accountNumber && (
+                              <div className="text-[10px] font-mono text-muted-foreground">
+                                {acc.accountNumber}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="p-3 whitespace-nowrap">
+                            <Badge className="bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200 border-teal-300 font-mono font-bold text-[11px]">
+                              {invRef}
+                            </Badge>
+                          </td>
+
+                          <td className="p-3 font-medium">
+                            <div className="text-foreground">{tx.linkedCustomerName || tx.linkedHospital || 'N/A'}</div>
+                          </td>
+
+                          <td className="p-3 whitespace-nowrap font-mono">
+                            {tx.referenceNumber ? (
+                              <div className="inline-flex items-center gap-1 bg-muted px-2 py-0.5 rounded border border-border">
+                                <span>{tx.referenceNumber}</span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(tx.referenceNumber || '');
+                                    toast.success('Copied UTR to clipboard!');
+                                  }}
+                                  className="text-muted-foreground hover:text-foreground cursor-pointer text-xs"
+                                  title="Copy UTR"
+                                >
+                                  📋
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">N/A</span>
+                            )}
+                          </td>
+
                           <td className="p-3 text-right whitespace-nowrap font-mono font-bold text-sm text-emerald-600">
-                            +₹{tx.amount.toLocaleString('en-IN')}
+                            +₹{(tx.amount || 0).toLocaleString('en-IN')}
                           </td>
 
                           <td className="p-3 text-right whitespace-nowrap">
@@ -2129,23 +3013,33 @@ export const BankAccountsView: React.FC = () => {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => setViewingTxDetails(tx)}
-                                className="h-7 px-2 text-[11px] text-muted-foreground hover:text-teal-700 hover:bg-teal-50/50 rounded-md"
-                                title="View Email & Verification Details"
+                                className="h-7 px-2 text-[11px] text-muted-foreground hover:text-teal-700 rounded-md"
+                                title="View Email Details"
                               >
-                                <Eye className="w-3.5 h-3.5 mr-1 text-teal-600" />
-                                <span>View Email</span>
+                                <Eye className="w-3.5 h-3.5 mr-1 text-teal-600" /> View
                               </Button>
 
                               <Button
                                 size="sm"
+                                variant="outline"
                                 onClick={() => handleOpenLinkModal(tx)}
-                                className="h-7 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs"
+                                className="h-7 px-2.5 text-xs text-teal-800 bg-teal-50 hover:bg-teal-100 border-teal-300 rounded-md font-semibold"
+                                title="Change linked invoice"
                               >
-                                <Link2 className="w-3.5 h-3.5 mr-1" /> Match &amp; Link Invoice
+                                <Link2 className="w-3.5 h-3.5 mr-1 text-teal-700" /> Change
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleUnlinkTransaction(tx)}
+                                className="h-7 px-2 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border-rose-200 rounded-md font-semibold"
+                                title="Unlink transaction and move matching DC back to Cash Queue"
+                              >
+                                <Unlink className="w-3.5 h-3.5 mr-1 text-rose-600" /> Unlink
                               </Button>
                             </div>
                           </td>
-
                         </tr>
                       );
                     })
@@ -2763,7 +3657,7 @@ export const BankAccountsView: React.FC = () => {
       {/* MODAL: LINK BANK CREDIT DIRECTLY TO A CASH INVOICE                        */}
       {/* ========================================================================= */}
       <Dialog open={isLinkModalOpen} onOpenChange={setIsLinkModalOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-display text-base text-teal-800 dark:text-teal-300">
               <Link2 className="w-5 h-5 text-teal-700" />
@@ -2841,7 +3735,7 @@ export const BankAccountsView: React.FC = () => {
                         <th className="p-2.5 text-left">Customer / Hospital</th>
                         <th className="p-2.5 text-right">Billed Amount</th>
                         <th className="p-2.5 text-right">Pending Balance</th>
-                        <th className="p-2.5 text-center">Action</th>
+                        <th className="p-2.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -2864,13 +3758,18 @@ export const BankAccountsView: React.FC = () => {
                               <td className="p-2.5 font-mono">
                                 <div className="font-bold text-foreground flex items-center gap-1.5">
                                   <span>{inv.invNumber}</span>
+                                  {inv.invNumber.startsWith('DC #') && (
+                                    <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border-amber-300 text-[9px] py-0 px-1 font-bold">
+                                      ⚡ Cash Queue DC
+                                    </Badge>
+                                  )}
                                   {isExactMatch && (
-                                    <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[9px] py-0 px-1">
+                                    <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[9px] py-0 px-1 font-bold">
                                       Match
                                     </Badge>
                                   )}
                                 </div>
-                                {inv.dcNumber && (
+                                {inv.dcNumber && !inv.invNumber.startsWith('DC #') && (
                                   <span className="text-[10px] text-teal-700">DC #{inv.dcNumber}</span>
                                 )}
                               </td>
@@ -2888,20 +3787,33 @@ export const BankAccountsView: React.FC = () => {
                                 ₹{due.toLocaleString('en-IN')}
                               </td>
 
-                              <td className="p-2.5 text-center">
-                                {isCurrentLinked ? (
-                                  <Badge className="bg-teal-700 text-white text-[10px]">
-                                    Currently Linked
-                                  </Badge>
-                                ) : (
+                              <td className="p-2.5 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-1.5">
                                   <Button
                                     size="sm"
-                                    onClick={() => handleConfirmLinkToInvoice(inv)}
-                                    className="h-7 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs"
+                                    variant="outline"
+                                    onClick={() => handleViewCandidateInvoice(inv)}
+                                    className="h-7 px-2 text-[11px] text-muted-foreground hover:text-teal-700 rounded-md border-slate-300"
+                                    title="View Invoice Details"
                                   >
-                                    Link This Invoice
+                                    <Eye className="w-3.5 h-3.5 mr-1 text-teal-600" />
+                                    <span>View</span>
                                   </Button>
-                                )}
+
+                                  {isCurrentLinked ? (
+                                    <Badge className="bg-teal-700 text-white text-[10px]">
+                                      Currently Linked
+                                    </Badge>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleConfirmLinkToInvoice(inv)}
+                                      className="h-7 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs"
+                                    >
+                                      Link This Invoice
+                                    </Button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2916,6 +3828,45 @@ export const BankAccountsView: React.FC = () => {
 
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setIsLinkModalOpen(false)} className="h-8 text-xs">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CASH INVOICE DOCUMENT PREVIEW MODAL */}
+      <Dialog open={!!viewingCashInvoiceModal} onOpenChange={(open) => !open && setViewingCashInvoiceModal(null)}>
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border rounded-2xl">
+          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
+            <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+              <Receipt className="w-5 h-5 text-teal-700 dark:text-teal-400" />
+              <span>Cash Memo — {viewingCashInvoiceModal?.invNumber}</span>
+            </DialogTitle>
+            <div className="flex items-center gap-2 pr-6 sm:pr-0">
+              {viewingCashInvoiceModal && (
+                <Button
+                  size="sm"
+                  onClick={() => printCashMemo(viewingCashInvoiceModal)}
+                  className="bg-teal-700 hover:bg-teal-800 text-white font-bold gap-1.5 h-8 text-xs rounded-md"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Print / PDF
+                </Button>
+              )}
+            </div>
+          </DialogHeader>
+
+          {viewingCashInvoiceModal && (
+            <div className="py-2">
+              <CashInvoicePreview
+                invoice={viewingCashInvoiceModal}
+                onPrint={() => printCashMemo(viewingCashInvoiceModal)}
+                showPrintButton={false}
+              />
+            </div>
+          )}
+
+          <DialogFooter className="pt-3 border-t border-border mt-2">
+            <Button variant="outline" size="sm" onClick={() => setViewingCashInvoiceModal(null)} className="h-8 text-xs rounded-md">
               Close
             </Button>
           </DialogFooter>
@@ -3397,222 +4348,610 @@ export const BankAccountsView: React.FC = () => {
       {/* ========================================================================= */}
       {/* MODAL: EMAIL & TRANSACTION VERIFICATION DETAILS                          */}
       {/* ========================================================================= */}
+      {/* MODAL: EMAIL CONTENT */}
       <Dialog open={Boolean(viewingTxDetails)} onOpenChange={(open) => !open && setViewingTxDetails(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-5">
           <DialogHeader>
             <div className="flex items-center justify-between pr-6">
-              <div className="flex items-center gap-2.5">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${
-                  viewingTxDetails?.type === 'credit'
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                    : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                }`}>
-                  {viewingTxDetails?.type === 'credit' ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
-                </div>
-                <div>
-                  <DialogTitle className="text-base font-bold font-display">
-                    Transaction &amp; Email Verification
-                  </DialogTitle>
-                  <DialogDescription className="text-xs">
-                    Cross-verify extracted sender details, reference numbers, and raw alert text.
-                  </DialogDescription>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <div className={`font-mono font-black text-lg ${
-                  viewingTxDetails?.type === 'credit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                }`}>
-                  {viewingTxDetails?.type === 'credit' ? '+' : '-'}₹{(viewingTxDetails?.amount || 0).toLocaleString('en-IN')}
-                </div>
-                <Badge className={`text-[10px] font-bold ${
-                  viewingTxDetails?.type === 'credit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-rose-100 text-rose-800 border-rose-300'
-                }`}>
-                  {viewingTxDetails?.type?.toUpperCase()}
-                </Badge>
-              </div>
+              <DialogTitle className="text-sm font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Email Content</span>
+              </DialogTitle>
+              {viewingTxDetails && (
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                  +₹{viewingTxDetails.amount?.toLocaleString('en-IN')}
+                </span>
+              )}
             </div>
+            {viewingTxDetails?.emailSubject && (
+              <DialogDescription className="text-xs font-semibold text-slate-700 dark:text-slate-300 pt-1 text-left">
+                Subject: {viewingTxDetails.emailSubject}
+              </DialogDescription>
+            )}
           </DialogHeader>
 
           {viewingTxDetails && (
-            <div className="space-y-3.5 py-2 text-xs">
-              {/* Extracted Breakdown Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3.5 bg-muted/40 rounded-xl border border-border">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Target Account</span>
-                  <div className="font-semibold text-foreground flex items-center gap-1.5 mt-1">
-                    <Landmark className="w-3.5 h-3.5 text-teal-600" />
-                    <span>
-                      {accounts.find((a) => a.id === viewingTxDetails.accountId)?.accountName || 'HDFC Bank'}
-                      {viewingTxDetails.accountSuffix ? ` (Ending **${viewingTxDetails.accountSuffix})` : ''}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Date &amp; Time</span>
-                  <div className="font-semibold text-foreground flex items-center gap-1.5 mt-1">
-                    <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span>{viewingTxDetails.date} {viewingTxDetails.time ? `@ ${viewingTxDetails.time}` : ''}</span>
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Reference / UTR Number</span>
-                  <div className="font-mono font-bold text-foreground bg-background px-2.5 py-1 rounded-md border border-border inline-flex items-center gap-2 mt-1">
-                    <span>{viewingTxDetails.referenceNumber || 'N/A'}</span>
-                    {viewingTxDetails.referenceNumber && (
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(viewingTxDetails.referenceNumber || '');
-                          toast.success('Copied Reference / UTR # to clipboard!');
-                        }}
-                        className="text-muted-foreground hover:text-foreground cursor-pointer text-xs"
-                        title="Copy Reference"
-                      >
-                        📋
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Source Category</span>
-                  <div className="font-medium text-foreground mt-1 flex items-center gap-1">
-                    <Badge variant="outline" className="text-[10px] bg-background">
-                      {viewingTxDetails.createdSource === 'gmail_connector' ? '⚡ Gmail Alert' : viewingTxDetails.category}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2 pt-2 border-t border-border">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
-                    Extracted Narration / Counterparty
-                  </span>
-                  <div className="font-semibold text-teal-950 dark:text-teal-200 mt-1 bg-teal-50/70 dark:bg-teal-950/40 p-2 rounded-md border border-teal-200 dark:border-teal-800">
-                    {viewingTxDetails.description && !/inform\s+you|writing\s+to/i.test(viewingTxDetails.description) && !viewingTxDetails.description.startsWith('Deposit: inform')
-                      ? viewingTxDetails.description
-                      : extractHdfcNarration(viewingTxDetails.rawEmailBody || viewingTxDetails.rawAlert || viewingTxDetails.description, viewingTxDetails.type === 'credit', viewingTxDetails.description)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Available Balance & Ledger Position */}
-              <div className="p-3 bg-teal-50/60 dark:bg-teal-950/30 rounded-xl border border-teal-200 dark:border-teal-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-teal-800 dark:text-teal-300 block">
-                    Bank Alert Available Balance
-                  </span>
-                  {viewingTxDetails.availableBalance !== undefined ? (
-                    <div className="font-mono font-black text-sm text-teal-700 dark:text-teal-300 mt-0.5 flex items-center gap-1.5">
-                      <span>₹{viewingTxDetails.availableBalance.toLocaleString('en-IN')}</span>
-                      <Badge className="bg-teal-600 text-white text-[9px] py-0 px-1.5 font-bold">
-                        ⚡ Stated in Alert
-                      </Badge>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      Not stated in this UPI alert (running balance maintained below)
-                    </div>
-                  )}
-                </div>
-
-                <div className="text-left sm:text-right sm:border-l sm:border-teal-200 dark:sm:border-teal-800 sm:pl-3 w-full sm:w-auto">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
-                    Ledger Running Balance
-                  </span>
-                  <div className="font-mono font-bold text-xs text-foreground mt-0.5">
-                    ₹{(transactionRunningBalances.get(viewingTxDetails.id) !== undefined
-                      ? transactionRunningBalances.get(viewingTxDetails.id)!
-                      : 0
-                    ).toLocaleString('en-IN')}
-                  </div>
-                </div>
-              </div>
-
-              {/* Linked Invoice status strip */}
-              {viewingTxDetails.linkedInvoiceNumber && (
-                <div className="p-3 bg-teal-50 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Receipt className="w-4 h-4 text-teal-700 dark:text-teal-300" />
-                    <div>
-                      <div className="font-bold text-teal-900 dark:text-teal-200">
-                        Linked to Invoice: {viewingTxDetails.linkedInvoiceNumber}
-                      </div>
-                      <div className="text-[11px] text-teal-800/80 dark:text-teal-300/80">
-                        Customer: {viewingTxDetails.linkedCustomerName || 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-                  <Badge className="bg-teal-700 text-white">Reconciled</Badge>
-                </div>
-              )}
-
-              {/* Raw Email Alert Content */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-teal-600" />
-                    <span>Raw Email Alert Content:</span>
-                  </Label>
-                  {viewingTxDetails.rawEmailBody && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        navigator.clipboard.writeText(viewingTxDetails.rawEmailBody || '');
-                        toast.success('Copied full email text to clipboard!');
-                      }}
-                      className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-                    >
-                      📋 Copy Text
-                    </Button>
-                  )}
-                </div>
-
-                {viewingTxDetails.emailSubject && (
-                  <div className="text-[11px] font-semibold text-muted-foreground px-1">
-                    Subject: <span className="text-foreground">{viewingTxDetails.emailSubject}</span>
-                  </div>
-                )}
-
-                <div className="p-3.5 bg-muted/60 dark:bg-muted/20 border border-border rounded-xl font-mono text-[11px] text-foreground leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
-                  {viewingTxDetails.rawEmailBody
-                    ? viewingTxDetails.rawEmailBody
-                        .replace(/<https?:\/\/[^>]+>/gi, '') // Strip tracking link clutter
-                        .replace(/\n{3,}/g, '\n\n')
-                        .trim()
-                    : viewingTxDetails.createdSource === 'gmail_connector'
-                    ? 'Full email text was not captured in earlier sync. Update your Apps Script and click "Fetch & Sync Now" on the Import tab to refresh all entries with complete raw email bodies.'
-                    : viewingTxDetails.description}
-                </div>
+            <div className="space-y-3 pt-2">
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
+                {viewingTxDetails.rawEmailBody
+                  ? viewingTxDetails.rawEmailBody
+                      .replace(/<https?:\/\/[^>]+>/gi, '')
+                      .replace(/\n{3,}/g, '\n\n')
+                      .trim()
+                  : viewingTxDetails.rawAlert || viewingTxDetails.description}
               </div>
             </div>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            {viewingTxDetails?.type === 'credit' && !viewingTxDetails.linkedInvoiceNumber && (
-              <Button
-                size="sm"
-                onClick={() => {
-                  const tx = viewingTxDetails;
-                  setViewingTxDetails(null);
-                  handleOpenLinkModal(tx);
-                }}
-                className="h-8 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs mr-auto"
-              >
-                <Link2 className="w-3.5 h-3.5 mr-1" /> Link to Cash Invoice
-              </Button>
-            )}
+          <DialogFooter className="pt-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setViewingTxDetails(null)}
-              className="h-8 text-xs"
+              className="h-8 text-xs rounded-xl border-slate-300"
             >
               Close
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cash Memo / DC Document Preview Modal */}
+      <Dialog open={!!viewingDcDetails} onOpenChange={(open) => !open && setViewingDcDetails(null)}>
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border rounded-2xl">
+          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
+            <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+              <Receipt className="w-5 h-5 text-teal-700 dark:text-teal-400" />
+              <span>Cash Memo — {viewingDcAsCashInvoice?.invNumber || `DC #${viewingDcDetails?.dcNo}`}</span>
+            </DialogTitle>
+            <div className="flex items-center gap-2 pr-6 sm:pr-0">
+              {viewingDcAsCashInvoice && (
+                <Button
+                  size="sm"
+                  onClick={() => printCashMemo(viewingDcAsCashInvoice)}
+                  className="bg-teal-700 hover:bg-teal-800 text-white font-bold gap-1.5 h-8 text-xs rounded-md"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Print / PDF
+                </Button>
+              )}
+            </div>
+          </DialogHeader>
+
+          {viewingDcAsCashInvoice && (
+            <div className="py-2">
+              <CashInvoicePreview
+                invoice={viewingDcAsCashInvoice}
+                onPrint={() => printCashMemo(viewingDcAsCashInvoice)}
+                showPrintButton={false}
+              />
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border mt-2">
+            {viewingDcDetails && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  const dc = viewingDcDetails;
+                  setViewingDcDetails(null);
+                  setSettlingDc(dc);
+                }}
+                className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs mr-auto"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Record Payment
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setViewingDcDetails(null)} className="h-8 text-xs rounded-md">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settle Cash DC Payment Modal (Full 2-Column DC Tracker & Cash Invoice Parity) */}
+      <Dialog
+        open={!!settlingDc}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSettlingDc(null);
+            setPaymentAmountInput("");
+            setPaymentRemarksInput("");
+            setPaymentMethod("cash");
+            setPaymentCollectedBy("");
+            setSelectedBankAccountId("");
+            setSelectedCreditTxId("");
+          }
+        }}
+      >
+        <DialogContent 
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-4xl lg:max-w-5xl w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Record Payment Collection</DialogTitle>
+            <DialogDescription>
+              Record payment settlement for DC #{settlingDc?.dcNo}.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 1. TOP HEADER */}
+          <div className="bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200/80 dark:border-slate-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-3 pr-6">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200">
+                    DC #{settlingDc?.dcNo}
+                  </span>
+                  {settlingDc?.invoiceRef && (
+                    <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      Memo #{settlingDc.invoiceRef}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Awaiting Settlement
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+                  Record Cash / Payment — DC #{settlingDc?.dcNo}
+                </h3>
+                <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-400 mt-1 flex-wrap">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                    <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    {settlingDc?.hospitalName || "Hospital Record"}
+                  </span>
+                  {settlingDc?.doctorName && (
+                    <span className="flex items-center gap-1">
+                      <Stethoscope className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      Dr. {settlingDc.doctorName}
+                    </span>
+                  )}
+                  {settlingDc?.patientName && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      Pt: {settlingDc.patientName}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. BODY CONTENT (2-COLUMN RESPONSIVE LAYOUT) */}
+          {settlingDc && (
+            <div className="p-5 max-h-[78vh] overflow-y-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                {/* LEFT COLUMN: RECEIVABLE DETAILS & PAYMENT INPUTS */}
+                <div className={`${paymentMethod === "bank_transfer" ? "lg:col-span-5" : "lg:col-span-12 max-w-xl mx-auto w-full"} space-y-4`}>
+                  {/* Financial Receivable Banner */}
+                  {Boolean(settlingDc.billedAmount && settlingDc.billedAmount > (settlingDc.cashAmount || 0)) ? (
+                    <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                          <Receipt className="w-3.5 h-3.5 text-amber-600" />
+                          Hiked Bill Settlement
+                        </span>
+                        <span className="text-[10px] bg-amber-200/70 dark:bg-amber-900/60 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
+                          Margin Deducted
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-amber-200/60 dark:border-amber-900/30">
+                        <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
+                          <span className="block text-[10px] text-slate-500 uppercase font-semibold">Printed Bill</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-300">
+                            ₹{settlingDc.billedAmount?.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                        <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
+                          <span className="block text-[10px] text-amber-700 dark:text-amber-400 uppercase font-semibold">Hospital Cut</span>
+                          <span className="font-bold text-amber-800 dark:text-amber-300">
+                            -₹{(settlingDc.hospitalMargin || (settlingDc.billedAmount! - (settlingDc.cashAmount || 0))).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                        <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-900/30 text-center">
+                          <span className="block text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold">Net Due</span>
+                          <span className="font-black text-emerald-800 dark:text-emerald-300">
+                            ₹{(settlingDc.cashAmount || 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/60 p-3.5 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Outstanding Receivable
+                        </span>
+                        <span className="text-xs text-slate-600 dark:text-slate-400">
+                          Total payment expected for this cash invoice
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono">
+                          ₹{(settlingDc.cashAmount || 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Payment Mode Selector */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Payment Mode *
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod("cash")}
+                        className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                          paymentMethod === "cash"
+                            ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs"
+                            : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        <Banknote className={`w-4 h-4 shrink-0 ${paymentMethod === "cash" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`} />
+                        <span>Cash Payment</span>
+                        {paymentMethod === "cash" && <Check className="w-3.5 h-3.5 ml-auto text-emerald-600" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod("bank_transfer")}
+                        className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                          paymentMethod === "bank_transfer"
+                            ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
+                            : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        <Landmark className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
+                        <span>Bank Transfer / UPI</span>
+                        {paymentMethod === "bank_transfer" && <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Target Bank Account Selection (Only when Bank Transfer is active) */}
+                  {paymentMethod === "bank_transfer" && (
+                    <div className="space-y-1.5 pt-1">
+                      <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Select Target Bank Account:
+                      </Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {sortedBankAccounts.map((acc) => {
+                          const isSelected = selectedBankAccountId === acc.id;
+                          const accSuffix = acc.accountNumber ? acc.accountNumber.slice(-4) : (acc.accountName.match(/\d{4}/)?.[0] || "");
+                          const bankTitle = acc.bankName || acc.accountName.split("(")[0].trim();
+                          return (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              onClick={() => setSelectedBankAccountId(acc.id)}
+                              className={`flex flex-col items-center justify-center p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                isSelected
+                                  ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
+                                  : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                              }`}
+                            >
+                              <span className="font-bold flex items-center gap-1">
+                                <Building2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                {bankTitle}
+                              </span>
+                              {accSuffix && (
+                                <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                                  ({accSuffix})
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cash Collector Selection (Only when Cash is selected) */}
+                  {paymentMethod === "cash" && (
+                    <div className="space-y-2.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-emerald-600" />
+                          Who Collected the Cash? *
+                        </Label>
+                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-200">
+                          ⚡ Cash In Hand Treasury
+                        </span>
+                      </div>
+                      <PersonnelSelect
+                        value={paymentCollectedBy}
+                        onChange={setPaymentCollectedBy}
+                        placeholder="Select or type collector name..."
+                        showQuickPicks={false}
+                      />
+                      {/* Clean Quick Picks */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[11px] font-medium text-slate-400 mr-0.5">Quick:</span>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentCollectedBy("Self")}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                            paymentCollectedBy.trim().toLowerCase() === "self"
+                              ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                          }`}
+                        >
+                          Self
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentCollectedBy("Office")}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                            paymentCollectedBy.trim().toLowerCase() === "office"
+                              ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                          }`}
+                        >
+                          Office
+                        </button>
+                        {settlingDc?.deliveredBy && (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentCollectedBy(settlingDc.deliveredBy || "")}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              paymentCollectedBy.trim().toLowerCase() === (settlingDc?.deliveredBy || "").toLowerCase()
+                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                            }`}
+                          >
+                            <UserCheck className="w-3 h-3 text-teal-600" />
+                            <span>Delivery: {settlingDc.deliveredBy}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Amount Received & Remarks */}
+                  <div className="grid grid-cols-1 gap-3 pt-1">
+                    {/* Paid Amount */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="payment-amount-bank" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Amount Received *
+                        </Label>
+                        {settlingDc?.cashAmount && (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentAmountInput(String(settlingDc.cashAmount || ''))}
+                            className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
+                          >
+                            Full Due (₹{settlingDc.cashAmount.toLocaleString('en-IN')})
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">
+                          ₹
+                        </span>
+                        <Input
+                          id="payment-amount-bank"
+                          type="number"
+                          value={paymentAmountInput}
+                          onChange={(e) => setPaymentAmountInput(e.target.value)}
+                          placeholder={settlingDc?.cashAmount ? String(settlingDc.cashAmount) : "0"}
+                          className="pl-7 h-10 font-bold text-sm bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Payment Remarks */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="payment-remarks-bank" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Notes / Ref <span className="font-normal text-slate-400">(Optional)</span>
+                      </Label>
+                      <Input
+                        id="payment-remarks-bank"
+                        type="text"
+                        value={paymentRemarksInput}
+                        onChange={(e) => setPaymentRemarksInput(e.target.value)}
+                        placeholder={paymentMethod === "cash" ? "e.g. Received at hospital billing" : "e.g. UTR / NEFT Ref"}
+                        className="h-10 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* RIGHT COLUMN: BANK CREDIT LINKING & MATCHING PANEL (When Bank Transfer is active) */}
+                {paymentMethod === "bank_transfer" && (
+                  <div className="lg:col-span-7 bg-slate-50/80 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        Mandatory Bank Credit Link &amp; Match *
+                      </Label>
+                      <Badge variant="outline" className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200">
+                        {availableBankCredits.length} Statement Credits
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Select matching credit deposit from bank statement or select "Not Found" to link later:
+                    </p>
+
+                    {/* Executive Account Card Selector Tabs */}
+                    <div className="space-y-1 my-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Select Account Statement:</span>
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                        {/* 1. BANK ACCOUNTS TABS (1538 ALWAYS FIRST ON THE LEFT!) */}
+                        {sortedBankAccounts.map((acc) => {
+                          const isSelected = selectedBankAccountId === acc.id;
+                          const count = availableBankCredits.filter((t) => t.accountId === acc.id).length;
+                          const accSuffix = acc.accountNumber ? acc.accountNumber.slice(-4) : (acc.accountName.match(/\d{4}/)?.[0] || '');
+                          const is1538 = accSuffix === '1538' || acc.id.includes('1538');
+
+                          return (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              onClick={() => setSelectedBankAccountId(acc.id)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
+                                isSelected
+                                  ? is1538 
+                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20"
+                                    : "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20"
+                                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                              }`}
+                            >
+                              <Building2 className="w-3.5 h-3.5" />
+                              <span>{acc.bankName || acc.accountName.split('(')[0].trim()}</span>
+                              {accSuffix && (
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                                  isSelected ? "bg-black/20 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                }`}>
+                                  ({accSuffix})
+                                </span>
+                              )}
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                                isSelected ? "bg-black/20 text-white" : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}>
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+
+                        {/* 2. ALL ACCOUNTS TAB */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBankAccountId("all")}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
+                            selectedBankAccountId === "all"
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                          }`}
+                        >
+                          <Landmark className="w-3.5 h-3.5" />
+                          <span>All Accounts</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                            selectedBankAccountId === "all" ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          }`}>
+                            {availableBankCredits.length}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {filteredBankCredits.map((tx) => {
+                        const isSelected = selectedCreditTxId === tx.id;
+                        const dcAmount = settlingDc.cashAmount || settlingDc.billedAmount || 0;
+                        const isAmountMatch = Math.abs(tx.amount - dcAmount) < 10;
+                        const dcHosp = (settlingDc.hospitalName || '').toLowerCase().trim();
+                        const desc = (tx.description || '').toLowerCase();
+                        const isHospMatch = dcHosp && desc.includes(dcHosp);
+                        const isMatch = isAmountMatch || isHospMatch;
+
+                        return (
+                          <div
+                            key={tx.id}
+                            onClick={() => {
+                              setSelectedCreditTxId(tx.id);
+                              if (tx.amount) setPaymentAmountInput(String(tx.amount));
+                            }}
+                            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                              isSelected
+                                ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-500/20 shadow-xs"
+                                : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2.5">
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>
+                                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                </div>
+                                <div>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100 block">
+                                    {tx.description || "Bank Credit Deposit"}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-mono mt-0.5">
+                                    {tx.date} {tx.time ? `• ${tx.time}` : ""} {tx.referenceNumber ? `• Ref: ${tx.referenceNumber}` : ""}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm font-mono block">
+                                    +₹{tx.amount.toLocaleString('en-IN')}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewingTxDetails(tx);
+                                    }}
+                                    className="p-1 rounded-md text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                    title="View Email & Verification Details"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                {isMatch && (
+                                  <Badge className="text-[9px] px-1.5 py-0 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-0 font-bold">
+                                    🎯 Match Candidate
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* NOT FOUND OPTION AT LAST */}
+                      <div
+                        onClick={() => setSelectedCreditTxId("not_found")}
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                          selectedCreditTxId === "not_found"
+                            ? "border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-500/20 shadow-xs"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedCreditTxId === "not_found" ? "border-amber-600 bg-amber-600 text-white" : "border-slate-300"}`}>
+                              {selectedCreditTxId === "not_found" && <Check className="w-3 h-3 stroke-[3]" />}
+                            </div>
+                            <div>
+                              <span className="font-bold text-amber-900 dark:text-amber-300 block flex items-center gap-1">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                Not Found in Bank Statement Yet (Link Later)
+                              </span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                                Statement update pending. You can link this later from Bank Treasury.
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 3. FOOTER ACTION BAR */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+            <Button
+              variant="outline"
+              onClick={() => setSettlingDc(null)}
+              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isSettling}
+              onClick={handleConfirmSettleDc}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-10 px-5 text-xs font-bold gap-1.5 shadow-sm min-w-[150px]"
+            >
+              <Check className="h-4 w-4" />
+              <span>{isSettling ? 'Settling...' : 'Confirm Payment'}</span>
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

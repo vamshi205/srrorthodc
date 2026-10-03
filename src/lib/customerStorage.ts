@@ -43,6 +43,7 @@ const CASH_LEGACY_KEY = "im_customers";
 const EVENT_KEY = "srrortho:customers_updated";
 const DELETED_CUSTOMERS_KEY = "srrortho:deleted_customers";
 const RENAMED_CUSTOMERS_KEY = "srrortho:renamed_customers";
+const CUSTOMER_ALIASES_KEY = "srrortho:customer_aliases";
 
 export const getDeletedCustomers = (): string[] => {
   try {
@@ -101,6 +102,46 @@ export const removeRenamedCustomer = (name: string): void => {
   const filtered = current.filter((item) => item !== lower);
   localStorage.setItem(RENAMED_CUSTOMERS_KEY, JSON.stringify(filtered));
 };
+
+export const getCustomerAliases = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_ALIASES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+export const addCustomerAlias = (oldName: string, canonicalName: string): void => {
+  if (!oldName || !canonicalName) return;
+  const cleanOld = oldName.trim().replace(/^[,\.\-\/\:\;\#\s]+|[,\.\-\/\:\;\#\s]+$/g, "").toLowerCase();
+  const cleanCanonical = canonicalName.trim().replace(/^[,\.\-\/\:\;\#\s]+|[,\.\-\/\:\;\#\s]+$/g, "");
+  if (!cleanOld || !cleanCanonical || cleanOld === cleanCanonical.toLowerCase()) return;
+
+  const current = getCustomerAliases();
+  current[cleanOld] = cleanCanonical;
+  localStorage.setItem(CUSTOMER_ALIASES_KEY, JSON.stringify(current));
+};
+
+export const resolveCustomerAlias = (rawName?: string): string => {
+  if (!rawName) return "";
+  let clean = rawName.trim().replace(/^[,\.\-\/\:\;\#\s]+|[,\.\-\/\:\;\#\s]+$/g, "").replace(/\s+/g, " ");
+  if (!clean) return "";
+
+  const aliases = getCustomerAliases();
+  let currentKey = clean.toLowerCase();
+  let maxDepth = 5;
+  while (aliases[currentKey] && maxDepth > 0) {
+    clean = aliases[currentKey];
+    currentKey = clean.toLowerCase();
+    maxDepth--;
+  }
+
+  return clean;
+};
+
 
 export const harmonizeCustomerRecord = (cust: Partial<Customer>): Customer => {
   const name = normalizeHospitalName(cust.name || "");
@@ -278,7 +319,8 @@ const createId = () => {
 
 export const normalizeHospitalName = (name?: string): string => {
   if (!name) return "";
-  return name.trim().replace(/\s+/g, " ");
+  const cleaned = name.trim().replace(/^[,\.\-\/\:\;\#\s]+|[,\.\-\/\:\;\#\s]+$/g, "").replace(/\s+/g, " ");
+  return resolveCustomerAlias(cleaned);
 };
 
 export const deduplicateAndCleanCustomers = (list: Customer[]): Customer[] => {
@@ -456,6 +498,12 @@ export const updateHospitalNameAcrossAllDcsAndInvoices = async (
   const oldLower = oldClean.toLowerCase();
   let updatedDcsCount = 0;
   let updatedInvoicesCount = 0;
+
+  // Register permanent alias map entry so old name always resolves to new name
+  addCustomerAlias(oldName, newClean);
+  addCustomerAlias(oldClean, newClean);
+  addRenamedCustomer(oldName);
+  addRenamedCustomer(oldClean);
 
   // 1. Update Saved Delivery Challans (DCs)
   try {
@@ -926,7 +974,13 @@ export const mergeCustomers = async (
   // 3. Save merged target customer
   const finalSavedTarget = await saveCustomer(mergedTargetData, { updateAssociatedDcs: false, updateAssociatedInvoices: false });
 
-  // 4. Delete source customer
+  // 4. Register permanent alias so source name always resolves to targetName
+  addCustomerAlias(source.name, targetName);
+  if (source.id) addCustomerAlias(source.id, targetName);
+  addRenamedCustomer(source.name);
+  addDeletedCustomer(source.name);
+
+  // 5. Delete source customer
   await deleteCustomer(source.id);
 
   return {
@@ -938,3 +992,37 @@ export const mergeCustomers = async (
     updatedInvoicesCount,
   };
 };
+
+export interface BatchMergePair {
+  targetId: string;
+  sourceId: string;
+  targetName?: string;
+}
+
+/**
+ * Execute batch merge of multiple source duplicate customers into target canonical customers
+ */
+export const batchMergeCustomers = async (
+  pairs: BatchMergePair[]
+): Promise<{ mergedCount: number; errors: number }> => {
+  let mergedCount = 0;
+  let errors = 0;
+
+  for (const pair of pairs) {
+    try {
+      await mergeCustomers(pair.targetId, pair.sourceId, {
+        customTargetName: pair.targetName,
+        combineNotes: true,
+        updateDcs: true,
+        updateInvoices: true,
+      });
+      mergedCount++;
+    } catch (err) {
+      console.warn("Error in batch merge pair:", pair, err);
+      errors++;
+    }
+  }
+
+  return { mergedCount, errors };
+};
+

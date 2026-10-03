@@ -17,6 +17,7 @@ import {
   fetchCashInvoicesFromFirestore,
   saveCashInvoiceToFirestore,
 } from './cashInvoiceFirebaseService';
+import { fetchDcsFromFirestore, updateDcInFirestore } from './firestoreService';
 
 export interface BankAccount {
   id: string;
@@ -467,12 +468,107 @@ export async function saveBankTransactionToFirestore(
 /**
  * Delete a Bank Transaction from Firestore
  */
+/**
+ * Helper to revert a matching Delivery Challan (DC) back to Cash Queue as unpaid
+ * when a linked bank transaction is unlinked or deleted.
+ */
+export async function revertMatchingDcToCashQueue(tx: Partial<BankTransaction>): Promise<boolean> {
+  try {
+    const invRef = tx.linkedInvoiceNumber || tx.linkedInvoiceId || '';
+    const cleanDcNo = invRef.replace(/^DC\s*#?\s*/i, '').trim().toLowerCase();
+    const txRefNo = (tx.referenceNumber || '').trim().toLowerCase();
+
+    if (!invRef && !cleanDcNo && !txRefNo) return false;
+
+    const dcs = await fetchDcsFromFirestore();
+    const matchingDc = dcs.find((d) => {
+      const dDcNo = (d.dcNo || '').replace(/^DC\s*#?\s*/i, '').trim().toLowerCase();
+      const dInvRef = (d.invoiceRef || '').trim().toLowerCase();
+      const dUtr = ((d as any).utrNo || '').trim().toLowerCase();
+      const dId = (d.id || '').trim().toLowerCase();
+
+      if (invRef && (dId === invRef || dInvRef === invRef || dInvRef.replace(/\//g, '_') === invRef)) {
+        return true;
+      }
+      if (cleanDcNo && (dDcNo === cleanDcNo || d.dcNo?.toLowerCase() === cleanDcNo)) {
+        return true;
+      }
+      if (txRefNo && dUtr && txRefNo === dUtr) {
+        return true;
+      }
+      return false;
+    });
+
+    if (matchingDc && (matchingDc.status === 'completed' || matchingDc.status === 'cash')) {
+      const now = new Date().toISOString();
+      const updatedDc = {
+        ...matchingDc,
+        status: 'cash' as const,
+        history: [
+          ...(matchingDc.history || []),
+          {
+            at: now,
+            action: 'MOVE_TO_CASH' as const,
+            fromStatus: matchingDc.status,
+            toStatus: 'cash' as const,
+            meta: { reason: 'Transaction unlinked or deleted from Bank Treasury' },
+          },
+        ],
+      };
+
+      // Remove payment details so DC is clean & unpaid in Cash Queue
+      delete (updatedDc as any).paidAt;
+      delete (updatedDc as any).paymentMethod;
+      delete (updatedDc as any).bankAccountId;
+      delete (updatedDc as any).bankName;
+      delete (updatedDc as any).accountNumber;
+      delete (updatedDc as any).utrNo;
+
+      await updateDcInFirestore(updatedDc);
+
+      // Also update localStorage & broadcast event for active React views
+      try {
+        const raw = localStorage.getItem('srrortho:saved-dcs');
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            const idx = list.findIndex((item: any) => item.id === matchingDc.id);
+            if (idx >= 0) {
+              list[idx] = updatedDc;
+            } else {
+              list.unshift(updatedDc);
+            }
+            localStorage.setItem('srrortho:saved-dcs', JSON.stringify(list));
+            window.dispatchEvent(new CustomEvent('srrortho:saved_dcs_updated', { detail: list }));
+          }
+        }
+      } catch {}
+
+      return true;
+    }
+  } catch (err) {
+    console.warn('Error reverting matching DC to cash queue:', err);
+  }
+  return false;
+}
+
 export async function deleteBankTransactionFromFirestore(
   transactionId: string,
   revertInvoicePayment: boolean = false,
   transactionData?: BankTransaction
 ): Promise<boolean> {
   try {
+    let txData = transactionData;
+    if (!txData) {
+      try {
+        const txDocRef = doc(db, BANK_TRANSACTIONS_COLLECTION, transactionId);
+        const txSnap = await getDoc(txDocRef);
+        if (txSnap.exists()) {
+          txData = txSnap.data() as BankTransaction;
+        }
+      } catch {}
+    }
+
     const ref = doc(db, BANK_TRANSACTIONS_COLLECTION, transactionId);
     await deleteDoc(ref);
 
@@ -487,17 +583,22 @@ export async function deleteBankTransactionFromFirestore(
       // ignore
     }
 
+    // Revert matching Delivery Challan in DC Tracker back to Cash Queue as unpaid
+    if (txData) {
+      await revertMatchingDcToCashQueue(txData);
+    }
+
     // Optional revert of cash invoice payment
     if (
       revertInvoicePayment &&
-      transactionData &&
-      transactionData.type === 'credit' &&
-      (transactionData.linkedInvoiceNumber || transactionData.linkedInvoiceId) &&
-      transactionData.amount > 0
+      txData &&
+      txData.type === 'credit' &&
+      (txData.linkedInvoiceNumber || txData.linkedInvoiceId) &&
+      txData.amount > 0
     ) {
       try {
         const invoices = await fetchCashInvoicesFromFirestore();
-        const targetInvNum = transactionData.linkedInvoiceNumber || transactionData.linkedInvoiceId;
+        const targetInvNum = txData.linkedInvoiceNumber || txData.linkedInvoiceId;
         const matchingInvoice = invoices.find(
           (inv) =>
             inv.invNumber?.toLowerCase().trim() === targetInvNum?.toLowerCase().trim() ||
@@ -507,7 +608,7 @@ export async function deleteBankTransactionFromFirestore(
         if (matchingInvoice) {
           const currentReceived = Number(matchingInvoice.paymentReceived) || 0;
           const grandTotal = Number(matchingInvoice.grandTotal) || 0;
-          const newReceived = Math.max(0, currentReceived - Number(transactionData.amount));
+          const newReceived = Math.max(0, currentReceived - Number(txData.amount));
 
           let newStatus = 'Unpaid';
           if (newReceived >= grandTotal && grandTotal > 0) {
@@ -711,6 +812,9 @@ export async function unlinkBankTransactionFromCashInvoice(
     const oldInvoiceNumber = targetTx.linkedInvoiceNumber || targetTx.linkedInvoiceId;
     const oldAmount = targetTx.amount;
 
+    // Revert matching Delivery Challan back to Cash Queue as unpaid
+    await revertMatchingDcToCashQueue(targetTx);
+
     const updatedTx: BankTransaction = {
       ...targetTx,
       linkedInvoiceId: undefined,
@@ -802,5 +906,73 @@ export async function importBatchBankTransactions(
     return { count: 0, success: false };
   }
 }
+
+/**
+ * Helper to automatically record cash collection into Cash In Hand bank account
+ */
+export async function recordCashPaymentToCashInHand(
+  dc: { id?: string; dcNo: string; hospitalName: string; invoiceRef?: string },
+  paidAmount: number,
+  collectedBy: string = '',
+  remarks?: string
+): Promise<boolean> {
+  try {
+    const accounts = await fetchBankAccountsFromFirestore();
+    let cashAcc = accounts.find(
+      (a) =>
+        a.accountType === 'cash_in_hand' ||
+        a.id === 'acc_cash_in_hand' ||
+        (a.bankName && a.bankName.toLowerCase().includes('cash in hand')) ||
+        (a.accountName && a.accountName.toLowerCase().includes('cash in hand'))
+    );
+
+    if (!cashAcc) {
+      cashAcc = {
+        id: 'acc_cash_in_hand',
+        accountName: 'Cash In Hand (Petty Cash)',
+        bankName: 'Cash In Hand',
+        accountNumber: 'CASH-001',
+        ifscCode: 'CASH',
+        branch: 'Main Desk',
+        accountType: 'cash_in_hand',
+        openingBalance: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+    }
+
+    const invNum = dc.invoiceRef || `DC #${dc.dcNo}`;
+    const desc = remarks || `Cash Received for ${invNum} (${dc.hospitalName})${collectedBy ? ` - Collected by ${collectedBy}` : ''}`;
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+
+    const tx: BankTransaction = {
+      id: `tx_cash_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      accountId: cashAcc.id,
+      type: 'credit',
+      amount: paidAmount,
+      date: dateStr,
+      time: timeStr,
+      category: 'Cash Sales',
+      description: desc,
+      referenceNumber: `CASH-${dc.dcNo}`,
+      linkedInvoiceId: invNum.replace(/\//g, '_'),
+      linkedInvoiceNumber: invNum,
+      linkedCustomerName: dc.hospitalName,
+      linkedHospital: dc.hospitalName,
+      createdSource: 'cash_invoice_link',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const res = await saveBankTransactionToFirestore(tx, false);
+    return res.success;
+  } catch (err) {
+    console.error('Failed to record cash payment in Cash In Hand account:', err);
+    return false;
+  }
+}
+
 
 

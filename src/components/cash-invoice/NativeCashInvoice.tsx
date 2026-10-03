@@ -7,6 +7,13 @@ import {
   deleteCashInvoiceFromFirestore,
 } from "@/services/cashInvoiceFirebaseService";
 import {
+  BankAccount,
+  BankTransaction,
+  fetchBankAccountsFromFirestore,
+  fetchBankTransactionsFromFirestore,
+  recordCashPaymentToCashInHand,
+} from "@/services/bankAccountFirebaseService";
+import {
   Customer,
   fetchUnifiedCustomers,
 } from "@/lib/customerStorage";
@@ -31,6 +38,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -41,6 +49,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { extractHdfcNarration } from "@/services/gmailConnectorService";
 import {
   FileText,
   Plus,
@@ -60,6 +69,16 @@ import {
   ShieldAlert,
   ArrowRight,
   ArrowLeft,
+  Banknote,
+  Landmark,
+  Check,
+  User,
+  UserCheck,
+  Loader2,
+  Calendar,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Mail,
 } from "lucide-react";
 
 interface InvoiceItem {
@@ -177,18 +196,62 @@ export const NativeCashInvoice: React.FC = () => {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<CashInvoiceData | null>(null);
 
-  // Record Payment Modal
+  // Record Payment Modal (DC Tracker Style)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [payingInvoice, setPayingInvoice] = useState<CashInvoiceData | null>(null);
   const [paymentAmountInput, setPaymentAmountInput] = useState<string>("");
-  const [paymentModeInput, setPaymentModeInput] = useState<string>("Cash");
-  const [paymentNoteInput, setPaymentNoteInput] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer">("cash");
+  const [paymentCollectedBy, setPaymentCollectedBy] = useState<string>("Self");
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("");
+  const [paymentRemarksInput, setPaymentRemarksInput] = useState<string>("");
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>([]);
+  const [selectedCreditTxId, setSelectedCreditTxId] = useState<string | null>(null);
+  const [isLoadingBankCredits, setIsLoadingBankCredits] = useState<boolean>(false);
+  const [viewingTxDetails, setViewingTxDetails] = useState<BankTransaction | null>(null);
+
+  // Available & Filtered Bank Credit Statement Transactions
+  const availableBankCredits = useMemo(() => {
+    return bankTransactions.filter((tx) => tx.type === "credit");
+  }, [bankTransactions]);
+
+  const filteredBankCredits = useMemo(() => {
+    if (!selectedBankAccountId || selectedBankAccountId === "all") {
+      return availableBankCredits;
+    }
+    return availableBankCredits.filter((tx) => tx.accountId === selectedBankAccountId);
+  }, [availableBankCredits, selectedBankAccountId]);
+
+  const loadBankTransactions = async () => {
+    setIsLoadingBankCredits(true);
+    try {
+      const txs = await fetchBankTransactionsFromFirestore(undefined, 200);
+      setBankTransactions(txs);
+    } catch (err) {
+      console.error("Failed to load bank transactions:", err);
+    } finally {
+      setIsLoadingBankCredits(false);
+    }
+  };
+
+  // Sorted executive bank accounts (HDFC 1538 ALWAYS FIRST on the far left, Cash In Hand excluded)
+  const sortedBankAccounts = useMemo(() => {
+    const accounts = bankAccounts.filter((a) => a.accountType !== "cash_in_hand");
+    accounts.sort((a, b) => {
+      const aSuffix = a.accountNumber ? a.accountNumber.slice(-4) : (a.accountName.match(/\d{4}/)?.[0] || "");
+      const bSuffix = b.accountNumber ? b.accountNumber.slice(-4) : (b.accountName.match(/\d{4}/)?.[0] || "");
+      if (aSuffix === "1538" || a.id.includes("1538")) return -1;
+      if (bSuffix === "1538" || b.id.includes("1538")) return 1;
+      return 0;
+    });
+    return accounts;
+  }, [bankAccounts]);
 
   // Saved Invoices Filter & Search
   const [savedSearchQuery, setSavedSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "paid">("all");
 
-  // Load Invoices, Customers, and DCs on Mount
+  // Load Invoices, Customers, DCs, and Bank Accounts on Mount
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -214,16 +277,20 @@ export const NativeCashInvoice: React.FC = () => {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      const [invs, custs, dcs, cat] = await Promise.all([
+      const [invs, custs, dcs, cat, bAccounts, bTxs] = await Promise.all([
         fetchCashInvoicesFromFirestore(),
         fetchUnifiedCustomers(),
         loadSavedDcs(),
         getImplantCatalog(),
+        fetchBankAccountsFromFirestore(),
+        fetchBankTransactionsFromFirestore(undefined, 200),
       ]);
       setSavedInvoices(invs);
       setCustomers(custs);
       setSavedDcs(dcs);
       setCatalog(cat);
+      setBankAccounts(bAccounts);
+      setBankTransactions(bTxs);
 
       // Check query params
       const paramDc = searchParams.get("dcNo") || sessionStorage.getItem("prefill_cash_dc_no");
@@ -733,15 +800,21 @@ export const NativeCashInvoice: React.FC = () => {
     }
   };
 
-  // Open Record Payment Modal
+  // Open Record Payment Modal (DC Tracker Style)
   const openPaymentModal = (inv: CashInvoiceData) => {
     setPayingInvoice(inv);
     const effDue = inv.isHikedBill && inv.actualReceivable ? Number(inv.actualReceivable) : Number(inv.grandTotal);
     const balance = Math.max(0, effDue - (Number(inv.paymentReceived) || 0));
     setPaymentAmountInput(balance > 0 ? String(balance) : "");
-    setPaymentModeInput("Cash");
-    setPaymentNoteInput("");
+    setPaymentMethod("cash");
+    setPaymentCollectedBy("Self");
+    setPaymentRemarksInput("");
+    setSelectedCreditTxId(null);
+    if (sortedBankAccounts.length > 0) {
+      setSelectedBankAccountId(sortedBankAccounts[0].id);
+    }
     setPaymentModalOpen(true);
+    loadBankTransactions();
   };
 
   // Confirm Payment
@@ -753,24 +826,48 @@ export const NativeCashInvoice: React.FC = () => {
       return;
     }
 
+    if (paymentMethod === "cash" && !paymentCollectedBy.trim()) {
+      toast.error("Please select or enter who collected the cash");
+      return;
+    }
+
     const currentPaid = Number(payingInvoice.paymentReceived) || 0;
     const newPaid = currentPaid + payAmt;
     const effDue = payingInvoice.isHikedBill && payingInvoice.actualReceivable ? Number(payingInvoice.actualReceivable) : Number(payingInvoice.grandTotal);
     const isFullyPaid = newPaid >= effDue;
     const newStatus = isFullyPaid ? "paid" : "partial";
+    const selectedModeStr = paymentMethod === "cash" ? `Cash (Collected by ${paymentCollectedBy.trim()})` : `Bank Transfer / UPI`;
+
+    // Record cash payment to Cash In Hand treasury if cash
+    if (paymentMethod === "cash") {
+      try {
+        await recordCashPaymentToCashInHand(
+          {
+            id: payingInvoice.invNumber,
+            dcNo: payingInvoice.dcNumber || payingInvoice.invNumber,
+            hospitalName: payingInvoice.clientName,
+            invoiceRef: payingInvoice.invNumber,
+          },
+          payAmt,
+          paymentCollectedBy.trim()
+        );
+      } catch (cashErr) {
+        console.error("Error recording cash payment to Cash In Hand:", cashErr);
+      }
+    }
 
     const updatedInvoice: CashInvoiceData = {
       ...payingInvoice,
       paymentReceived: newPaid,
       status: newStatus,
-      paymentNote: paymentNoteInput.trim() || undefined,
-      paymentMode: paymentModeInput,
+      paymentNote: paymentRemarksInput.trim() || undefined,
+      paymentMode: selectedModeStr,
       paymentAt: new Date().toISOString(),
     };
 
     const success = await saveCashInvoiceToFirestore(updatedInvoice);
     if (success) {
-      // Sync DC
+      // Sync DC if linked
       if (payingInvoice.dcNumber) {
         try {
           const dcs = await loadSavedDcs();
@@ -785,12 +882,12 @@ export const NativeCashInvoice: React.FC = () => {
                 updates: {
                   invoiceRef: payingInvoice.invNumber,
                   cashAmount: effDue,
-                  cashRemarks: `Cash Memo ${payingInvoice.invNumber} Paid (₹${effDue}) via ${paymentModeInput}`,
+                  cashRemarks: `Cash Memo ${payingInvoice.invNumber} Paid (₹${effDue}) via ${selectedModeStr}`,
                 },
                 meta: {
                   invoiceRef: payingInvoice.invNumber,
                   cashAmount: effDue,
-                  cashRemarks: `Cash Memo ${payingInvoice.invNumber} Paid (₹${effDue}) via ${paymentModeInput}`,
+                  cashRemarks: `Cash Memo ${payingInvoice.invNumber} Paid (₹${effDue}) via ${selectedModeStr}`,
                 },
               });
             } else {
@@ -800,7 +897,7 @@ export const NativeCashInvoice: React.FC = () => {
                 updates: {
                   invoiceRef: payingInvoice.invNumber,
                   cashAmount: effDue,
-                  cashRemarks: `Cash Memo ${payingInvoice.invNumber} Partial Paid (₹${newPaid}/₹${effDue})`,
+                  cashRemarks: `Cash Memo ${payingInvoice.invNumber} Partial Paid (₹${newPaid}/₹${effDue}) via ${selectedModeStr}`,
                 },
               });
             }
@@ -810,7 +907,7 @@ export const NativeCashInvoice: React.FC = () => {
         }
       }
 
-      toast.success(`Payment of ₹${payAmt.toLocaleString("en-IN")} recorded!`);
+      toast.success(`Payment of ₹${payAmt.toLocaleString("en-IN")} recorded successfully!`);
       setPaymentModalOpen(false);
       setPayingInvoice(null);
       // Reload invoices
@@ -1927,7 +2024,53 @@ export const NativeCashInvoice: React.FC = () => {
           </DialogHeader>
 
           {selectedInvoiceForView && (
-            <div className="py-2">
+            <div className="space-y-4 py-2">
+              {/* Payment Settlement Audit Banner if paid or partial */}
+              {(Boolean(selectedInvoiceForView.paymentReceived) || Boolean(selectedInvoiceForView.paymentMode) || selectedInvoiceForView.status === "paid" || selectedInvoiceForView.status === "partial") && (
+                <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 p-4 space-y-2 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-emerald-200 dark:border-emerald-800/60 pb-2">
+                    <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100">
+                      <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Recorded Payment &amp; Settlement Record</span>
+                      <Badge className="bg-emerald-600 text-white text-[10px] uppercase font-bold rounded-full">
+                        {selectedInvoiceForView.status || "Paid"}
+                      </Badge>
+                    </div>
+                    <div className="text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                      Paid: ₹{(Number(selectedInvoiceForView.paymentReceived) || 0).toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-[11px]">
+                    <div>
+                      <span className="text-slate-500 font-semibold block text-[10px] uppercase">Payment Mode</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                        {selectedInvoiceForView.paymentMode || "Cash / Bank Transfer"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-semibold block text-[10px] uppercase">Settlement Date</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                        {selectedInvoiceForView.paymentAt
+                          ? new Date(selectedInvoiceForView.paymentAt).toLocaleDateString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : selectedInvoiceForView.invDate || "-"}
+                      </span>
+                    </div>
+                    {selectedInvoiceForView.paymentNote && (
+                      <div className="col-span-2">
+                        <span className="text-slate-500 font-semibold block text-[10px] uppercase">Notes / Reference</span>
+                        <span className="font-medium text-slate-800 dark:text-slate-200">
+                          {selectedInvoiceForView.paymentNote}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <CashInvoicePreview
                 invoice={selectedInvoiceForView}
                 onPrint={() => printCashMemo(selectedInvoiceForView)}
@@ -1938,102 +2081,530 @@ export const NativeCashInvoice: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* RECORD PAYMENT MODAL */}
+      {/* RECORD PAYMENT MODAL (DC TRACKER PIXEL-PERFECT MATCH) */}
       <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
-        <DialogContent className="max-w-md p-5 bg-card border-border rounded-2xl shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-emerald-600" />
-              Record Cash / Payment
-            </DialogTitle>
+        <DialogContent 
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-4xl lg:max-w-5xl w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Record Payment Collection</DialogTitle>
+            <DialogDescription>
+              Record payment settlement for Cash Memo {payingInvoice?.invNumber}.
+            </DialogDescription>
           </DialogHeader>
 
+          {/* 1. TOP HEADER */}
+          <div className="bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200/80 dark:border-slate-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-3 pr-6">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200">
+                    Memo #{payingInvoice?.invNumber}
+                  </span>
+                  {payingInvoice?.dcNumber && (
+                    <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      DC #{payingInvoice.dcNumber}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Awaiting Settlement
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+                  Record Cash / Payment — {payingInvoice?.invNumber}
+                </h3>
+                <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-400 mt-1 flex-wrap">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                    <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    {payingInvoice?.clientName || "Customer Record"} {payingInvoice?.dcNumber ? `(DC #${payingInvoice.dcNumber})` : ""}
+                  </span>
+                  {payingInvoice?.clientMobile && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      Ph: {payingInvoice.clientMobile}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. BODY CONTENT (2-COLUMN RESPONSIVE LAYOUT) */}
           {payingInvoice && (
-            <div className="space-y-4 py-2">
-              <div className="p-3 bg-muted/40 rounded-xl border border-border text-xs space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Invoice:</span>
-                  <span className="font-bold font-mono">{payingInvoice.invNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Customer:</span>
-                  <span className="font-semibold">{payingInvoice.clientName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Expected:</span>
-                  <span className="font-bold font-mono">
-                    ₹
-                    {(
-                      payingInvoice.isHikedBill && payingInvoice.actualReceivable
-                        ? Number(payingInvoice.actualReceivable)
-                        : Number(payingInvoice.grandTotal)
-                    ).toLocaleString("en-IN")}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Already Paid:</span>
-                  <span className="font-bold font-mono text-emerald-600">
-                    ₹{(Number(payingInvoice.paymentReceived) || 0).toLocaleString("en-IN")}
-                  </span>
-                </div>
-              </div>
+            <div className="p-5 max-h-[78vh] overflow-y-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                {/* LEFT COLUMN: RECEIVABLE DETAILS & PAYMENT INPUTS */}
+                <div className={`${paymentMethod === "bank_transfer" ? "lg:col-span-5" : "lg:col-span-12 max-w-xl mx-auto w-full"} space-y-4`}>
+                  {/* Financial Receivable Banner */}
+                  {payingInvoice.isHikedBill && payingInvoice.actualReceivable ? (
+                    <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                          <Receipt className="w-3.5 h-3.5 text-amber-600" />
+                          Hiked Bill Settlement
+                        </span>
+                        <span className="text-[10px] bg-amber-200/70 dark:bg-amber-900/60 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
+                          Margin Deducted
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-amber-200/60 dark:border-amber-900/30">
+                        <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
+                          <span className="block text-[10px] text-slate-500 uppercase font-semibold">Printed Bill</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-300">
+                            ₹{Number(payingInvoice.grandTotal).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
+                          <span className="block text-[10px] text-amber-700 dark:text-amber-400 uppercase font-semibold">Hospital Cut</span>
+                          <span className="font-bold text-amber-800 dark:text-amber-300">
+                            -₹{(Number(payingInvoice.grandTotal) - Number(payingInvoice.actualReceivable)).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-900/30 text-center">
+                          <span className="block text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold">Net Due</span>
+                          <span className="font-black text-emerald-800 dark:text-emerald-300">
+                            ₹{Number(payingInvoice.actualReceivable).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/60 p-3.5 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Outstanding Receivable
+                        </span>
+                        <span className="text-xs text-slate-600 dark:text-slate-400">
+                          Total payment expected for this cash invoice
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono">
+                          ₹{Number(payingInvoice.grandTotal).toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
-              <div>
-                <Label className="text-xs font-semibold mb-1 block">Payment Amount (₹) *</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={paymentAmountInput}
-                  onChange={(e) => setPaymentAmountInput(e.target.value)}
-                  className="font-bold font-mono text-base h-10 rounded-md"
-                  placeholder="0.00"
-                />
-              </div>
+                  {/* Payment Mode Selector */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Payment Mode *
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod("cash")}
+                        className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                          paymentMethod === "cash"
+                            ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs"
+                            : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        <Banknote className={`w-4 h-4 shrink-0 ${paymentMethod === "cash" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`} />
+                        <span>Cash Payment</span>
+                        {paymentMethod === "cash" && <Check className="w-3.5 h-3.5 ml-auto text-emerald-600" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod("bank_transfer")}
+                        className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                          paymentMethod === "bank_transfer"
+                            ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
+                            : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        <Landmark className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
+                        <span>Bank Transfer / UPI</span>
+                        {paymentMethod === "bank_transfer" && <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />}
+                      </button>
+                    </div>
+                  </div>
 
-              <div>
-                <Label className="text-xs font-semibold mb-1 block">Payment Mode</Label>
-                <Select value={paymentModeInput} onValueChange={setPaymentModeInput}>
-                  <SelectTrigger className="h-9 text-xs rounded-md">
-                    <SelectValue placeholder="Select mode" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-md">
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="UPI / QR Code">UPI / QR Code</SelectItem>
-                    <SelectItem value="Bank Transfer">Bank Transfer (NEFT/IMPS)</SelectItem>
-                    <SelectItem value="Cheque">Cheque</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                  {/* Target Bank Account Selection (Only when Bank Transfer is active) */}
+                  {paymentMethod === "bank_transfer" && (
+                    <div className="space-y-1.5 pt-1">
+                      <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Select Target Bank Account:
+                      </Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {sortedBankAccounts.map((acc) => {
+                          const isSelected = selectedBankAccountId === acc.id;
+                          const accSuffix = acc.accountNumber ? acc.accountNumber.slice(-4) : (acc.accountName.match(/\d{4}/)?.[0] || "");
+                          const bankTitle = acc.bankName || acc.accountName.split("(")[0].trim();
+                          return (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              onClick={() => setSelectedBankAccountId(acc.id)}
+                              className={`flex flex-col items-center justify-center p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                isSelected
+                                  ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
+                                  : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                              }`}
+                            >
+                              <span className="font-bold flex items-center gap-1">
+                                <Building2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                {bankTitle}
+                              </span>
+                              {accSuffix && (
+                                <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                                  ({accSuffix})
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
-              <div>
-                <Label className="text-xs font-semibold mb-1 block">Notes / Reference (Optional)</Label>
-                <Input
-                  type="text"
-                  value={paymentNoteInput}
-                  onChange={(e) => setPaymentNoteInput(e.target.value)}
-                  className="text-xs h-9 rounded-md"
-                  placeholder="e.g. Received via GPay, handed by Dr. Sharma"
-                />
-              </div>
+                  {/* Cash Collector Selection (Only when Cash is selected) */}
+                  {paymentMethod === "cash" && (
+                    <div className="space-y-2.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                          <User className="w-3.5 h-3.5 text-emerald-600" />
+                          Who Collected the Cash? *
+                        </Label>
+                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-200 font-mono">
+                          ⚡ Cash In Hand Treasury
+                        </span>
+                      </div>
+                      <Input
+                        type="text"
+                        value={paymentCollectedBy}
+                        onChange={(e) => setPaymentCollectedBy(e.target.value)}
+                        placeholder="Select or type collector name..."
+                        className="h-10 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                      />
+                      {/* Quick Picks */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[11px] font-medium text-slate-400 mr-0.5">Quick:</span>
+                        {["Self", "Office", "Vinay", "Naresh", "Prashanth"].map((p) => {
+                          const isSelected = paymentCollectedBy.trim().toLowerCase() === p.toLowerCase();
+                          return (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setPaymentCollectedBy(p)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                isSelected
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
-              <DialogFooter className="pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setPaymentModalOpen(false)}
-                  className="h-9 text-xs font-semibold rounded-md"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleConfirmPayment}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold h-9 text-xs gap-1.5 rounded-md"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Confirm Payment
-                </Button>
-              </DialogFooter>
+                  {/* Amount Received & Remarks */}
+                  <div className="grid grid-cols-1 gap-3 pt-1">
+                    {/* Paid Amount */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="payment-amount" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Amount Received *
+                        </Label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const effDue = payingInvoice.isHikedBill && payingInvoice.actualReceivable ? Number(payingInvoice.actualReceivable) : Number(payingInvoice.grandTotal);
+                            const bal = Math.max(0, effDue - (Number(payingInvoice.paymentReceived) || 0));
+                            setPaymentAmountInput(String(bal));
+                          }}
+                          className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
+                        >
+                          Full Due
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">
+                          ₹
+                        </span>
+                        <Input
+                          id="payment-amount"
+                          type="number"
+                          value={paymentAmountInput}
+                          onChange={(e) => setPaymentAmountInput(e.target.value)}
+                          placeholder="0"
+                          className="pl-7 h-10 font-bold text-sm bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Payment Remarks */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="payment-remarks" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Notes / Ref <span className="font-normal text-slate-400">(Optional)</span>
+                      </Label>
+                      <Input
+                        id="payment-remarks"
+                        type="text"
+                        value={paymentRemarksInput}
+                        onChange={(e) => setPaymentRemarksInput(e.target.value)}
+                        placeholder={paymentMethod === "cash" ? "e.g. Received at clinic" : "e.g. UTR / NEFT Ref"}
+                        className="h-10 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* RIGHT COLUMN: BANK CREDIT LINKING & MATCHING PANEL (When Bank Transfer is active) */}
+                {paymentMethod === "bank_transfer" && (
+                  <div className="lg:col-span-7 bg-slate-50/80 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        Mandatory Bank Credit Link &amp; Match *
+                      </Label>
+                      <Badge variant="outline" className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200">
+                        {availableBankCredits.length} Statement Credits
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Select matching credit deposit from bank statement or select "Not Found" to link later:
+                    </p>
+
+                    {/* Executive Account Card Selector Tabs */}
+                    <div className="space-y-1 my-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Select Account Statement:</span>
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                        {/* 1. BANK ACCOUNTS TABS (1538 ALWAYS FIRST ON THE LEFT!) */}
+                        {sortedBankAccounts.map((acc) => {
+                          const isSelected = selectedBankAccountId === acc.id;
+                          const count = availableBankCredits.filter((t) => t.accountId === acc.id).length;
+                          const accSuffix = acc.accountNumber ? acc.accountNumber.slice(-4) : (acc.accountName.match(/\d{4}/)?.[0] || "");
+                          const is1538 = accSuffix === "1538" || acc.id.includes("1538");
+
+                          return (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              onClick={() => setSelectedBankAccountId(acc.id)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
+                                isSelected
+                                  ? is1538
+                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20"
+                                    : "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20"
+                                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                              }`}
+                            >
+                              <Building2 className="w-3.5 h-3.5" />
+                              <span>{acc.bankName || acc.accountName.split("(")[0].trim()}</span>
+                              {accSuffix && (
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                                  isSelected ? "bg-black/20 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                }`}>
+                                  ({accSuffix})
+                                </span>
+                              )}
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                                isSelected ? "bg-black/20 text-white" : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}>
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+
+                        {/* 2. ALL ACCOUNTS TAB */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBankAccountId("all")}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
+                            selectedBankAccountId === "all"
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                          }`}
+                        >
+                          <Landmark className="w-3.5 h-3.5" />
+                          <span>All Accounts</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                            selectedBankAccountId === "all" ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          }`}>
+                            {availableBankCredits.length}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {isLoadingBankCredits ? (
+                      <div className="p-4 bg-indigo-50/50 dark:bg-slate-900/60 rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/30">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Fetching live bank statement credits...</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {filteredBankCredits.map((tx) => {
+                          const isSelected = selectedCreditTxId === tx.id;
+                          const invAmount = payingInvoice.isHikedBill && payingInvoice.actualReceivable ? Number(payingInvoice.actualReceivable) : Number(payingInvoice.grandTotal);
+                          const isAmountMatch = Math.abs(tx.amount - invAmount) < 10;
+                          const clientName = (payingInvoice.clientName || "").toLowerCase().trim();
+                          const desc = (tx.description || "").toLowerCase();
+                          const isClientMatch = clientName.length > 2 && desc.includes(clientName);
+                          const isMatch = isAmountMatch || isClientMatch;
+
+                          return (
+                            <div
+                              key={tx.id}
+                              onClick={() => {
+                                setSelectedCreditTxId(tx.id);
+                                if (tx.amount) setPaymentAmountInput(String(tx.amount));
+                                if (tx.referenceNumber) setPaymentRemarksInput(tx.referenceNumber);
+                              }}
+                              className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                                isSelected
+                                  ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-500/20 shadow-xs"
+                                  : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>
+                                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-slate-800 dark:text-slate-100 block">
+                                      {tx.description || "Bank Credit Deposit"}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-mono mt-0.5">
+                                      {tx.date} {tx.time ? `• ${tx.time}` : ""} {tx.referenceNumber ? `• Ref: ${tx.referenceNumber}` : ""}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm font-mono block">
+                                      +₹{tx.amount.toLocaleString("en-IN")}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setViewingTxDetails(tx);
+                                      }}
+                                      className="p-1 rounded-md text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                      title="View Email & Verification Details"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                  {isMatch && (
+                                    <Badge className="text-[9px] px-1.5 py-0 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-0 font-bold">
+                                      🎯 Match Candidate
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* NOT FOUND OPTION AT LAST */}
+                        <div
+                          onClick={() => setSelectedCreditTxId("not_found")}
+                          className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                            selectedCreditTxId === "not_found"
+                              ? "border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-500/20 shadow-xs"
+                              : "border-slate-200 bg-slate-50 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedCreditTxId === "not_found" ? "border-amber-600 bg-amber-600 text-white" : "border-slate-300"}`}>
+                                {selectedCreditTxId === "not_found" && <Check className="w-3 h-3 stroke-[3]" />}
+                              </div>
+                              <div>
+                                <span className="font-bold text-amber-900 dark:text-amber-300 block flex items-center gap-1">
+                                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                  Not Found in Bank Statement Yet (Link Later)
+                                </span>
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                                  Statement update pending. You can link this later from Bank Treasury.
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
+
+          {/* 3. FOOTER ACTION BAR */}
+          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+            <Button 
+              variant="outline" 
+              onClick={() => setPaymentModalOpen(false)} 
+              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleConfirmPayment} 
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-10 px-5 text-xs font-bold gap-1.5 shadow-sm min-w-[150px]"
+            >
+              <Check className="h-4 w-4" />
+              <span>Confirm Payment</span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: EMAIL CONTENT */}
+      <Dialog open={Boolean(viewingTxDetails)} onOpenChange={(open) => !open && setViewingTxDetails(null)}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-5">
+          <DialogHeader>
+            <div className="flex items-center justify-between pr-6">
+              <DialogTitle className="text-sm font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Email Content</span>
+              </DialogTitle>
+              {viewingTxDetails && (
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                  +₹{viewingTxDetails.amount?.toLocaleString('en-IN')}
+                </span>
+              )}
+            </div>
+            {viewingTxDetails?.emailSubject && (
+              <DialogDescription className="text-xs font-semibold text-slate-700 dark:text-slate-300 pt-1 text-left">
+                Subject: {viewingTxDetails.emailSubject}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          {viewingTxDetails && (
+            <div className="space-y-3 pt-2">
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
+                {viewingTxDetails.rawEmailBody
+                  ? viewingTxDetails.rawEmailBody
+                      .replace(/<https?:\/\/[^>]+>/gi, '')
+                      .replace(/\n{3,}/g, '\n\n')
+                      .trim()
+                  : viewingTxDetails.rawAlert || viewingTxDetails.description}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setViewingTxDetails(null)}
+              className="h-8 text-xs rounded-xl border-slate-300"
+            >
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

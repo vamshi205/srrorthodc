@@ -54,7 +54,11 @@ import {
   Banknote,
   Landmark,
   RotateCcw,
+  Layers,
+  Mail,
+  ArrowDownLeft,
 } from "lucide-react";
+import { extractHdfcNarration } from "@/services/gmailConnectorService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
@@ -91,6 +95,7 @@ import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotification
 import { CollectPaymentsScroller } from "@/components/ortho/CollectPaymentsScroller";
 import { PersonnelSelect, TRANSPORT_MODES, getTransportMode, renderTransportIcon } from "@/components/ortho/PersonnelSelect";
 import { normalizePersonnelName, isDisallowedPersonnel, isTransportLogisticsName } from "@/lib/personnelStorage";
+import { fetchBankTransactionsFromFirestore, fetchBankAccountsFromFirestore, linkBankTransactionToCashInvoice, recordCashPaymentToCashInHand, type BankTransaction, type BankAccount } from "@/services/bankAccountFirebaseService";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -229,6 +234,42 @@ const SavedDcs = () => {
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer">("cash");
   const [paymentCollectedBy, setPaymentCollectedBy] = useState("");
   const [cashInvoices, setCashInvoices] = useState<CashInvoiceData[]>([]);
+  const [linkedBankTx, setLinkedBankTx] = useState<BankTransaction | null>(null);
+  const [availableBankCredits, setAvailableBankCredits] = useState<BankTransaction[]>([]);
+  const [viewingTxDetails, setViewingTxDetails] = useState<BankTransaction | null>(null);
+  const [bankAccountsList, setBankAccountsList] = useState<BankAccount[]>([]);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("all");
+  const [selectedCreditTxId, setSelectedCreditTxId] = useState<string>("not_found");
+  const [isLoadingBankCredits, setIsLoadingBankCredits] = useState(false);
+
+  const sortedBankAccounts = useMemo(() => {
+    const bankOnly = bankAccountsList.filter((a) => {
+      if (a.accountType === 'cash_in_hand' || a.id === 'acc_cash_in_hand') return false;
+      const name = `${a.bankName || ''} ${a.accountName || ''}`.toLowerCase();
+      if (name.includes('cash in hand') || name.includes('petty cash')) return false;
+      return true;
+    });
+
+    return bankOnly.sort((a, b) => {
+      const aIs1538 = Boolean((a.accountNumber && a.accountNumber.endsWith('1538')) || (a.id && a.id.includes('1538')));
+      const bIs1538 = Boolean((b.accountNumber && b.accountNumber.endsWith('1538')) || (b.id && b.id.includes('1538')));
+      if (aIs1538 && !bIs1538) return -1;
+      if (!aIs1538 && bIs1538) return 1;
+      return 0;
+    });
+  }, [bankAccountsList]);
+
+  const filteredBankCredits = useMemo(() => {
+    const cashAccIds = new Set(
+      bankAccountsList
+        .filter((a) => a.accountType === 'cash_in_hand' || a.id === 'acc_cash_in_hand' || (a.accountName || '').toLowerCase().includes('cash in hand'))
+        .map((a) => a.id)
+    );
+    const nonCashCredits = availableBankCredits.filter((tx) => !tx.accountId || !cashAccIds.has(tx.accountId));
+
+    if (selectedBankAccountId === "all") return nonCashCredits;
+    return nonCashCredits.filter((tx) => tx.accountId === selectedBankAccountId);
+  }, [availableBankCredits, selectedBankAccountId, bankAccountsList]);
 
   const activeViewingCashMemo = useMemo(() => {
     if (!viewingCashMemoRef) return null;
@@ -628,7 +669,76 @@ const SavedDcs = () => {
     setPaymentRemarksInput("");
     setPaymentMethod(dc.paymentMethod || "cash");
     setPaymentCollectedBy(dc.collectedBy || "");
+    setSelectedCreditTxId("not_found");
+    setSelectedBankAccountId("all");
   };
+
+  useEffect(() => {
+    if (!paymentDialog.open || paymentMethod !== 'bank_transfer') return;
+
+    let isMounted = true;
+    const loadUnlinkedCreditsAndAccounts = async () => {
+      setIsLoadingBankCredits(true);
+      try {
+        const [txs, accs] = await Promise.all([
+          fetchBankTransactionsFromFirestore(undefined, 300),
+          fetchBankAccountsFromFirestore(),
+        ]);
+        if (!isMounted) return;
+        setBankAccountsList(accs);
+
+        const unlinked = txs.filter((tx) => {
+          if (tx.type !== 'credit') return false;
+          if (tx.linkedInvoiceNumber || tx.linkedInvoiceId) return false;
+          const alreadyUsedByDc = savedDcs.some(d => d.status === 'completed' && d.utrNo && tx.referenceNumber && d.utrNo === tx.referenceNumber);
+          if (alreadyUsedByDc) return false;
+          return true;
+        });
+        setAvailableBankCredits(unlinked);
+
+        // Check for automatic best candidate match
+        const dcAmount = paymentDialog.dc?.cashAmount || paymentDialog.dc?.billedAmount || 0;
+        const dcHosp = (paymentDialog.dc?.hospitalName || '').toLowerCase().trim();
+        const cleanDcNo = (paymentDialog.dc?.dcNo || '').toLowerCase().trim();
+
+        const bestMatch = unlinked.find((tx) => {
+          const desc = (tx.description || '').toLowerCase();
+          const cust = (tx.linkedCustomerName || tx.linkedHospital || '').toLowerCase();
+          const ref = (tx.referenceNumber || '').toLowerCase();
+          const matchesHosp = dcHosp && (desc.includes(dcHosp) || cust.includes(dcHosp));
+          const matchesAmount = Math.abs(tx.amount - dcAmount) < 10;
+          const matchesDcNo = cleanDcNo && (desc.includes(cleanDcNo) || ref.includes(cleanDcNo));
+          return (matchesHosp && matchesAmount) || matchesDcNo;
+        });
+
+        // Find default HDFC 1538 account if present
+        const target1538Acc = accs.find(
+          (a) => (a.accountNumber && a.accountNumber.endsWith('1538')) || (a.id && a.id.includes('1538'))
+        );
+        const defaultAccId = target1538Acc ? target1538Acc.id : "all";
+
+        if (bestMatch) {
+          setSelectedCreditTxId(bestMatch.id);
+          if (bestMatch.accountId) {
+            setSelectedBankAccountId(bestMatch.accountId);
+          }
+          if (bestMatch.amount) {
+            setPaymentAmountInput(String(bestMatch.amount));
+          }
+        } else {
+          setSelectedCreditTxId("not_found");
+          setSelectedBankAccountId(defaultAccId);
+        }
+      } catch (err) {
+        console.error("Error fetching unlinked bank credits for payment modal:", err);
+      } finally {
+        if (isMounted) setIsLoadingBankCredits(false);
+      }
+    };
+
+    loadUnlinkedCreditsAndAccounts();
+    return () => { isMounted = false; };
+  }, [paymentDialog.open, paymentMethod, paymentDialog.dc, savedDcs]);
 
   const handleQuickRecordPayment = async () => {
     if (!paymentDialog.dc) return;
@@ -644,11 +754,17 @@ const SavedDcs = () => {
       return;
     }
 
+    const matchedBankTx = paymentMethod === "bank_transfer" && selectedCreditTxId !== "not_found"
+      ? availableBankCredits.find((t) => t.id === selectedCreditTxId)
+      : null;
+
     const hasHiked = dc.billedAmount && dc.billedAmount > paidAmount;
     const margin = hasHiked ? Math.round((dc.billedAmount! - paidAmount) * 100) / 100 : dc.hospitalMargin;
     const methodLabel = paymentMethod === "cash" ? "Cash" : "Bank Transfer";
     const collectedInfo = paymentMethod === "cash" && paymentCollectedBy.trim()
       ? ` • Collected by ${paymentCollectedBy.trim()}`
+      : matchedBankTx?.referenceNumber
+      ? ` • Linked to Ref: ${matchedBankTx.referenceNumber}`
       : "";
     const defaultRemark = hasHiked
       ? `Paid ₹${paidAmount.toLocaleString('en-IN')} via ${methodLabel}${collectedInfo} (Hiked Bill ₹${dc.billedAmount!.toLocaleString('en-IN')}, Hospital Cut ₹${margin!.toLocaleString('en-IN')})`
@@ -660,6 +776,11 @@ const SavedDcs = () => {
     setIsActionLoading(true);
     try {
       setLoadingDcIds(prev => new Set(prev).add(dc.id));
+
+      const bankAccountId = matchedBankTx?.accountId;
+      const bankName = matchedBankTx?.description || "Bank Account";
+      const utrNo = matchedBankTx?.referenceNumber || matchedBankTx?.id;
+
       await transitionSavedDc(dc.id, {
         toStatus: "completed",
         action: "MOVE_CASH_TO_COMPLETED",
@@ -670,6 +791,11 @@ const SavedDcs = () => {
           collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
           paidAt: new Date().toISOString(),
           cashRemarks: finalRemarks,
+          ...(matchedBankTx ? {
+            bankAccountId,
+            bankName,
+            utrNo,
+          } : {})
         },
         meta: {
           paidAt: new Date().toISOString(),
@@ -679,8 +805,34 @@ const SavedDcs = () => {
           billedAmount: dc.billedAmount,
           hospitalMargin: margin,
           remarks: finalRemarks,
+          ...(matchedBankTx ? { bankAccountId, utrNo } : {})
         }
       });
+
+      // Link to Bank Transaction if matched
+      if (matchedBankTx) {
+        try {
+          const mockInvoice: CashInvoiceData = {
+            invNumber: dc.invoiceRef || `DC #${dc.dcNo}`,
+            dcNumber: dc.dcNo,
+            clientName: dc.hospitalName,
+            grandTotal: paidAmount,
+            status: 'Paid',
+            paymentReceived: paidAmount,
+            savedAt: Date.now(),
+          };
+          await linkBankTransactionToCashInvoice(matchedBankTx.id, mockInvoice, true);
+        } catch (e) {
+          console.error("Failed to link bank transaction on DC pay modal:", e);
+        }
+      } else if (paymentMethod === "cash") {
+        try {
+          await recordCashPaymentToCashInHand(dc, paidAmount, paymentCollectedBy, finalRemarks);
+        } catch (e) {
+          console.error("Failed to record cash transaction in Cash In Hand account:", e);
+        }
+      }
+
       // Sync payment status to Firestore Cash Invoice
       if (dc.invoiceRef || dc.dcNo) {
         try {
@@ -691,12 +843,14 @@ const SavedDcs = () => {
           );
           if (match) {
             match.paymentReceived = paidAmount;
+            match.status = 'Paid';
             await saveCashInvoiceToFirestore(match);
           }
         } catch (e) {
           console.error("Failed to sync payment status to Firestore cash invoice:", e);
         }
       }
+
       setSavedDcs(prev => prev.map(d => d.id === dc.id ? { 
         ...d, 
         status: "completed", 
@@ -705,16 +859,24 @@ const SavedDcs = () => {
         collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
         paidAt: new Date().toISOString(),
         cashRemarks: finalRemarks,
+        ...(matchedBankTx ? { bankAccountId, bankName, utrNo } : {})
       } : d));
+
       setSelectedDcId(null);
       setActiveQueue("completed");
       setSearchParams({ queue: "completed" });
-      toast({ title: "Payment Recorded", description: `DC ${dc.dcNo} Cash Memo marked as PAID via ${methodLabel} and moved to Completed Queue.` });
+      
+      const successDesc = matchedBankTx 
+        ? `DC #${dc.dcNo} linked to Bank Credit (Ref: ${utrNo}) & moved to Completed!` 
+        : `DC #${dc.dcNo} marked as Bank Transfer (Link later from Bank Accounts) & moved to Completed!`;
+
+      toast({ title: "Payment Recorded", description: successDesc });
       setPaymentDialog({ open: false, dc: null });
       setPaymentAmountInput("");
       setPaymentRemarksInput("");
       setPaymentCollectedBy("");
       setPaymentMethod("cash");
+      setSelectedCreditTxId("not_found");
     } catch (err) {
       toast({ title: "Payment Failed", description: err instanceof Error ? err.message : "Failed to record payment.", variant: "destructive" });
     } finally {
@@ -766,6 +928,35 @@ const SavedDcs = () => {
     if (!selectedDcId) return null;
     return normalizedDcs.find((dc) => dc.id === selectedDcId) ?? null;
   }, [normalizedDcs, selectedDcId]);
+
+  useEffect(() => {
+    if (!detailsDialogOpen || !selectedDc) {
+      setLinkedBankTx(null);
+      return;
+    }
+
+    const loadLinkedTx = async () => {
+      try {
+        const txs = await fetchBankTransactionsFromFirestore(undefined, 250);
+        const dcNoClean = selectedDc.dcNo.toLowerCase().trim();
+        const invRefClean = (selectedDc.invoiceRef || '').toLowerCase().trim();
+
+        const match = txs.find((tx) => {
+          const linkedInv = (tx.linkedInvoiceNumber || tx.linkedInvoiceId || '').toLowerCase().trim();
+          if (!linkedInv) return false;
+          if (linkedInv === `dc #${dcNoClean}` || linkedInv === `dc#${dcNoClean}` || linkedInv === dcNoClean) return true;
+          if (invRefClean && (linkedInv === invRefClean || linkedInv === invRefClean.replace(/\//g, '_'))) return true;
+          return false;
+        });
+
+        setLinkedBankTx(match || null);
+      } catch (err) {
+        console.error("Error loading linked bank transaction for DC:", err);
+      }
+    };
+
+    loadLinkedTx();
+  }, [detailsDialogOpen, selectedDc]);
 
   const selectedIsTaxInvoice = useMemo(() => {
     if (!selectedDc?.invoiceRef) return false;
@@ -4128,15 +4319,19 @@ const SavedDcs = () => {
 
       {/* Details Modal */}
       <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto p-4 sm:p-5">
+        <DialogContent className="sm:max-w-5xl lg:max-w-6xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-blue-700" />
               {selectedDc ? `DC ${selectedDc.dcNo}` : "DC Details"}
               {selectedDc && (
-                <Badge className={`${getStatusBadgeClass(selectedDc.status)} flex items-center gap-1 text-xs font-medium border px-2 py-0.5`}>
+                <Badge className={`${getStatusBadgeClass(selectedDc.status)} flex items-center gap-1 text-xs font-bold border px-2.5 py-0.5`}>
                   {getStatusIcon(selectedDc.status)}
-                  {selectedDc.status.toUpperCase()}
+                  {selectedDc.status === 'completed'
+                    ? (selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '⚡ PAYMENT LINKED & SETTLED' : '✅ PAID (NOT LINKED TO BANK)')
+                    : selectedDc.status === 'cash'
+                    ? '⚡ AWAITING PAYMENT (CASH QUEUE)'
+                    : selectedDc.status.toUpperCase()}
                 </Badge>
               )}
             </DialogTitle>
@@ -4246,54 +4441,150 @@ const SavedDcs = () => {
                 </TabsList>
 
                 <TabsContent value="overview" className="mt-3 space-y-3">
+                  {/* Bank & Payment Settlement Transaction Details (Only when DC is Settled/Completed) */}
+                  {(selectedDc.status === "completed" || Boolean(selectedDc.paidAt || linkedBankTx)) && (
+                    <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-emerald-50/20 dark:from-emerald-950/40 dark:to-slate-900 p-3.5 space-y-2.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-lg bg-emerald-700 text-white shadow-xs">
+                            <Landmark className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                              <span>Payment &amp; Bank Transaction Details</span>
+                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[10px] py-0 px-1.5 font-bold border border-emerald-300">
+                                {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx ? '🏦 Bank Transfer / UPI' : '💵 Cash Received'}
+                              </Badge>
+                            </h4>
+                            <p className="text-[11px] text-slate-500">Reconciled transaction record for DC #{selectedDc.dcNo}</p>
+                          </div>
+                        </div>
+                        {(selectedDc.cashAmount || linkedBankTx?.amount) ? (
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Settled Amount</span>
+                            <span className="text-base font-black font-mono text-emerald-700 dark:text-emerald-400">
+                              ₹{(selectedDc.cashAmount || linkedBankTx?.amount || 0).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2.5 border-t border-emerald-200/90 dark:border-emerald-800/80 text-xs">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-slate-500 block">Bank Account</span>
+                          <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1 mt-0.5">
+                            <Building2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                            {selectedDc.bankName || 'Operating Account'} {selectedDc.accountNumber ? `(${selectedDc.accountNumber})` : ''}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-slate-500 block">UTR / Ref #</span>
+                          {selectedDc.utrNo || linkedBankTx?.referenceNumber ? (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <code className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 text-[11px]">
+                                {selectedDc.utrNo || linkedBankTx?.referenceNumber}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const val = selectedDc.utrNo || linkedBankTx?.referenceNumber || '';
+                                  navigator.clipboard.writeText(val);
+                                  toast({ title: 'Copied UTR #', description: val });
+                                }}
+                                className="text-slate-400 hover:text-slate-700 p-0.5 rounded cursor-pointer"
+                                title="Copy UTR Number"
+                              >
+                                <Copy className="w-3.5 h-3.5 text-teal-700" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 mt-0.5 block">N/A</span>
+                          )}
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-slate-500 block">Settlement Date</span>
+                          <span className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1 mt-0.5">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            {selectedDc.paidAt ? formatDate(selectedDc.paidAt) : linkedBankTx?.date ? `${linkedBankTx.date} ${linkedBankTx.time || ''}` : formatDate(selectedDc.savedAt)}
+                          </span>
+                        </div>
+
+                        {selectedDc.invoiceRef && (
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-slate-500 block">Invoice / Memo Ref</span>
+                            <span className="font-mono font-bold text-teal-800 dark:text-teal-300 mt-0.5 block">
+                              {selectedDc.invoiceRef}
+                            </span>
+                          </div>
+                        )}
+
+                        {linkedBankTx?.description && (
+                          <div className="sm:col-span-2">
+                            <span className="text-[10px] font-bold uppercase text-slate-500 block">Bank Narration</span>
+                            <span className="font-medium text-slate-800 dark:text-slate-200 mt-0.5 block truncate" title={linkedBankTx.description}>
+                              {linkedBankTx.description}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Tracking + actions (courier-tracking style) */}
                   <div className="rounded-md border border-slate-200 bg-white p-2.5 sm:p-3">
                     <div className="space-y-4">
                       {/* Animated Workflow Progress */}
                       <div className="min-w-0">
                         <div className="flex items-center justify-between mb-3">
-                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Workflow</span>
-                          <span className="text-[11px] font-medium text-slate-400">Step-by-step lifecycle</span>
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Workflow Lifecycle</span>
+                          <span className="text-[11px] font-medium text-slate-400">Step-by-step audit trail</span>
                         </div>
                         {(() => {
                           const isCancelled = selectedDc.status === "cancelled";
                           const isPurchase = selectedDc.isPurchase;
                           const isReturned = selectedDc.status === "returned" || selectedDc.status === "completed" || selectedDc.status === "cash";
                           const isCompleted = selectedDc.status === "completed";
+                          const isBankLinked = Boolean(selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo);
+
+                          const isAwaitingPayment = selectedDc.status === "cash" || selectedDc.status === "pending" || selectedDc.status === "returned";
+                          const isPaidNotLinked = isCompleted && !isBankLinked;
+                          const isPaidAndLinked = isCompleted && isBankLinked;
 
                           const Step = ({
                             num, label, sublabel, state
                           }: {
                             num: number; label: string; sublabel: string; state: "done" | "active" | "pending" | "cancelled"
                           }) => (
-                            <div className="flex flex-col items-center gap-1.5 flex-1 min-w-0 z-10">
+                            <div className="flex flex-col items-center gap-1 flex-1 min-w-0 z-10">
                               <div className="relative flex items-center justify-center">
                                 {state === "active" && (
-                                  <div className="absolute -inset-1 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+                                  <div className="absolute -inset-1 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
                                 )}
                                 <div className={`
-                                  relative h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold border-2 shrink-0 transition-colors
+                                  relative h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold border-2 shrink-0 transition-all
                                   ${state === "done" ? "bg-emerald-600 border-emerald-600 text-white shadow-xs" :
-                                    state === "active" ? "bg-blue-50 border-blue-200 text-blue-700 font-extrabold shadow-xs" :
+                                    state === "active" ? "bg-amber-500 border-amber-500 text-white font-extrabold shadow-xs" :
                                     state === "cancelled" ? "bg-red-100 border-red-500 text-red-600" :
                                     "bg-slate-50 border-slate-200 text-slate-400"}
                                 `}>
                                   {state === "done" ? <Check className="h-4 w-4 stroke-[2.5]" /> : state === "cancelled" ? "✕" : num}
                                 </div>
                               </div>
-                              <div className={`text-[11px] font-semibold text-center leading-tight
-                                ${state === "done" ? "text-emerald-700" :
-                                  state === "active" ? "text-blue-700 font-bold" :
+                              <div className={`text-[11px] font-bold text-center leading-tight mt-1
+                                ${state === "done" ? "text-emerald-700 dark:text-emerald-400" :
+                                  state === "active" ? "text-amber-700 dark:text-amber-300 font-extrabold" :
                                   state === "cancelled" ? "text-red-600" :
                                   "text-slate-400"}
                               `}>{label}</div>
-                              <div className="text-[10px] text-slate-400 text-center leading-tight truncate w-full px-1">{sublabel}</div>
+                              <div className="text-[10px] text-slate-400 text-center leading-tight truncate w-full px-0.5">{sublabel}</div>
                             </div>
                           );
 
-                          const Line = ({ done }: { done: boolean; active?: boolean }) => (
-                            <div className={`h-0.5 flex-1 rounded-full -mt-6 shrink-0 transition-colors duration-300 ${
-                              done ? "bg-emerald-500" : "bg-slate-200"
+                          const Line = ({ done }: { done: boolean }) => (
+                            <div className={`h-0.5 flex-1 rounded-full -mt-7 shrink-0 transition-colors duration-300 ${
+                              done ? "bg-emerald-500" : "bg-slate-200 dark:bg-slate-700"
                             }`} />
                           );
 
@@ -4305,31 +4596,41 @@ const SavedDcs = () => {
                             </div>
                           );
 
-                          if (isPurchase) return (
-                            <div className="flex items-center gap-1">
-                              <Step num={1} label="Created" sublabel={formatDate(getDisplayDate(selectedDc))} state="done" />
-                              <Line done={true} />
-                              <Step num={2} label="Purchased" sublabel="Direct sale" state={isCompleted ? "done" : "active"} />
-                              <Line done={isCompleted} />
-                              {selectedDc.status === "cash" ? (
-                                <Step num={3} label="Awaiting Payment" sublabel={selectedDc.invoiceRef || "Unpaid"} state="active" />
-                              ) : (
-                                <Step num={3} label="Invoiced" sublabel={selectedDc.invoiceRef || "Pending"} state={isCompleted ? "done" : "pending"} />
-                              )}
-                            </div>
-                          );
-
                           return (
                             <div className="flex items-center gap-1">
+                              {/* Step 1: Created */}
                               <Step num={1} label="Created" sublabel={formatDate(getDisplayDate(selectedDc))} state="done" />
                               <Line done={isReturned} />
-                              <Step num={2} label="Returned" sublabel={selectedDc.returnedAt ? formatDate(selectedDc.returnedAt) : "Pending"} state={isReturned ? "done" : "active"} />
+
+                              {/* Step 2: Returned / Purchased */}
+                              <Step num={2} label={isPurchase ? "Purchased" : "Returned"} sublabel={selectedDc.returnedAt ? formatDate(selectedDc.returnedAt) : isPurchase ? "Direct Sale" : "Pending"} state={isReturned ? "done" : "active"} />
+                              <Line done={!isAwaitingPayment} />
+
+                              {/* Step 3: Awaiting Payment */}
+                              <Step
+                                num={3}
+                                label="Awaiting Payment"
+                                sublabel={isAwaitingPayment ? `Due ₹${(selectedDc.cashAmount || 0).toLocaleString('en-IN')}` : "Passed"}
+                                state={isAwaitingPayment ? "active" : "done"}
+                              />
                               <Line done={isCompleted} />
-                              {selectedDc.status === "cash" ? (
-                                <Step num={3} label="Awaiting Payment" sublabel={selectedDc.invoiceRef || "Unpaid"} state="active" />
-                              ) : (
-                                <Step num={3} label={selectedIsCashMemo ? "Cash Done" : "Invoiced"} sublabel={selectedDc.invoiceRef || "Pending"} state={isCompleted ? "done" : "pending"} />
-                              )}
+
+                              {/* Step 4: Paid but not linked */}
+                              <Step
+                                num={4}
+                                label="Paid (Not Linked)"
+                                sublabel={isPaidNotLinked ? "Cash Collected" : isPaidAndLinked ? "Passed" : "Pending"}
+                                state={isPaidNotLinked ? "active" : isPaidAndLinked ? "done" : "pending"}
+                              />
+                              <Line done={isPaidAndLinked} />
+
+                              {/* Step 5: Paid and linked and settled */}
+                              <Step
+                                num={5}
+                                label="Paid & Linked & Settled"
+                                sublabel={isPaidAndLinked ? (selectedDc.utrNo || linkedBankTx?.referenceNumber ? `Ref: ${selectedDc.utrNo || linkedBankTx?.referenceNumber}` : "Bank Settled") : "Bank Match"}
+                                state={isPaidAndLinked ? "done" : "pending"}
+                              />
                             </div>
                           );
                         })()}
@@ -4347,8 +4648,9 @@ const SavedDcs = () => {
                             </span>
                           </div>
                           {selectedDc.status === "completed" ? (
-                            <Badge variant="outline" className="text-[10px] font-medium border-emerald-200 text-emerald-700 bg-emerald-50 gap-1 py-0 h-5">
-                              <Lock className="h-2.5 w-2.5" /> Case Settled
+                            <Badge variant="outline" className="text-[10px] font-bold border-emerald-300 text-emerald-800 bg-emerald-100 gap-1 py-0.5 px-2">
+                              <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                              {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '⚡ Payment Linked & Settled' : '✅ Payment Settled & Completed'}
                             </Badge>
                           ) : selectedDc.status === "cash" ? (
                             <Badge variant="outline" className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50 gap-1 py-0 h-5">
@@ -4537,21 +4839,24 @@ const SavedDcs = () => {
                         )}
 
                         {/* State: Invoiced or Cash Settled (Completed) */}
-                        {selectedDc.status !== "cash" && selectedDc.invoiceRef && (
-                          <div className="rounded-lg border border-emerald-200/80 bg-emerald-50/30 p-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                                <CheckCircle2 className="h-4 w-4" />
+                        {(selectedDc.status === "completed" || (selectedDc.status !== "cash" && selectedDc.invoiceRef)) && (
+                          <div className="rounded-xl border border-emerald-300/90 bg-emerald-50/70 dark:bg-emerald-950/40 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-2xs">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-9 w-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                <CheckCircle2 className="h-5 w-5" />
                               </div>
                               <div>
-                                <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                                  {selectedIsTaxInvoice ? "GoGSTBill Tax Invoice" : "Cash Memo"} Linked:
-                                  <span className="font-mono text-emerald-800 bg-emerald-100/80 px-1.5 py-0.5 rounded text-[11px]">
-                                    {selectedDc.invoiceRef}
-                                  </span>
+                                <div className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-2 flex-wrap">
+                                  <span>{selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '⚡ Bank Payment Linked & Settled' : '✅ Payment Settled & Case Closed'}</span>
+                                  <Badge className="bg-emerald-700 text-white text-[10px] font-bold py-0.5 px-2">
+                                    SETTLED
+                                  </Badge>
                                 </div>
-                                <p className="text-[11px] text-slate-500">
-                                  This delivery challan is settled and locked.
+                                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                                  {selectedDc.invoiceRef ? `${selectedIsTaxInvoice ? "Tax Invoice" : "Cash Memo"}: ${selectedDc.invoiceRef} • ` : ''}
+                                  {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo
+                                    ? `Reconciled with Bank Deposit (UTR: ${selectedDc.utrNo || linkedBankTx?.referenceNumber || 'Verified'})`
+                                    : `Cash payment settled for ₹${((selectedDc as any).cashAmount || 0).toLocaleString('en-IN')}`}
                                 </p>
                               </div>
                             </div>
@@ -4639,400 +4944,254 @@ const SavedDcs = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    {/* Vertical Activity Timeline */}
-                    <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="text-xs font-semibold text-slate-700">Activity Timeline</div>
-                        <Badge variant="outline" className="text-[10px] text-slate-500 font-mono">
-                          {(selectedDc.history || []).length || 1} step{((selectedDc.history || []).length || 1) > 1 ? "s" : ""}
-                        </Badge>
-                      </div>
-                      <div className="relative pl-5 space-y-4">
-                        {(selectedDc.history && selectedDc.history.length > 0) ? (
-                          selectedDc.history.map((h, idx) => {
-                            if (h.action === "CREATED" || h.action === "PURCHASE") {
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-slate-800">DC Created</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  {selectedDc.deliveredBy && (
-                                    <div className="text-[10px] text-slate-600 mt-0.5">
-                                      Delivered by: <span className="font-medium text-slate-800">{selectedDc.deliveredBy}</span>
-                                    </div>
-                                  )}
-                                  {selectedDc.receivedBy && (
-                                    <div className="text-[10px] text-slate-600">
-                                      Received by: <span className="font-medium text-slate-800">{selectedDc.receivedBy}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            }
-
-                            if (h.action === "MARK_RETURNED") {
-                              const retPerson = (h.meta?.returnedBy as string) || (h.meta?.cleared as any)?.returnedBy || selectedDc.returnedBy;
-                              const retRemarks = (h.meta?.returnedRemarks as string) || (h.meta?.cleared as any)?.returnedRemarks;
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-teal-600 border-2 border-white ring-1 ring-teal-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-slate-800">Returned from Hospital</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  {retPerson && (
-                                    <div className="text-[10px] text-slate-600 mt-0.5">
-                                      Returned by: <span className="font-medium text-slate-800">{retPerson}</span>
-                                    </div>
-                                  )}
-                                  {retRemarks && (
-                                    <div className="text-[10px] text-slate-500 italic mt-0.5">"{retRemarks}"</div>
-                                  )}
-                                </div>
-                              );
-                            }
-
-                            if (h.action === "MOVE_BACK_TO_PENDING") {
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-amber-500 border-2 border-white ring-1 ring-amber-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-amber-800">Moved Back to Pending</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  <div className="text-[10px] text-slate-600 mt-0.5">
-                                    Return status cancelled • Restored to Pending queue
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            if (h.action === "MOVE_TO_CASH") {
-                              const cashAmt = (h.meta?.cashAmount as number) || (h.meta?.paidAmount as number);
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-slate-800">Moved to Cash Queue</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  {cashAmt ? (
-                                    <div className="text-[10px] text-slate-600 mt-0.5">
-                                      Expected Cash: <span className="font-bold text-emerald-700">₹{cashAmt.toLocaleString("en-IN")}</span>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              );
-                            }
-
-                            if (h.action === "MOVE_BACK_TO_RETURNED") {
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-teal-600 border-2 border-white ring-1 ring-teal-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-teal-800">Moved Back to Returned</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  <div className="text-[10px] text-slate-600 mt-0.5">
-                                    Removed from invoice/cash • Restored to Returned queue
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            if (h.action === "LINK_INVOICE") {
-                              const invRef = (h.meta?.invoiceRef as string) || selectedDc.invoiceRef;
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-green-600 border-2 border-white ring-1 ring-green-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-slate-800">Tax Invoice Linked</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  {invRef && (
-                                    <div className="text-[10px] text-slate-600 mt-0.5">
-                                      Invoice Ref: <span className="font-mono font-medium text-slate-800">{invRef}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            }
-
-                            if (h.action === "MOVE_CASH_TO_COMPLETED") {
-                              const method = (h.meta?.paymentMethod as string) || selectedDc.paymentMethod || "cash";
-                              const collector = (h.meta?.collectedBy as string) || selectedDc.collectedBy;
-                              const paid = (h.meta?.paidAmount as number) || (h.meta?.cashAmount as number) || selectedDc.cashAmount;
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-emerald-600 border-2 border-white ring-1 ring-emerald-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-emerald-800">
-                                    Payment Recorded & Settled
-                                  </div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                    {method === "cash" ? (
-                                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
-                                        <Banknote className="h-3 w-3" /> Cash
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-1 font-semibold text-indigo-700">
-                                        <Landmark className="h-3 w-3" /> Bank Transfer / UPI
-                                      </span>
-                                    )}
-                                    {collector && <span>• Collected by <strong className="text-slate-800">{collector}</strong></span>}
-                                    {paid ? <span>• Paid: <strong className="text-emerald-700">₹{paid.toLocaleString("en-IN")}</strong></span> : null}
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            if (h.action === "CANCEL_CASE") {
-                              const reason = (h.meta?.cancelledRemarks as string) || selectedDc.cancelledRemarks;
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-white ring-1 ring-red-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-red-700">Case Cancelled</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  {reason && (
-                                    <div className="text-[10px] text-slate-600 mt-0.5 italic">Reason: {reason}</div>
-                                  )}
-                                </div>
-                              );
-                            }
-
-                            if (h.action === "RESTORE_FROM_CANCELLED") {
-                              return (
-                                <div key={`${h.at}-${idx}`} className="relative">
-                                  <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-amber-500 border-2 border-white ring-1 ring-amber-200 shadow-sm" />
-                                  <div className="text-xs font-semibold text-amber-800">Restored from Cancelled</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                                  <div className="text-[10px] text-slate-600 mt-0.5">Cancellation revoked • Restored to Pending queue</div>
-                                </div>
-                              );
-                            }
-
-                            return (
-                              <div key={`${h.at}-${idx}`} className="relative">
-                                <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-slate-500 border-2 border-white ring-1 ring-slate-200 shadow-sm" />
-                                <div className="text-xs font-semibold text-slate-800">{h.action.replace(/_/g, " ")}</div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(h.at)}</div>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <>
-                            <div className="relative">
-                              <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-blue-600 border-2 border-white ring-1 ring-blue-200 shadow-sm" />
-                              <div className="text-xs font-semibold text-slate-800">DC Created</div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(selectedDc.savedAt)}</div>
-                            </div>
-                            {selectedDc.status === "pending" && (
-                              <div className="relative">
-                                <span className="absolute -left-5 top-0.5 h-3 w-3 rounded-full bg-white border-2 border-amber-400 shadow-sm" />
-                                <div className="text-xs font-semibold text-amber-700">Pending Return</div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">Awaiting return from hospital</div>
-                              </div>
-                            )}
-                          </>
-                        )}
-
-                        {/* Current pending indicator if active and ended on move back to pending */}
-                        {selectedDc.status === "pending" && selectedDc.history && selectedDc.history.length > 0 && selectedDc.history[selectedDc.history.length - 1].action === "MOVE_BACK_TO_PENDING" && (
-                          <div className="relative">
-                            <span className="absolute -left-5 top-0.5 flex h-3 w-3 items-center justify-center">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 border border-white"></span>
-                            </span>
-                            <div className="text-xs font-bold text-amber-800">Currently in Pending Queue</div>
-                            <div className="text-[10px] text-slate-500 mt-0.5">Awaiting fresh return from hospital</div>
-                          </div>
-                        )}
-
-                        {/* Current cash indicator if active in cash queue */}
-                        {selectedDc.status === "cash" && (
-                          <div className="relative">
-                            <span className="absolute -left-5 top-0.5 flex h-3 w-3 items-center justify-center">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500 border border-white"></span>
-                            </span>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-xs font-bold text-amber-800">Awaiting Payment</span>
-                              <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-300 uppercase">
-                                UNPAID
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-slate-600 mt-0.5">
-                              Pending in Cash Queue • Aging: {getCashMemoAgingDays(selectedDc)} day{getCashMemoAgingDays(selectedDc) === 1 ? '' : 's'}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
+                    {/* Optional Cash Memo / Tax Invoice Card in Overview */}
                     {selectedDc.invoiceRef && (
-                    <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-2 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {selectedIsTaxInvoice ? (
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 mt-3">
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {selectedIsTaxInvoice ? (
+                              <>
+                                <FileText className="h-4 w-4 text-purple-600" />
+                                Tax Invoice Details
+                              </>
+                            ) : (
+                              <>
+                                <Receipt className="h-4 w-4 text-emerald-600" />
+                                Cash Memo Details
+                              </>
+                            )}
+                          </div>
+                          {selectedDc.status === "cash" && (
+                            <Badge variant="outline" className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50">
+                              Awaiting Payment
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="space-y-2 text-xs">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-500">
+                              {selectedIsTaxInvoice ? "Tax Invoice No" : "Cash Memo No"}
+                            </span>
+                            <span className="font-semibold font-mono text-slate-800 dark:text-slate-200">{selectedDc.invoiceRef || "-"}</span>
+                          </div>
+                          {selectedIsTaxInvoice && (
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-500">GoGSTBill Link</span>
+                              {selectedDc.invoiceUrl ? (
+                                <a
+                                  href={selectedDc.invoiceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs truncate max-w-[200px]"
+                                  title={selectedDc.invoiceUrl}
+                                >
+                                  <span>Open Invoice</span>
+                                  <ExternalLink className="h-3 w-3 shrink-0" />
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    openActionDialog("invoice", selectedDc);
+                                  }}
+                                  className="text-xs text-purple-700 hover:text-purple-900 font-semibold underline cursor-pointer"
+                                >
+                                  + Attach Link
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {!selectedIsTaxInvoice && (
                             <>
-                              <FileText className="h-4 w-4 text-purple-600" />
-                              Tax Invoice
-                            </>
-                          ) : (
-                            <>
-                              <Receipt className="h-4 w-4 text-slate-600" />
-                              Cash Memo Details
+                              {Boolean((selectedDc as any).billedAmount && (selectedDc as any).billedAmount > ((selectedDc as any).cashAmount || 0)) && (
+                                <>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="text-slate-500">Printed Bill (Hiked)</span>
+                                    <span className="font-semibold text-slate-600 line-through">
+                                      ₹{(selectedDc as any).billedAmount.toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="text-amber-700 font-medium">Hospital Cut / Margin</span>
+                                    <span className="font-bold text-amber-700">
+                                      - ₹{((selectedDc as any).hospitalMargin || ((selectedDc as any).billedAmount - ((selectedDc as any).cashAmount || 0))).toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                </>
+                              )}
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-slate-500">
+                                  {selectedDc.status === "cash" ? "Net Cash Due" : ((selectedDc as any).billedAmount ? "Our Net Cash" : "Cash Amount")}
+                                </span>
+                                <span className={`font-bold ${selectedDc.status === "cash" ? "text-amber-800 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-400"}`}>
+                                  {typeof (selectedDc as any).cashAmount === "number"
+                                    ? `₹${(selectedDc as any).cashAmount.toLocaleString('en-IN')}`
+                                    : "-"}
+                                  {selectedDc.status === "cash" ? " (Unpaid)" : ""}
+                                </span>
+                              </div>
+                              {selectedDc.status !== "cash" && selectedDc.paymentMethod && (
+                                <div className="flex items-center justify-between gap-3 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
+                                  <span className="text-slate-500">Payment Mode</span>
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                    {selectedDc.paymentMethod === "cash" ? (
+                                      <>
+                                        <Banknote className="h-3.5 w-3.5 text-emerald-600" />
+                                        Cash {selectedDc.collectedBy ? `(${selectedDc.collectedBy})` : ""}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Landmark className="h-3.5 w-3.5 text-indigo-600" />
+                                        Bank Transfer / UPI
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+                              {selectedDc.status === "cash" && (
+                                <Button
+                                  size="sm"
+                                  className="mt-2 h-8 w-full text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 rounded-xl shadow-xs"
+                                  onClick={() => openPaymentDialog(selectedDc)}
+                                >
+                                  <Wallet className="h-3.5 w-3.5" /> Mark as Paid (Collect Payment)
+                                </Button>
+                              )}
                             </>
                           )}
                         </div>
-                        {selectedDc.status === "cash" && (
-                          <Badge variant="outline" className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50">
-                            Awaiting Payment
-                          </Badge>
-                        )}
                       </div>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-500">
-                            {selectedIsTaxInvoice ? "Tax Invoice No" : "Cash Memo No"}
-                          </span>
-                          <span className="font-medium font-mono text-slate-800">{selectedDc.invoiceRef || "-"}</span>
-                        </div>
-                        {selectedIsTaxInvoice && (
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">GoGSTBill Link</span>
-                            {selectedDc.invoiceUrl ? (
-                              <a
-                                href={selectedDc.invoiceUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs truncate max-w-[200px]"
-                                title={selectedDc.invoiceUrl}
-                              >
-                                <span>Open Invoice</span>
-                                <ExternalLink className="h-3 w-3 shrink-0" />
-                              </a>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDetailsDialogOpen(false);
-                                  openActionDialog("invoice", selectedDc);
-                                }}
-                                className="text-xs text-purple-700 hover:text-purple-900 font-semibold underline cursor-pointer"
-                              >
-                                + Attach Link
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {!selectedIsTaxInvoice && (
-                          <>
-                            {Boolean((selectedDc as any).billedAmount && (selectedDc as any).billedAmount > ((selectedDc as any).cashAmount || 0)) && (
-                              <>
-                                <div className="flex items-center justify-between gap-3 text-xs">
-                                  <span className="text-slate-500">Printed Bill (Hiked)</span>
-                                  <span className="font-semibold text-slate-600 line-through">
-                                    ₹{(selectedDc as any).billedAmount.toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between gap-3 text-xs">
-                                  <span className="text-amber-700 font-medium">Hospital Cut / Margin</span>
-                                  <span className="font-bold text-amber-700">
-                                    - ₹{((selectedDc as any).hospitalMargin || ((selectedDc as any).billedAmount - ((selectedDc as any).cashAmount || 0))).toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-slate-500">
-                                {selectedDc.status === "cash" ? "Net Cash Due" : ((selectedDc as any).billedAmount ? "Our Net Cash" : "Cash Amount")}
-                              </span>
-                              <span className={`font-bold ${selectedDc.status === "cash" ? "text-amber-800" : "text-green-700"}`}>
-                                {typeof (selectedDc as any).cashAmount === "number"
-                                  ? `₹${(selectedDc as any).cashAmount.toLocaleString('en-IN')}`
-                                  : "-"}
-                                {selectedDc.status === "cash" ? " (Unpaid)" : ""}
-                              </span>
-                            </div>
-                            {selectedDc.status !== "cash" && selectedDc.paymentMethod && (
-                              <div className="flex items-center justify-between gap-3 text-xs pt-1 border-t border-slate-100">
-                                <span className="text-slate-500">Payment Mode</span>
-                                <span className="font-semibold text-slate-800 flex items-center gap-1">
-                                  {selectedDc.paymentMethod === "cash" ? (
-                                    <>
-                                      <Banknote className="h-3.5 w-3.5 text-emerald-600" />
-                                      Cash {selectedDc.collectedBy ? `(${selectedDc.collectedBy})` : ""}
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Landmark className="h-3.5 w-3.5 text-indigo-600" />
-                                      Bank Transfer / UPI
-                                    </>
-                                  )}
-                                </span>
-                              </div>
-                            )}
-                            {selectedDc.status === "cash" && (
-                              <Button
-                                size="sm"
-                                className="mt-2 h-7 w-full text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white gap-1.5"
-                                onClick={() => openPaymentDialog(selectedDc)}
-                              >
-                                <Wallet className="h-3.5 w-3.5" /> Mark as Paid (Collect Payment)
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
                     )}
-                  </div>
                 </TabsContent>
 
+                {/* HISTORY TAB: DETAILED ACTIVITY & AUDIT TIMELINE */}
                 <TabsContent value="history" className="mt-3">
-                  <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 bg-slate-50">
-                      <div className="text-xs font-semibold text-slate-700">Detailed Transaction Audit</div>
-                      <Badge variant="outline" className="border-slate-300 text-slate-700">{selectedDc.history?.length || 0} events</Badge>
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-850">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                          Detailed Activity &amp; Transaction Audit Trail
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">Complete timestamped event history for DC #{selectedDc.dcNo}</p>
+                      </div>
+                      <Badge variant="outline" className="border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold">
+                        {(selectedDc.history || []).length || 1} Event Log{((selectedDc.history || []).length || 1) > 1 ? "s" : ""}
+                      </Badge>
                     </div>
-                    <div className="p-3">
-                      <div className="space-y-4">
-                        {(selectedDc.history || [])
-                          .slice()
-                          .reverse()
-                          .map((h, idx) => (
-                            <div key={`${h.at}-${idx}`} className="relative pl-6 pb-4 last:pb-0 border-l-2 border-slate-100 last:border-l-0">
-                              <div className="absolute left-[-9px] top-0 h-4 w-4 rounded-full border-2 border-white bg-blue-500 shadow-sm" />
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-1">
-                                  <div className="font-semibold text-sm text-slate-900">
-                                    {h.action.replace(/_/g, " ")}
-                                  </div>
-                                  <div className="text-[10px] text-slate-500 font-mono">
-                                    {formatDateTime(h.at)}
-                                  </div>
-                                </div>
-                                <div className="text-xs text-slate-600 mb-2">
-                                  {h.fromStatus ? (
-                                    <span className="inline-flex items-center">
-                                      <Badge variant="outline" className="text-[9px] h-4 py-0 px-1 font-normal opacity-70 uppercase">{h.fromStatus}</Badge>
-                                      <span className="mx-1 text-slate-400">→</span>
-                                      <Badge variant="outline" className="text-[9px] h-4 py-0 px-1 font-normal uppercase">{h.toStatus}</Badge>
-                                    </span>
-                                  ) : (
-                                    <Badge variant="outline" className="text-[9px] h-4 py-0 px-1 font-normal uppercase">{h.toStatus}</Badge>
-                                  )}
-                                </div>
-                                {h.meta && Object.keys(h.meta).length > 0 && (
-                                  <div className="bg-slate-50 rounded border border-slate-100 p-2 mt-1">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                      {Object.entries(h.meta).map(([key, val]) => (
-                                        <div key={key} className="text-[10px]">
-                                          <span className="text-slate-500 font-medium capitalize">{key.replace(/([A-Z])/g, ' $1')}:</span>{" "}
-                                          <span className="text-slate-800">{String(val)}</span>
-                                        </div>
-                                      ))}
+
+                    <div className="p-4">
+                      <div className="relative pl-6 space-y-5">
+                        {(selectedDc.history && selectedDc.history.length > 0) ? (
+                          selectedDc.history
+                            .slice()
+                            .reverse()
+                            .map((h, idx) => {
+                              const isFirst = idx === 0;
+                              return (
+                                <div key={`${h.at}-${idx}`} className="relative pl-2">
+                                  {/* Timeline node */}
+                                  <span className={`absolute -left-6 top-1 h-3.5 w-3.5 rounded-full border-2 border-white dark:border-slate-900 shadow-xs ${
+                                    h.action.includes('COMPLETED') || h.action.includes('PAID') ? 'bg-emerald-600 ring-2 ring-emerald-500/20' :
+                                    h.action.includes('RETURN') ? 'bg-teal-600' :
+                                    h.action.includes('CASH') ? 'bg-blue-600' :
+                                    h.action.includes('CANCEL') ? 'bg-rose-600' :
+                                    'bg-indigo-600'
+                                  }`} />
+
+                                  <div className="bg-slate-50/80 dark:bg-slate-850/60 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-1.5">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <span className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                                        {h.action.replace(/_/g, " ")}
+                                        {isFirst && (
+                                          <Badge className="text-[9px] py-0 px-1.5 bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-0 font-bold">
+                                            Latest Event
+                                          </Badge>
+                                        )}
+                                      </span>
+                                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                        {formatDateTime(h.at)}
+                                      </span>
                                     </div>
+
+                                    {/* Status Badge transition */}
+                                    {h.fromStatus && h.toStatus && (
+                                      <div className="flex items-center gap-1.5 text-[10px]">
+                                        <span className="text-slate-400">Status Change:</span>
+                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold uppercase bg-white dark:bg-slate-900">
+                                          {h.fromStatus}
+                                        </Badge>
+                                        <span className="text-slate-400 font-bold">→</span>
+                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-bold uppercase bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                                          {h.toStatus}
+                                        </Badge>
+                                      </div>
+                                    )}
+
+                                    {/* Personnel & Details */}
+                                    <div className="text-xs text-slate-600 dark:text-slate-400 space-y-0.5 pt-0.5">
+                                      {(h.action === "CREATED" || h.action === "PURCHASE") && (
+                                        <>
+                                          {selectedDc.deliveredBy && (
+                                            <div>Delivered by: <strong className="text-slate-800 dark:text-slate-200">{selectedDc.deliveredBy}</strong></div>
+                                          )}
+                                          {selectedDc.receivedBy && (
+                                            <div>Hospital Received by: <strong className="text-slate-800 dark:text-slate-200">{selectedDc.receivedBy}</strong></div>
+                                          )}
+                                        </>
+                                      )}
+
+                                      {h.action === "MARK_RETURNED" && (
+                                        <>
+                                          {((h.meta?.returnedBy as string) || selectedDc.returnedBy) && (
+                                            <div>Returned by: <strong className="text-slate-800 dark:text-slate-200">{(h.meta?.returnedBy as string) || selectedDc.returnedBy}</strong></div>
+                                          )}
+                                          {((h.meta?.returnedRemarks as string) || (h.meta?.cleared as any)?.returnedRemarks) && (
+                                            <div className="italic text-slate-500">"{(h.meta?.returnedRemarks as string) || (h.meta?.cleared as any)?.returnedRemarks}"</div>
+                                          )}
+                                        </>
+                                      )}
+
+                                      {h.action === "MOVE_TO_CASH" && (
+                                        <div>
+                                          Expected Cash Receivable: <strong className="text-emerald-700 dark:text-emerald-400">₹{((h.meta?.cashAmount as number) || selectedDc.cashAmount || 0).toLocaleString('en-IN')}</strong>
+                                        </div>
+                                      )}
+
+                                      {h.action === "MOVE_CASH_TO_COMPLETED" && (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span>Payment Mode: <strong className="text-slate-800 dark:text-slate-200">{(h.meta?.paymentMethod as string) || selectedDc.paymentMethod || 'cash'}</strong></span>
+                                          {((h.meta?.collectedBy as string) || selectedDc.collectedBy) && (
+                                            <span>• Collected by: <strong className="text-slate-800 dark:text-slate-200">{(h.meta?.collectedBy as string) || selectedDc.collectedBy}</strong></span>
+                                          )}
+                                          <span>• Paid Amount: <strong className="text-emerald-700 dark:text-emerald-400">₹{((h.meta?.paidAmount as number) || selectedDc.cashAmount || 0).toLocaleString('en-IN')}</strong></span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Meta Attributes Table */}
+                                    {h.meta && Object.keys(h.meta).length > 0 && (
+                                      <div className="bg-white dark:bg-slate-900 rounded-lg p-2 border border-slate-200/60 dark:border-slate-800 mt-1">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+                                          {Object.entries(h.meta).map(([key, val]) => {
+                                            if (typeof val === 'object' && val !== null) return null;
+                                            return (
+                                              <div key={key}>
+                                                <span className="text-slate-400 font-medium capitalize">{key.replace(/([A-Z])/g, ' $1')}:</span>{" "}
+                                                <span className="font-semibold text-slate-700 dark:text-slate-300">{String(val)}</span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        {(selectedDc.history || []).length === 0 && (
-                          <div className="text-center py-6 text-slate-500 text-sm">
-                            No history available for this DC.
+                                </div>
+                              );
+                            })
+                        ) : (
+                          <div className="text-center py-6 text-slate-500 text-xs">
+                            No history events available for this DC.
                           </div>
                         )}
                       </div>
@@ -5457,7 +5616,7 @@ const SavedDcs = () => {
       >
         <DialogContent 
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[520px] p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="sm:max-w-4xl lg:max-w-5xl w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Record Payment Collection</DialogTitle>
@@ -5508,220 +5667,406 @@ const SavedDcs = () => {
             </div>
           </div>
 
-          {/* 2. BODY CONTENT */}
-          <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-            {/* Financial Receivable Banner */}
-            {Boolean(paymentDialog.dc?.billedAmount && paymentDialog.dc.billedAmount > (paymentDialog.dc.cashAmount || 0)) ? (
-              <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                    <Receipt className="w-3.5 h-3.5 text-amber-600" />
-                    Hiked Bill Settlement
-                  </span>
-                  <span className="text-[10px] bg-amber-200/70 dark:bg-amber-900/60 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
-                    Margin Deducted
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-amber-200/60 dark:border-amber-900/30">
-                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
-                    <span className="block text-[10px] text-slate-500 uppercase font-semibold">Printed Bill</span>
-                    <span className="font-bold text-slate-700 dark:text-slate-300">
-                      ₹{paymentDialog.dc?.billedAmount?.toLocaleString('en-IN')}
-                    </span>
+          {/* 2. BODY CONTENT (2-COLUMN RESPONSIVE LAYOUT) */}
+          <div className="p-5 max-h-[78vh] overflow-y-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+              {/* LEFT COLUMN: RECEIVABLE DETAILS & PAYMENT INPUTS */}
+              <div className={`${paymentMethod === "bank_transfer" ? "lg:col-span-5" : "lg:col-span-12 max-w-xl mx-auto w-full"} space-y-4`}>
+                {/* Financial Receivable Banner */}
+                {Boolean(paymentDialog.dc?.billedAmount && paymentDialog.dc.billedAmount > (paymentDialog.dc.cashAmount || 0)) ? (
+                  <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                        <Receipt className="w-3.5 h-3.5 text-amber-600" />
+                        Hiked Bill Settlement
+                      </span>
+                      <span className="text-[10px] bg-amber-200/70 dark:bg-amber-900/60 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
+                        Margin Deducted
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-amber-200/60 dark:border-amber-900/30">
+                      <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
+                        <span className="block text-[10px] text-slate-500 uppercase font-semibold">Printed Bill</span>
+                        <span className="font-bold text-slate-700 dark:text-slate-300">
+                          ₹{paymentDialog.dc?.billedAmount?.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
+                        <span className="block text-[10px] text-amber-700 dark:text-amber-400 uppercase font-semibold">Hospital Cut</span>
+                        <span className="font-bold text-amber-800 dark:text-amber-300">
+                          -₹{(paymentDialog.dc?.hospitalMargin || (paymentDialog.dc!.billedAmount! - (paymentDialog.dc!.cashAmount || 0))).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-900/30 text-center">
+                        <span className="block text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold">Net Due</span>
+                        <span className="font-black text-emerald-800 dark:text-emerald-300">
+                          ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
-                    <span className="block text-[10px] text-amber-700 dark:text-amber-400 uppercase font-semibold">Hospital Cut</span>
-                    <span className="font-bold text-amber-800 dark:text-amber-300">
-                      -₹{(paymentDialog.dc?.hospitalMargin || (paymentDialog.dc!.billedAmount! - (paymentDialog.dc!.cashAmount || 0))).toLocaleString('en-IN')}
-                    </span>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/60 p-3.5 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                        Outstanding Receivable
+                      </span>
+                      <span className="text-xs text-slate-600 dark:text-slate-400">
+                        Total payment due for this DC
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono">
+                        ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
                   </div>
-                  <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-900/30 text-center">
-                    <span className="block text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold">Net Due</span>
-                    <span className="font-black text-emerald-800 dark:text-emerald-300">
-                      ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/60 p-3.5 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                    Outstanding Receivable
-                  </span>
-                  <span className="text-xs text-slate-600 dark:text-slate-400">
-                    Total payment due for this DC
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono">
-                    ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
-                  </span>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* Payment Mode Selector */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Payment Mode *
-              </Label>
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("cash")}
-                  className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                    paymentMethod === "cash"
-                      ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs"
-                      : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  <Banknote className={`w-4 h-4 shrink-0 ${paymentMethod === "cash" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`} />
-                  <span>Cash Payment</span>
-                  {paymentMethod === "cash" && <Check className="w-3.5 h-3.5 ml-auto text-emerald-600" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("bank_transfer")}
-                  className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                    paymentMethod === "bank_transfer"
-                      ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
-                      : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  <Landmark className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
-                  <span>Bank Transfer / UPI</span>
-                  {paymentMethod === "bank_transfer" && <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Cash Collector Selection (Only when Cash is selected) */}
-            {paymentMethod === "cash" && (
-              <div className="space-y-2 pt-0.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                    <User className="w-3.5 h-3.5 text-emerald-600" />
-                    Who Collected the Cash? *
+                {/* Payment Mode Selector */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Payment Mode *
                   </Label>
-                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
-                    Required
-                  </span>
-                </div>
-                <PersonnelSelect
-                  value={paymentCollectedBy}
-                  onChange={setPaymentCollectedBy}
-                  placeholder="Select or type collector name..."
-                  showQuickPicks={false}
-                />
-                {/* Clean Quick Picks */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span className="text-[11px] font-medium text-slate-400 mr-0.5">Quick:</span>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentCollectedBy("Self")}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                      paymentCollectedBy.trim().toLowerCase() === "self"
-                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
-                    }`}
-                  >
-                    Self
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentCollectedBy("Office")}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                      paymentCollectedBy.trim().toLowerCase() === "office"
-                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
-                    }`}
-                  >
-                    Office
-                  </button>
-                  {paymentDialog.dc?.deliveredBy && !isDisallowedPersonnel(paymentDialog.dc.deliveredBy) && (
+                  <div className="grid grid-cols-2 gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setPaymentCollectedBy(paymentDialog.dc?.deliveredBy || "")}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                        paymentCollectedBy.trim().toLowerCase() === (paymentDialog.dc?.deliveredBy || "").toLowerCase()
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                      onClick={() => setPaymentMethod("cash")}
+                      className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        paymentMethod === "cash"
+                          ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs"
+                          : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                       }`}
                     >
-                      <UserCheck className="w-3 h-3 text-teal-600" />
-                      <span>Delivery: {paymentDialog.dc.deliveredBy}</span>
+                      <Banknote className={`w-4 h-4 shrink-0 ${paymentMethod === "cash" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`} />
+                      <span>Cash Payment</span>
+                      {paymentMethod === "cash" && <Check className="w-3.5 h-3.5 ml-auto text-emerald-600" />}
                     </button>
-                  )}
-                  {topReturnPersons.slice(0, 4).map((p) => {
-                    const isSelected = paymentCollectedBy.trim().toLowerCase() === p.name.toLowerCase();
-                    return (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("bank_transfer")}
+                      className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        paymentMethod === "bank_transfer"
+                          ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
+                          : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <Landmark className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
+                      <span>Bank Transfer / UPI</span>
+                      {paymentMethod === "bank_transfer" && <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cash Collector Selection (Only when Cash is selected) */}
+                {paymentMethod === "cash" && (
+                  <div className="space-y-2.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                        <User className="w-3.5 h-3.5 text-emerald-600" />
+                        Who Collected the Cash? *
+                      </Label>
+                      <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-200">
+                        ⚡ Cash In Hand Treasury
+                      </span>
+                    </div>
+                    <PersonnelSelect
+                      value={paymentCollectedBy}
+                      onChange={setPaymentCollectedBy}
+                      placeholder="Select or type collector name..."
+                      showQuickPicks={false}
+                    />
+                    {/* Clean Quick Picks */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className="text-[11px] font-medium text-slate-400 mr-0.5">Quick:</span>
                       <button
-                        key={p.name}
                         type="button"
-                        onClick={() => setPaymentCollectedBy(p.name)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                          isSelected
+                        onClick={() => setPaymentCollectedBy("Self")}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          paymentCollectedBy.trim().toLowerCase() === "self"
                             ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
                             : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
                         }`}
                       >
-                        <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-emerald-600"}`} />
-                        <span>{p.name}</span>
+                        Self
                       </button>
-                    );
-                  })}
+                      <button
+                        type="button"
+                        onClick={() => setPaymentCollectedBy("Office")}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          paymentCollectedBy.trim().toLowerCase() === "office"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                        }`}
+                      >
+                        Office
+                      </button>
+                      {paymentDialog.dc?.deliveredBy && !isDisallowedPersonnel(paymentDialog.dc.deliveredBy) && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentCollectedBy(paymentDialog.dc?.deliveredBy || "")}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                            paymentCollectedBy.trim().toLowerCase() === (paymentDialog.dc?.deliveredBy || "").toLowerCase()
+                              ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                          }`}
+                        >
+                          <UserCheck className="w-3 h-3 text-teal-600" />
+                          <span>Delivery: {paymentDialog.dc.deliveredBy}</span>
+                        </button>
+                      )}
+                      {topReturnPersons.slice(0, 4).map((p) => {
+                        const isSelected = paymentCollectedBy.trim().toLowerCase() === p.name.toLowerCase();
+                        return (
+                          <button
+                            key={p.name}
+                            type="button"
+                            onClick={() => setPaymentCollectedBy(p.name)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              isSelected
+                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                            }`}
+                          >
+                            <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-emerald-600"}`} />
+                            <span>{p.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Amount Received & Remarks */}
+                <div className="grid grid-cols-1 gap-3 pt-1">
+                  {/* Paid Amount */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="payment-amount" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Amount Received *
+                      </Label>
+                      {paymentDialog.dc?.cashAmount && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentAmountInput(String(paymentDialog.dc?.cashAmount || ''))}
+                          className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
+                        >
+                          Full Due (₹{paymentDialog.dc.cashAmount.toLocaleString('en-IN')})
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">
+                        ₹
+                      </span>
+                      <Input
+                        id="payment-amount"
+                        type="number"
+                        value={paymentAmountInput}
+                        onChange={(e) => setPaymentAmountInput(e.target.value)}
+                        placeholder={paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "0"}
+                        className="pl-7 h-10 font-bold text-sm bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payment Remarks */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="payment-remarks" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Notes / Ref <span className="font-normal text-slate-400">(Optional)</span>
+                    </Label>
+                    <Input
+                      id="payment-remarks"
+                      type="text"
+                      value={paymentRemarksInput}
+                      onChange={(e) => setPaymentRemarksInput(e.target.value)}
+                      placeholder={paymentMethod === "cash" ? "e.g. Received at hospital billing" : "e.g. UTR / NEFT Ref"}
+                      className="h-10 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                    />
+                  </div>
                 </div>
               </div>
-            )}
 
-            {/* Amount Received & Remarks */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              {/* Paid Amount */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="payment-amount" className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Amount Received *
-                  </Label>
-                  {paymentDialog.dc?.cashAmount && (
-                    <button
-                      type="button"
-                      onClick={() => setPaymentAmountInput(String(paymentDialog.dc?.cashAmount || ''))}
-                      className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
-                    >
-                      Full Due
-                    </button>
+              {/* RIGHT COLUMN: BANK CREDIT LINKING & MATCHING PANEL (When Bank Transfer is active) */}
+              {paymentMethod === "bank_transfer" && (
+                <div className="lg:col-span-7 bg-slate-50/80 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      Mandatory Bank Credit Link & Match *
+                    </Label>
+                    <Badge variant="outline" className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200">
+                      {availableBankCredits.length} Statement Credits
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Select matching credit deposit from bank statement or select "Not Found" to link later:
+                  </p>
+
+                  {/* Executive Account Card Selector Tabs ("Go with something else") */}
+                  <div className="space-y-1 my-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Select Account Statement:</span>
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                      {/* 1. BANK ACCOUNTS TABS (1538 ALWAYS FIRST ON THE LEFT!) */}
+                      {sortedBankAccounts.map((acc) => {
+                        const isSelected = selectedBankAccountId === acc.id;
+                        const count = availableBankCredits.filter((t) => t.accountId === acc.id).length;
+                        const accSuffix = acc.accountNumber ? acc.accountNumber.slice(-4) : (acc.accountName.match(/\d{4}/)?.[0] || '');
+                        const is1538 = accSuffix === '1538' || acc.id.includes('1538');
+
+                        return (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => setSelectedBankAccountId(acc.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
+                              isSelected
+                                ? is1538 
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20"
+                                  : "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                            }`}
+                          >
+                            <Building2 className="w-3.5 h-3.5" />
+                            <span>{acc.bankName || acc.accountName.split('(')[0].trim()}</span>
+                            {accSuffix && (
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                                isSelected ? "bg-black/20 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                              }`}>
+                                ({accSuffix})
+                              </span>
+                            )}
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                              isSelected ? "bg-black/20 text-white" : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+                            }`}>
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                      {/* 2. ALL ACCOUNTS TAB */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBankAccountId("all")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
+                          selectedBankAccountId === "all"
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                        }`}
+                      >
+                        <Landmark className="w-3.5 h-3.5" />
+                        <span>All Accounts</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                          selectedBankAccountId === "all" ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        }`}>
+                          {availableBankCredits.length}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {isLoadingBankCredits ? (
+                    <div className="p-4 bg-indigo-50/50 dark:bg-slate-900/60 rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/30">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Fetching live bank statement credits...</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {filteredBankCredits.map((tx) => {
+                        const isSelected = selectedCreditTxId === tx.id;
+                        const dcAmount = paymentDialog.dc?.cashAmount || paymentDialog.dc?.billedAmount || 0;
+                        const isAmountMatch = Math.abs(tx.amount - dcAmount) < 10;
+                        const dcHosp = (paymentDialog.dc?.hospitalName || '').toLowerCase().trim();
+                        const desc = (tx.description || '').toLowerCase();
+                        const isHospMatch = dcHosp && desc.includes(dcHosp);
+                        const isMatch = isAmountMatch || isHospMatch;
+
+                        return (
+                          <div
+                            key={tx.id}
+                            onClick={() => {
+                              setSelectedCreditTxId(tx.id);
+                              if (tx.amount) setPaymentAmountInput(String(tx.amount));
+                            }}
+                            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                              isSelected
+                                ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-500/20 shadow-xs"
+                                : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2.5">
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>
+                                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                </div>
+                                <div>
+                                  <span className="font-bold text-slate-800 dark:text-slate-100 block">
+                                    {tx.description || "Bank Credit Deposit"}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-mono mt-0.5">
+                                    {tx.date} {tx.time ? `• ${tx.time}` : ""} {tx.referenceNumber ? `• Ref: ${tx.referenceNumber}` : ""}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm font-mono block">
+                                    +₹{tx.amount.toLocaleString('en-IN')}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewingTxDetails(tx);
+                                    }}
+                                    className="p-1 rounded-md text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                    title="View Email & Verification Details"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                {isMatch && (
+                                  <Badge className="text-[9px] px-1.5 py-0 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-0 font-bold">
+                                    🎯 Match Candidate
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* NOT FOUND OPTION AT LAST */}
+                      <div
+                        onClick={() => setSelectedCreditTxId("not_found")}
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                          selectedCreditTxId === "not_found"
+                            ? "border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-500/20 shadow-xs"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedCreditTxId === "not_found" ? "border-amber-600 bg-amber-600 text-white" : "border-slate-300"}`}>
+                              {selectedCreditTxId === "not_found" && <Check className="w-3 h-3 stroke-[3]" />}
+                            </div>
+                            <div>
+                              <span className="font-bold text-amber-900 dark:text-amber-300 block flex items-center gap-1">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                Not Found in Bank Statement Yet (Link Later)
+                              </span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                                Statement update pending. You can link this later from Bank Treasury.
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 pointer-events-none">
-                    ₹
-                  </span>
-                  <Input
-                    id="payment-amount"
-                    type="number"
-                    value={paymentAmountInput}
-                    onChange={(e) => setPaymentAmountInput(e.target.value)}
-                    placeholder={paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "0"}
-                    className="pl-7 h-10 font-bold text-sm bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
-                  />
-                </div>
-              </div>
-
-              {/* Payment Remarks */}
-              <div className="space-y-1.5">
-                <Label htmlFor="payment-remarks" className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Notes / Ref <span className="font-normal text-slate-400">(Optional)</span>
-                </Label>
-                <Input
-                  id="payment-remarks"
-                  type="text"
-                  value={paymentRemarksInput}
-                  onChange={(e) => setPaymentRemarksInput(e.target.value)}
-                  placeholder={paymentMethod === "cash" ? "e.g. Received at billing" : "e.g. UTR / UPI Ref"}
-                  className="h-10 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
-                />
-              </div>
+              )}
             </div>
           </div>
 
@@ -5759,6 +6104,54 @@ const SavedDcs = () => {
               )}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: EMAIL CONTENT */}
+      <Dialog open={Boolean(viewingTxDetails)} onOpenChange={(open) => !open && setViewingTxDetails(null)}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-5">
+          <DialogHeader>
+            <div className="flex items-center justify-between pr-6">
+              <DialogTitle className="text-sm font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Email Content</span>
+              </DialogTitle>
+              {viewingTxDetails && (
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                  +₹{viewingTxDetails.amount?.toLocaleString('en-IN')}
+                </span>
+              )}
+            </div>
+            {viewingTxDetails?.emailSubject && (
+              <DialogDescription className="text-xs font-semibold text-slate-700 dark:text-slate-300 pt-1 text-left">
+                Subject: {viewingTxDetails.emailSubject}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          {viewingTxDetails && (
+            <div className="space-y-3 pt-2">
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
+                {viewingTxDetails.rawEmailBody
+                  ? viewingTxDetails.rawEmailBody
+                      .replace(/<https?:\/\/[^>]+>/gi, '')
+                      .replace(/\n{3,}/g, '\n\n')
+                      .trim()
+                  : viewingTxDetails.rawAlert || viewingTxDetails.description}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setViewingTxDetails(null)}
+              className="h-8 text-xs rounded-xl border-slate-300"
+            >
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

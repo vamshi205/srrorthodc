@@ -11,6 +11,7 @@ import {
 
 const CASH_INVOICES_COLLECTION = 'cash_invoices';
 const CASH_CUSTOMERS_COLLECTION = 'cash_customers';
+const LOCAL_STORAGE_CASH_INVOICES_KEY = 'srrortho:cash_invoices_cache';
 
 export interface CashInvoiceData {
   invNumber: string;
@@ -52,7 +53,7 @@ export interface CashCustomerData {
 }
 
 /**
- * Fetch all Cash Invoices from Firestore
+ * Fetch all Cash Invoices from Firestore (with localStorage fallback)
  */
 export async function fetchCashInvoicesFromFirestore(): Promise<CashInvoiceData[]> {
   try {
@@ -81,24 +82,49 @@ export async function fetchCashInvoicesFromFirestore(): Promise<CashInvoiceData[
         invoiceItems: normalizedItems,
       } as CashInvoiceData);
     });
-    // Sort manually in memory by savedAt descending
+
     invoices.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+
+    if (invoices.length > 0) {
+      try {
+        localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(invoices));
+      } catch {
+        // ignore quota error
+      }
+    } else {
+      const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch {}
+      }
+    }
+
     return invoices;
   } catch (error) {
-    console.error('Error fetching cash invoices from Firestore:', error);
+    console.error('Error fetching cash invoices from Firestore, checking local cache:', error);
+    const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return [];
+      }
+    }
     return [];
   }
 }
 
 /**
- * Save or update a Cash Invoice in Firestore
+ * Save or update a Cash Invoice in Firestore & LocalStorage
  */
 export async function saveCashInvoiceToFirestore(invoice: CashInvoiceData): Promise<boolean> {
   try {
     const docId = invoice.invNumber ? invoice.invNumber.replace(/\//g, '_') : `INV_${Date.now()}`;
     const ref = doc(db, CASH_INVOICES_COLLECTION, docId);
     const sanitized = JSON.parse(JSON.stringify(invoice));
-    // Ensure both items and invoiceItems exist for legacy and native compatibility
     if (sanitized.items && !sanitized.invoiceItems) {
       sanitized.invoiceItems = sanitized.items;
     }
@@ -106,6 +132,20 @@ export async function saveCashInvoiceToFirestore(invoice: CashInvoiceData): Prom
       sanitized.items = sanitized.invoiceItems;
     }
     await setDoc(ref, sanitized);
+
+    try {
+      const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
+      let list: CashInvoiceData[] = cached ? JSON.parse(cached) : [];
+      if (!Array.isArray(list)) list = [];
+      const idx = list.findIndex((i) => i.invNumber === sanitized.invNumber);
+      if (idx >= 0) {
+        list[idx] = sanitized;
+      } else {
+        list.unshift(sanitized);
+      }
+      localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(list));
+    } catch {}
+
     return true;
   } catch (error) {
     console.error('Error saving cash invoice to Firestore:', error);
@@ -114,13 +154,25 @@ export async function saveCashInvoiceToFirestore(invoice: CashInvoiceData): Prom
 }
 
 /**
- * Delete a Cash Invoice from Firestore
+ * Delete a Cash Invoice from Firestore & LocalStorage
  */
 export async function deleteCashInvoiceFromFirestore(invNumber: string): Promise<boolean> {
   try {
     const docId = invNumber.replace(/\//g, '_');
     const ref = doc(db, CASH_INVOICES_COLLECTION, docId);
     await deleteDoc(ref);
+
+    try {
+      const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
+      if (cached) {
+        let list: CashInvoiceData[] = JSON.parse(cached);
+        if (Array.isArray(list)) {
+          list = list.filter((i) => i.invNumber !== invNumber);
+          localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(list));
+        }
+      }
+    } catch {}
+
     return true;
   } catch (error) {
     console.error('Error deleting cash invoice from Firestore:', error);

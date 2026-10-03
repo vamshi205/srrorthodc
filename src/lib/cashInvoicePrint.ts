@@ -147,12 +147,12 @@ export function generateCashMemoPrintHtml(inv: CashInvoiceData): string {
     <table style="width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
       <thead>
         <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
-          <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 4%;">#</th>
-          <th style="padding: 8px; text-align: left; color: #334155; font-weight: 800; width: 50%;">ITEM DESCRIPTION</th>
-          <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 15%;">SIZE</th>
-          <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 6%;">QTY</th>
+          <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 5%;">#</th>
+          <th style="padding: 8px; text-align: left; color: #334155; font-weight: 800; width: 44%;">ITEM DESCRIPTION</th>
+          <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 12%;">SIZE</th>
+          <th style="padding: 8px; text-align: center; color: #334155; font-weight: 800; width: 9%;">QTY</th>
           <th style="padding: 8px; text-align: right; color: #334155; font-weight: 800; width: 15%;">RATE (₹)</th>
-          <th style="padding: 8px; text-align: right; color: #334155; font-weight: 800; width: 10%;">AMOUNT (₹)</th>
+          <th style="padding: 8px; text-align: right; color: #334155; font-weight: 800; width: 15%;">AMOUNT (₹)</th>
         </tr>
       </thead>
       <tbody>

@@ -14,7 +14,7 @@ import { ProcedureSelector } from '@/components/ortho/ProcedureSelector';
 import { TopToolbar } from '@/components/ortho/TopToolbar';
 import { AppLoadingSpinner } from '@/components/ui/LoadingSpinner';
 
-import { ProcedureCard } from '@/components/ortho/ProcedureCard';
+import { ProcedureCard, parseItemNameParts } from '@/components/ortho/ProcedureCard';
 import { SummaryPanel } from '@/components/ortho/SummaryPanel';
 import { PrintPreview } from '@/components/ortho/PrintPreview';
 import { useToast } from '@/hooks/use-toast';
@@ -82,6 +82,7 @@ export default function OrthoApp() {
 
   // Manual DC builder
   const [dcMode, setDcMode] = useState<'procedure' | 'manual'>('procedure');
+  const [autoDcStep, setAutoDcStep] = useState<'details' | 'procedures'>('details');
   const [manualMaterialType, setManualMaterialType] = useState('SS');
   const [manualItemQuery, setManualItemQuery] = useState('');
   const [manualItemName, setManualItemName] = useState('');
@@ -154,6 +155,8 @@ export default function OrthoApp() {
       selectedFixedItems: new Map(procedure.fixedItems.map((fi) => [fi.name, true])),
       fixedQtyEdits: new Map(),
       boxNumbers: [],
+      originalFixedItems: procedure.fixedItems ? procedure.fixedItems.map((fi) => ({ ...fi })) : [],
+      originalItems: procedure.items ? [...procedure.items] : [],
       instrumentImageMapping: procedure.instrumentImageMapping || {},
       fixedItemImageMapping: procedure.fixedItemImageMapping || {},
       itemImageMapping: procedure.itemImageMapping || {},
@@ -309,73 +312,48 @@ export default function OrthoApp() {
         const updatedFixedItems = p.fixedItems.map((item) => {
           if (item.name === itemName) {
             const partToRemoveTrimmed = partToRemove.trim();
+            const { title, parts } = parseItemNameParts(itemName);
+
             let newName = itemName;
+            let newQtyNum = 1;
 
-            // Split by comma to get individual parts
-            const parts = newName.split(',').map(part => part.trim()).filter(Boolean);
+            if (parts.length > 0) {
+              const remainingParts = parts.filter(
+                (pt) =>
+                  pt.partToRemove.toLowerCase() !== partToRemoveTrimmed.toLowerCase() &&
+                  pt.display.toLowerCase() !== partToRemoveTrimmed.toLowerCase()
+              );
 
-            // Find which part contains the part to remove
-            let foundAndRemoved = false;
-            const updatedParts = parts.map((part) => {
-              // If this is the part being removed
-              if (part === partToRemoveTrimmed) {
-                const suffixPattern = /\s+(\d+\w+)$/; // Matches space + number + word at the end
-                const match = part.match(suffixPattern);
-                if (match) {
-                  const beforeSuffix = part.slice(0, -match[0].length).trim();
-                  if (beforeSuffix.length > 0) {
-                    foundAndRemoved = true;
-                    return beforeSuffix;
-                  }
+              if (remainingParts.length > 0) {
+                let cleanTitle = title;
+                const formattedList = remainingParts.map((pt) => pt.display).join(', ');
+                newName = `${cleanTitle} ${formattedList}`;
+                if (cleanTitle.includes('(') && !newName.endsWith(')')) {
+                  newName += ')';
                 }
-
-                if (part.length < 15 && /^\d+\w+$/.test(part)) {
-                  foundAndRemoved = true;
-                  return null;
-                }
-
-                foundAndRemoved = true;
-                return null;
+                newQtyNum = remainingParts.length;
+              } else {
+                newName = title.replace(/\($/, '').trim();
+                newQtyNum = 1;
               }
-
-              // If the part ends with the partToRemove and has content before it, remove just the suffix
-              if (part.endsWith(partToRemoveTrimmed) && part.length > partToRemoveTrimmed.length) {
-                const charBeforeIndex = part.length - partToRemoveTrimmed.length - 1;
-                const charBefore = charBeforeIndex >= 0 ? part[charBeforeIndex] : null;
-
-                if (charBefore === ' ') {
-                  const beforePart = part.slice(0, -partToRemoveTrimmed.length).trim();
-                  if (beforePart.length > 0) {
-                    foundAndRemoved = true;
-                    return beforePart;
-                  }
-                }
-              }
-
-              return part;
-            }).filter(p => p !== null && p.length > 0);
-
-            if (updatedParts.length > 0 && foundAndRemoved) {
-              newName = updatedParts.join(', ');
-            } else if (!foundAndRemoved) {
-              return item;
             } else {
-              return item;
+              // Fallback split for non-standard items
+              const rawParts = itemName.split(',').map((part) => part.trim()).filter(Boolean);
+              const updatedParts = rawParts.filter(
+                (part) => !part.toLowerCase().includes(partToRemoveTrimmed.toLowerCase())
+              );
+              newName = updatedParts.length > 0 ? updatedParts.join(', ') : itemName;
+              newQtyNum = updatedParts.length > 0 ? updatedParts.length : 1;
             }
 
-            // Only update if name actually changed
             if (newName !== itemName && newName.trim().length > 0) {
-              // Update quantity: decrement current quantity by 1 based on removed size/part
-              const currentQtyStr = qtyMap.get(itemName) ?? item.qty ?? '1';
-              const currentQtyNum = parseInt(currentQtyStr, 10);
-              const newQtyNum = !isNaN(currentQtyNum) && currentQtyNum > 1 ? currentQtyNum - 1 : 1;
               const newQtyStr = String(newQtyNum);
 
-              // Update fixedQtyEdits
+              // Update fixedQtyEdits map
               qtyMap.delete(itemName);
               qtyMap.set(newName.trim(), newQtyStr);
 
-              // Update selectedFixedItems
+              // Update selectedFixedItems map
               const wasSelected = selectedMap.get(itemName);
               if (wasSelected !== undefined) {
                 selectedMap.delete(itemName);
@@ -415,156 +393,46 @@ export default function OrthoApp() {
       prev.map((p) => {
         if (p.name !== procedureName) return p;
 
-        // Update items array - find item and remove the part
         const updatedItems = p.items.map((item) => {
-          // Parse the item to get the name
           const match = item.match(/^(.+?)\s*\{(.+)\}$/);
-          if (match) {
-            const name = match[1].trim();
-            if (name === itemName) {
-              const partToRemoveTrimmed = partToRemove.trim();
+          const rawName = match ? match[1].trim() : item.trim();
+          const metaStr = match ? match[2] : null;
 
-              // Simple approach: find the part in the string and remove it along with any comma
-              let newName = name;
+          if (rawName === itemName) {
+            const partToRemoveTrimmed = partToRemove.trim();
+            const { title, parts } = parseItemNameParts(itemName);
 
-              // Try to find and remove the part with comma after it: "4hole,"
-              const patternWithCommaAfter = partToRemoveTrimmed + ',';
-              if (newName.includes(patternWithCommaAfter)) {
-                newName = newName.replace(patternWithCommaAfter, '');
+            let newName = itemName;
+            if (parts.length > 0) {
+              const remainingParts = parts.filter(
+                (pt) =>
+                  pt.partToRemove.toLowerCase() !== partToRemoveTrimmed.toLowerCase() &&
+                  pt.display.toLowerCase() !== partToRemoveTrimmed.toLowerCase()
+              );
+
+              if (remainingParts.length > 0) {
+                let cleanTitle = title;
+                const formattedList = remainingParts.map((pt) => pt.display).join(', ');
+                newName = `${cleanTitle} ${formattedList}`;
+                if (cleanTitle.includes('(') && !newName.endsWith(')')) {
+                  newName += ')';
+                }
               } else {
-                // Try to find and remove the part with comma before it: ",4hole"
-                const patternWithCommaBefore = ',' + partToRemoveTrimmed;
-                if (newName.includes(patternWithCommaBefore)) {
-                  newName = newName.replace(patternWithCommaBefore, '');
-                } else {
-                  // Try to find if part is at the end of a word (like "4hole" in "120° DHS Plate Short Barrell 4hole")
-                  const parts = newName.split(',').map(p => p.trim());
-                  const updatedParts = parts.map(part => {
-                    // If this is the part being removed
-                    if (part === partToRemoveTrimmed) {
-                      // First, try to detect if it has a suffix pattern (like "4hole", "5hole" at the end)
-                      // Pattern: space + number + word(s) at the end (e.g., " 4hole", " 5hole")
-                      const suffixPattern = /\s+(\d+\w+)$/; // Matches space + number + word at the end
-                      const match = part.match(suffixPattern);
-                      if (match) {
-                        // Found a suffix pattern, remove just the suffix
-                        const beforeSuffix = part.slice(0, -match[0].length).trim();
-                        if (beforeSuffix.length > 0) {
-                          return beforeSuffix;
-                        }
-                      }
-
-                      // If no suffix pattern found, check if it's a short standalone part (like "5hole")
-                      // Remove the entire part if it's short and simple
-                      if (part.length < 15 && /^\d+\w+$/.test(part)) {
-                        return null;
-                      }
-
-                      // Otherwise, if it's a longer part without a clear suffix pattern, remove the entire part
-                      return null;
-                    }
-
-                    // If the part ends with the partToRemove and has content before it, remove just the suffix
-                    if (part.endsWith(partToRemoveTrimmed) && part.length > partToRemoveTrimmed.length) {
-                      const charBeforeIndex = part.length - partToRemoveTrimmed.length - 1;
-                      const charBefore = charBeforeIndex >= 0 ? part[charBeforeIndex] : null;
-
-                      if (charBefore === ' ') {
-                        const beforePart = part.slice(0, -partToRemoveTrimmed.length).trim();
-                        return beforePart.length > 0 ? beforePart : null;
-                      }
-                    }
-
-                    return part;
-                  }).filter(p => p !== null && p.length > 0);
-
-                  if (updatedParts.length > 0) {
-                    newName = updatedParts.join(',');
-                  } else {
-                    // If all parts were removed, don't update
-                    return item;
-                  }
+                newName = title.replace(/\($/, '').replace(/x\s*$/i, '').trim();
+                if (newName.endsWith('(')) {
+                  newName = newName.slice(0, -1).trim();
                 }
               }
-
-              // Only update if name actually changed
-              if (newName !== name && newName.trim().length > 0) {
-                // Reconstruct the item string with new name
-                return `${newName.trim()} {${match[2]}}`;
-              }
+            } else {
+              const rawParts = itemName.split(/[,\r\n]+/).map((part) => part.trim()).filter(Boolean);
+              const updatedParts = rawParts.filter(
+                (part) => !part.toLowerCase().includes(partToRemoveTrimmed.toLowerCase())
+              );
+              newName = updatedParts.length > 0 ? updatedParts.join(', ') : itemName;
             }
-          } else {
-            // Item without size/qty pattern
-            if (item.trim() === itemName) {
-              const partToRemoveTrimmed = partToRemove.trim();
 
-              // Simple approach: find the part in the string and remove it along with any comma
-              let newName = itemName;
-
-              // Try to find and remove the part with comma after it: "4hole,"
-              const patternWithCommaAfter = partToRemoveTrimmed + ',';
-              if (newName.includes(patternWithCommaAfter)) {
-                newName = newName.replace(patternWithCommaAfter, '');
-              } else {
-                // Try to find and remove the part with comma before it: ",4hole"
-                const patternWithCommaBefore = ',' + partToRemoveTrimmed;
-                if (newName.includes(patternWithCommaBefore)) {
-                  newName = newName.replace(patternWithCommaBefore, '');
-                } else {
-                  // Try to find if part is at the end of a word
-                  const parts = newName.split(',').map(p => p.trim());
-                  const updatedParts = parts.map(part => {
-                    // If this is the part being removed
-                    if (part === partToRemoveTrimmed) {
-                      // First, try to detect if it has a suffix pattern (like "4hole", "5hole" at the end)
-                      // Pattern: space + number + word(s) at the end (e.g., " 4hole", " 5hole")
-                      const suffixPattern = /\s+(\d+\w+)$/; // Matches space + number + word at the end
-                      const match = part.match(suffixPattern);
-                      if (match) {
-                        // Found a suffix pattern, remove just the suffix
-                        const beforeSuffix = part.slice(0, -match[0].length).trim();
-                        if (beforeSuffix.length > 0) {
-                          return beforeSuffix;
-                        }
-                      }
-
-                      // If no suffix pattern found, check if it's a short standalone part (like "5hole")
-                      // Remove the entire part if it's short and simple
-                      if (part.length < 15 && /^\d+\w+$/.test(part)) {
-                        return null;
-                      }
-
-                      // Otherwise, if it's a longer part without a clear suffix pattern, remove the entire part
-                      return null;
-                    }
-
-                    // If the part ends with the partToRemove and has content before it, remove just the suffix
-                    if (part.endsWith(partToRemoveTrimmed) && part.length > partToRemoveTrimmed.length) {
-                      const charBeforeIndex = part.length - partToRemoveTrimmed.length - 1;
-                      const charBefore = charBeforeIndex >= 0 ? part[charBeforeIndex] : null;
-
-                      if (charBefore === ' ') {
-                        const beforePart = part.slice(0, -partToRemoveTrimmed.length).trim();
-                        return beforePart.length > 0 ? beforePart : null;
-                      }
-                    }
-
-                    return part;
-                  }).filter(p => p !== null && p.length > 0);
-
-                  if (updatedParts.length > 0) {
-                    newName = updatedParts.join(',');
-                  } else {
-                    // If all parts were removed, don't update
-                    return item;
-                  }
-                }
-              }
-
-              // Only update if name actually changed
-              if (newName !== itemName && newName.trim().length > 0) {
-                return newName.trim();
-              }
+            if (newName !== rawName && newName.trim().length > 0) {
+              return metaStr ? `${newName.trim()} {${metaStr}}` : newName.trim();
             }
           }
           return item;
@@ -594,6 +462,112 @@ export default function OrthoApp() {
       })
     );
   }, []);
+
+  const handleResetFixedItem = useCallback((procedureName: string, itemName: string) => {
+    setActiveProcedures((prev) =>
+      prev.map((p) => {
+        if (p.name !== procedureName) return p;
+
+        const masterProc = procedures.find(
+          (mp) => mp.name === p.name || (mp.docId && mp.docId === p.docId)
+        );
+        const origList = p.originalFixedItems || masterProc?.fixedItems || [];
+        const currentTitle = parseItemNameParts(itemName).title;
+
+        const origMatch = origList.find((fi) => {
+          if (fi.name === itemName) return true;
+          const origTitle = parseItemNameParts(fi.name).title;
+          return (
+            currentTitle &&
+            origTitle &&
+            currentTitle.toLowerCase() === origTitle.toLowerCase()
+          );
+        });
+
+        if (!origMatch || origMatch.name === itemName) return p;
+
+        const qtyMap = new Map(p.fixedQtyEdits);
+        const selectedMap = new Map(p.selectedFixedItems);
+        const locationMap = { ...(p.fixedItemLocationMapping || {}) };
+        const imageMap = { ...(p.fixedItemImageMapping || {}) };
+
+        const updatedFixedItems = p.fixedItems.map((item) => {
+          if (item.name === itemName) {
+            return { name: origMatch.name, qty: origMatch.qty };
+          }
+          return item;
+        });
+
+        qtyMap.delete(itemName);
+        qtyMap.set(origMatch.name, origMatch.qty);
+
+        const wasSelected = selectedMap.get(itemName);
+        selectedMap.delete(itemName);
+        selectedMap.set(origMatch.name, wasSelected !== undefined ? wasSelected : true);
+
+        if (locationMap[itemName]) {
+          locationMap[origMatch.name] = locationMap[itemName];
+          delete locationMap[itemName];
+        }
+        if (imageMap[itemName]) {
+          imageMap[origMatch.name] = imageMap[itemName];
+          delete imageMap[itemName];
+        }
+
+        return {
+          ...p,
+          fixedItems: updatedFixedItems,
+          fixedQtyEdits: qtyMap,
+          selectedFixedItems: selectedMap,
+          fixedItemLocationMapping: locationMap,
+          fixedItemImageMapping: imageMap,
+        };
+      })
+    );
+  }, [procedures]);
+
+  const handleResetSelectableItem = useCallback((procedureName: string, itemName: string) => {
+    setActiveProcedures((prev) =>
+      prev.map((p) => {
+        if (p.name !== procedureName) return p;
+
+        const masterProc = procedures.find(
+          (mp) => mp.name === p.name || (mp.docId && mp.docId === p.docId)
+        );
+        const origList = p.originalItems || masterProc?.items || [];
+        const currentTitle = parseItemNameParts(itemName).title;
+
+        const origMatch = origList.find((origStr) => {
+          const rawOrigName = origStr.replace(/\s*\{.+?\}$/, '').trim();
+          if (rawOrigName === itemName) return true;
+          const origTitle = parseItemNameParts(rawOrigName).title;
+          return (
+            currentTitle &&
+            origTitle &&
+            currentTitle.toLowerCase() === origTitle.toLowerCase()
+          );
+        });
+
+        if (!origMatch) return p;
+        const rawOrigName = origMatch.replace(/\s*\{.+?\}$/, '').trim();
+        if (rawOrigName === itemName) return p;
+
+        const updatedItems = p.items.map((item) => {
+          const match = item.match(/^(.+?)\s*\{(.+)\}$/);
+          const rawName = match ? match[1].trim() : item.trim();
+          if (rawName === itemName) {
+            return origMatch;
+          }
+          return item;
+        });
+
+        return {
+          ...p,
+          items: updatedItems,
+        };
+      })
+    );
+  }, [procedures]);
 
   const handlePrint = () => {
     if (!hospitalName || !dcNo || !receivedBy) {
@@ -950,6 +924,7 @@ export default function OrthoApp() {
                     <ProcedureCard
                       key={procedure.name}
                       procedure={procedure}
+                      masterProcedures={procedures}
                       index={index}
                       isCollapsed={collapsedProcedures.has(procedure.name)}
                       onToggleCollapse={() => setCollapsedProcedures((prev) => { const next = new Set(prev); next.has(procedure.name) ? next.delete(procedure.name) : next.add(procedure.name); return next; })}
@@ -968,6 +943,8 @@ export default function OrthoApp() {
                       onSearchInstruments={searchInstruments}
                       onRemoveFixedItemPart={(item, part) => handleRemoveFixedItemPart(procedure.name, item, part)}
                       onRemoveSelectableItemPart={(item, part) => handleRemoveSelectableItemPart(procedure.name, item, part)}
+                      onResetFixedItem={(item) => handleResetFixedItem(procedure.name, item)}
+                      onResetSelectableItem={(item) => handleResetSelectableItem(procedure.name, item)}
                       onAddBox={(boxNumber) => handleAddBox(procedure.name, boxNumber)}
                       onRemoveBox={(index) => handleRemoveBox(procedure.name, index)}
                     />
@@ -1086,105 +1063,86 @@ export default function OrthoApp() {
                 </div>
               ) : dcMode === 'procedure' ? (
                 <>
-                  {/* Procedure Selector - Shown when no procedures selected OR when user clicks 'Add New Procedure' */}
-                  {(activeProcedures.length === 0 || showProcedureSelector) && (
-                    <div className="glass-card rounded-xl p-2.5 sm:p-4 min-w-0 flex-1 flex flex-col min-h-[calc(100vh-140px)]">
-                      <h2 className="font-display font-semibold text-base sm:text-lg mb-2 sm:mb-4">Select Procedures</h2>
-                      {loading ? (
-                        <AppLoadingSpinner message="Loading Procedures..." subtext="Fetching procedure catalogs from Firestore database" />
-                      ) : (
-                        <ProcedureSelector
-                          procedures={procedures}
-                          procedureTypes={procedureTypes}
-                          activeProcedureNames={activeProcedures.map((p) => p.name)}
-                          onSelectProcedure={handleSelectProcedure}
-                          searchProcedures={searchProcedures}
-                          initialFilterType={initialFilterType}
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {/* Case Details Header Card - Shown ONLY after selecting a procedure */}
-                  {activeProcedures.length > 0 && !showProcedureSelector && (
-                    <div className="rounded-xl p-3.5 sm:p-4 mb-4 border-2 border-slate-300/80 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-900/90 shadow-md">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-300 dark:border-slate-800">
-                        <h2 className="font-display font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-teal-700" />
-                          Delivery Challan Header Details
-                        </h2>
-                        <div className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                          Fill details once • Auto-applied to print
+                  {/* Step 1: Ask Hospital Details FIRST before Procedure Selection */}
+                  {autoDcStep === 'details' && activeProcedures.length === 0 ? (
+                    <div className="glass-card rounded-2xl p-5 sm:p-8 border-2 border-teal-500/40 bg-teal-50/60 dark:bg-slate-900/90 shadow-xl max-w-4xl mx-auto my-2 space-y-6">
+                      <div className="flex items-center justify-between pb-4 border-b border-teal-200 dark:border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold text-lg shadow-md shrink-0">
+                            1
+                          </div>
+                          <div>
+                            <h2 className="font-display font-extrabold text-lg sm:text-xl text-slate-900 dark:text-slate-100">
+                              Step 1: Enter Hospital &amp; DC Details
+                            </h2>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Please fill hospital and delivery details first. After submission, you will be taken to procedure selection.
+                            </p>
+                          </div>
                         </div>
+                        <Badge className="bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-bold text-xs">
+                          Auto DC
+                        </Badge>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div>
-                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                            Hospital Name <span className="text-red-500">*</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="sm:col-span-2">
+                          <Label className="text-xs font-bold text-slate-900 dark:text-slate-200 flex items-center gap-1.5">
+                            Hospital / Clinic Name <span className="text-red-500 font-bold">*</span>
                           </Label>
-                          <div className="mt-1">
+                          <div className="mt-1.5">
                             <HospitalSelect
-                              id="hospital-name-input"
+                              id="hospital-name-input-step1"
                               value={hospitalName}
                               onChange={handleHospitalChange}
-                              placeholder="Select or enter hospital name..."
+                              placeholder="Search or enter hospital name..."
                             />
                           </div>
                         </div>
 
                         <div>
-                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Doctor Name</Label>
-                          <div className="mt-1">
+                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Doctor / Surgeon Name</Label>
+                          <div className="mt-1.5">
                             <DoctorSelect
-                              id="doctor-name-input"
+                              id="doctor-name-input-step1"
                               value={doctorName}
                               onChange={setDoctorName}
                               hospitalName={hospitalName}
-                              placeholder="Dr. Name"
+                              placeholder="Select Dr. Name..."
                             />
                           </div>
                         </div>
 
                         <div>
                           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                            DC No. <span className="text-red-500">*</span>
+                            DC Number <span className="text-red-500 font-bold">*</span>
                           </Label>
                           <Input
                             value={dcNo}
                             onChange={(e) => setDcNo(e.target.value)}
-                            placeholder="Enter DC No."
-                            autoComplete="off"
-                            autoCorrect="off"
-                            autoCapitalize="off"
-                            spellCheck={false}
-                            data-lpignore="true"
-                            data-1p-ignore="true"
-                            data-bwignore="true"
-                            data-form-type="other"
-                            aria-autocomplete="none"
-                            className="mt-1 h-9 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                            placeholder="Enter DC No. (e.g. 1024)"
+                            className="mt-1.5 h-10 text-xs sm:text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
                           />
                         </div>
 
                         <div>
                           <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Delivered By</Label>
-                          <div className="mt-1">
+                          <div className="mt-1.5">
                             <PersonnelSelect
                               value={deliveredBy}
                               onChange={setDeliveredBy}
-                              placeholder="Select or enter personnel..."
+                              placeholder="Select delivery personnel..."
                             />
                           </div>
                         </div>
 
                         <div>
-                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Received By</Label>
+                          <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Received By (OT Desk / Staff)</Label>
                           <Input
                             value={receivedBy}
                             onChange={(e) => setReceivedBy(e.target.value)}
-                            placeholder="Staff / Recipient"
-                            className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                            placeholder="Recipient Name / Staff"
+                            className="mt-1.5 h-10 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
                           />
                         </div>
 
@@ -1194,11 +1152,102 @@ export default function OrthoApp() {
                             type="date"
                             value={customDcDate}
                             onChange={(e) => setCustomDcDate(e.target.value)}
-                            className="mt-1 h-9 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
+                            className="mt-1.5 h-10 text-xs sm:text-sm bg-white dark:bg-slate-950 border-slate-300 focus:border-teal-600 focus:ring-teal-600 shadow-xs"
                           />
                         </div>
                       </div>
+
+                      <div className="pt-4 border-t border-teal-200 dark:border-slate-800 flex justify-end">
+                        <Button
+                          onClick={() => {
+                            if (!hospitalName.trim()) {
+                              toast({
+                                title: 'Hospital Name Required',
+                                description: 'Please select or enter a hospital name to proceed to procedure selection.',
+                                variant: 'destructive',
+                              });
+                              return;
+                            }
+                            setAutoDcStep('procedures');
+                          }}
+                          className="w-full sm:w-auto h-11 px-8 bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm rounded-xl shadow-lg gap-2"
+                        >
+                          <span>Submit Details &amp; Select Procedure</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      {/* Compact Header Summary Bar showing submitted hospital details */}
+                      <div className="rounded-xl p-3 border-2 border-teal-500/30 dark:border-teal-800 bg-teal-50/90 dark:bg-slate-900/90 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
+                          <div className="w-7 h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                            ✓
+                          </div>
+                          <div className="flex items-center gap-3 text-xs flex-wrap">
+                            <span className="font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-1">
+                              <Building2 className="w-3.5 h-3.5 text-teal-600" />
+                              {hospitalName || "Hospital Not Set"}
+                            </span>
+                            {doctorName && (
+                              <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                                <Stethoscope className="w-3.5 h-3.5 text-teal-600" />
+                                {doctorName}
+                              </span>
+                            )}
+                            {dcNo && (
+                              <Badge variant="outline" className="bg-white dark:bg-slate-950 text-teal-800 dark:text-teal-300 font-mono font-bold text-[11px]">
+                                DC #{dcNo}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAutoDcStep('details')}
+                          className="h-8 text-xs font-bold gap-1 border-teal-300 text-teal-800 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-950 shrink-0"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          Edit Details
+                        </Button>
+                      </div>
+
+                      {/* Step 2: Procedure Selector Grid */}
+                      {(activeProcedures.length === 0 || showProcedureSelector) && (
+                        <div className="glass-card rounded-xl p-2.5 sm:p-4 min-w-0 flex-1 flex flex-col min-h-[400px]">
+                          <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
+                            <h2 className="font-display font-semibold text-base sm:text-lg text-foreground flex items-center gap-2">
+                              Step 2: Select Procedure
+                            </h2>
+                            {activeProcedures.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowProcedureSelector(false)}
+                                className="text-xs font-bold text-muted-foreground hover:text-foreground"
+                              >
+                                Hide Selector
+                              </Button>
+                            )}
+                          </div>
+                          {loading ? (
+                            <AppLoadingSpinner message="Loading Procedures..." subtext="Fetching procedure catalogs from Firestore database" />
+                          ) : (
+                            <ProcedureSelector
+                              procedures={procedures}
+                              procedureTypes={procedureTypes}
+                              activeProcedureNames={activeProcedures.map((p) => p.name)}
+                              onSelectProcedure={handleSelectProcedure}
+                              searchProcedures={searchProcedures}
+                              initialFilterType={initialFilterType}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               ) : (

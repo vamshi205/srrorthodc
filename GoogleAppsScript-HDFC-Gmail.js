@@ -78,7 +78,11 @@ function runAutoSyncOnce() {
   const accountsMap = fetchFirestoreAccounts(idToken);
   Logger.log("Mapped " + Object.keys(accountsMap).length + " bank account target(s).");
 
-  // 4. Search for only NEW un-synced emails (limited to recent 14 days)
+  // 4. Retrieve persistent script checkpoint timestamp
+  const scriptProps = PropertiesService.getScriptProperties();
+  const lastSyncedTime = Number(scriptProps.getProperty("LAST_SYNCED_TIMESTAMP") || "0");
+
+  // 5. Search for only NEW un-synced emails
   let threads = [];
   try {
     threads = GmailApp.search(SETTINGS.GMAIL_SEARCH_QUERY, 0, SETTINGS.BATCH_LIMIT);
@@ -99,6 +103,7 @@ function runAutoSyncOnce() {
   Logger.log("Found " + threads.length + " new email thread(s). Batch fetching...");
   const messagesByThread = GmailApp.getMessagesForThreads(threads);
   let savedCount = 0;
+  let highestTimestamp = lastSyncedTime;
 
   for (let i = 0; i < messagesByThread.length; i++) {
     const thread = threads[i];
@@ -106,9 +111,15 @@ function runAutoSyncOnce() {
 
     for (let j = 0; j < messages.length; j++) {
       const msg = messages[j];
-      const subject = msg.getSubject() || "";
       const msgDate = msg.getDate();
+      const msgTime = msgDate.getTime();
 
+      // SKIP messages older than or equal to our last synced timestamp
+      if (lastSyncedTime > 0 && msgTime <= lastSyncedTime) {
+        continue;
+      }
+
+      const subject = msg.getSubject() || "";
       const plainBody = msg.getPlainBody() || "";
       let htmlText = "";
       
@@ -142,18 +153,26 @@ function runAutoSyncOnce() {
         const inserted = insertTransactionToFirestore(tx, idToken);
         if (inserted) {
           savedCount++;
-          Logger.log(`✅ INSERTED TO DB: [${tx.type.toUpperCase()}] ₹${tx.amount} | Ref: ${tx.referenceNumber} | A/c: ..${tx.accountSuffix}`);
+          if (msgTime > highestTimestamp) {
+            highestTimestamp = msgTime;
+          }
+          Logger.log(`✅ INSERTED TO DB: [${tx.type.toUpperCase()}] ₹${tx.amount} | Date: ${tx.date} ${tx.time} | Ref: ${tx.referenceNumber} | A/c: ..${tx.accountSuffix}`);
         }
       }
     }
 
-    // Mark email as synced so it is NEVER processed again
+    // Mark email thread as synced so it is NEVER re-scanned in search
     if (syncedLabel) {
       thread.addLabel(syncedLabel);
     }
   }
 
-  Logger.log(`🎉 Ingestion Complete! Saved ${savedCount} transactions directly into Firestore DB.`);
+  // Save new timestamp checkpoint
+  if (highestTimestamp > lastSyncedTime) {
+    scriptProps.setProperty("LAST_SYNCED_TIMESTAMP", String(highestTimestamp));
+  }
+
+  Logger.log(`🎉 Ingestion Complete! Saved ${savedCount} new transactions directly into Firestore DB.`);
   return { success: true, count: savedCount };
 }
 
@@ -447,31 +466,10 @@ function parseHdfcEmail(body, subject, dateObj) {
     }
   }
 
-  // 7. Extract Exact Transaction Date from Text
-  let yyyy = dateObj.getFullYear();
-  let mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-  let dd = String(dateObj.getDate()).padStart(2, '0');
-
-  const textDateMatch = fullText.match(/\b([0-9]{1,2})[-/]([A-Za-z]{3}|[0-9]{1,2})[-/]([0-9]{2,4})\b/);
-  if (textDateMatch) {
-    dd = textDateMatch[1].padStart(2, '0');
-    const rawMonth = textDateMatch[2];
-    let year = textDateMatch[3];
-    if (year.length === 2) year = `20${year}`;
-    yyyy = parseInt(year, 10);
-
-    const monthNames = {
-      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-      jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
-    };
-
-    if (monthNames[rawMonth.toLowerCase()]) {
-      mm = monthNames[rawMonth.toLowerCase()];
-    } else if (!isNaN(parseInt(rawMonth, 10))) {
-      mm = String(parseInt(rawMonth, 10)).padStart(2, '0');
-    }
-  }
-
+  // 7. Exact Transaction Date & Time from Email Timestamp
+  const yyyy = dateObj.getFullYear();
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getDate()).padStart(2, '0');
   const hours = String(dateObj.getHours()).padStart(2, '0');
   const mins = String(dateObj.getMinutes()).padStart(2, '0');
 
@@ -493,3 +491,15 @@ function parseHdfcEmail(body, subject, dateObj) {
     updatedAt: Date.now(),
   };
 }
+
+/**
+ * HELPER: RUN THIS ONCE to start syncing only NEW incoming emails from this exact minute forward!
+ * (Ignores all past emails so your 300 existing DB transactions remain untouched).
+ */
+function setStartFromNow() {
+  const now = Date.now();
+  PropertiesService.getScriptProperties().setProperty("LAST_SYNCED_TIMESTAMP", String(now));
+  Logger.log("✅ Checkpoint successfully set to current time: " + new Date(now).toLocaleString());
+  Logger.log("The script will now ONLY process new emails received after this exact timestamp.");
+}
+
