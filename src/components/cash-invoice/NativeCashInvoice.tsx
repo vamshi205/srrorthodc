@@ -2026,50 +2026,111 @@ export const NativeCashInvoice: React.FC = () => {
           {selectedInvoiceForView && (
             <div className="space-y-4 py-2">
               {/* Payment Settlement Audit Banner if paid or partial */}
-              {(Boolean(selectedInvoiceForView.paymentReceived) || Boolean(selectedInvoiceForView.paymentMode) || selectedInvoiceForView.status === "paid" || selectedInvoiceForView.status === "partial") && (
-                <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 p-4 space-y-2 text-xs shadow-2xs">
-                  <div className="flex items-center justify-between border-b border-emerald-200 dark:border-emerald-800/60 pb-2">
-                    <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100">
-                      <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                      <span>Recorded Payment &amp; Settlement Record</span>
-                      <Badge className="bg-emerald-600 text-white text-[10px] uppercase font-bold rounded-full">
-                        {selectedInvoiceForView.status || "Paid"}
-                      </Badge>
+              {(Boolean(selectedInvoiceForView.paymentReceived) || Boolean(selectedInvoiceForView.paymentMode) || selectedInvoiceForView.status === "paid" || selectedInvoiceForView.status === "partial") && (() => {
+                const recPaid = Number(selectedInvoiceForView.paymentReceived) || 0;
+                const grand = Number(selectedInvoiceForView.grandTotal || selectedInvoiceForView.actualReceivable) || 0;
+                const isPart = recPaid > 0 && recPaid < grand;
+                const bal = Math.max(0, grand - recPaid);
+
+                if (isPart || selectedInvoiceForView.status === "partial") {
+                  return (
+                    <div className="rounded-xl border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-4 space-y-2 text-xs shadow-2xs">
+                      <div className="flex items-center justify-between border-b border-amber-200 dark:border-amber-800/60 pb-2">
+                        <div className="flex items-center gap-2 font-bold text-amber-950 dark:text-amber-100">
+                          <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span>⚠️ Part Payment Record (Cash Invoice Not Matched)</span>
+                          <Badge className="bg-amber-500 text-white text-[10px] uppercase font-black rounded-full px-2 py-0.5">
+                            PART PAYMENT ONLY
+                          </Badge>
+                        </div>
+                        <div className="text-right font-mono font-bold text-amber-900 dark:text-amber-200">
+                          Paid: ₹{recPaid.toLocaleString("en-IN")} / Total: ₹{grand.toLocaleString("en-IN")}
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-amber-900 dark:text-amber-300 font-semibold pt-0.5">
+                        ⚠️ Part payment received. Cash invoice total is <strong>NOT matched</strong> yet. Unmatched balance due: <span className="font-bold text-rose-700 dark:text-rose-400">₹{bal.toLocaleString("en-IN")}</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-[11px]">
+                        <div>
+                          <span className="text-slate-500 font-semibold block text-[10px] uppercase">Payment Mode</span>
+                          <span className="font-bold text-slate-900 dark:text-slate-100">
+                            {selectedInvoiceForView.paymentMode || "Cash"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 font-semibold block text-[10px] uppercase">Settlement Date</span>
+                          <span className="font-bold text-slate-900 dark:text-slate-100">
+                            {selectedInvoiceForView.paymentAt
+                              ? new Date(selectedInvoiceForView.paymentAt).toLocaleDateString("en-IN", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric",
+                                })
+                              : selectedInvoiceForView.invDate || "-"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 font-semibold block text-[10px] uppercase">Collected Amount</span>
+                          <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                            ₹{recPaid.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 font-semibold block text-[10px] uppercase">Unmatched Balance Due</span>
+                          <span className="font-bold font-mono text-rose-700 dark:text-rose-400">
+                            ₹{bal.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
-                      Paid: ₹{(Number(selectedInvoiceForView.paymentReceived) || 0).toLocaleString("en-IN")}
+                  );
+                }
+
+                return (
+                  <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 p-4 space-y-2 text-xs shadow-2xs">
+                    <div className="flex items-center justify-between border-b border-emerald-200 dark:border-emerald-800/60 pb-2">
+                      <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100">
+                        <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>Recorded Payment &amp; Settlement Record</span>
+                        <Badge className="bg-emerald-600 text-white text-[10px] uppercase font-bold rounded-full">
+                          {selectedInvoiceForView.status || "Paid"}
+                        </Badge>
+                      </div>
+                      <div className="text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                        Paid: ₹{(Number(selectedInvoiceForView.paymentReceived) || 0).toLocaleString("en-IN")}
+                      </div>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-[11px]">
-                    <div>
-                      <span className="text-slate-500 font-semibold block text-[10px] uppercase">Payment Mode</span>
-                      <span className="font-bold text-slate-900 dark:text-slate-100">
-                        {selectedInvoiceForView.paymentMode || "Cash / Bank Transfer"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 font-semibold block text-[10px] uppercase">Settlement Date</span>
-                      <span className="font-bold text-slate-900 dark:text-slate-100">
-                        {selectedInvoiceForView.paymentAt
-                          ? new Date(selectedInvoiceForView.paymentAt).toLocaleDateString("en-IN", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })
-                          : selectedInvoiceForView.invDate || "-"}
-                      </span>
-                    </div>
-                    {selectedInvoiceForView.paymentNote && (
-                      <div className="col-span-2">
-                        <span className="text-slate-500 font-semibold block text-[10px] uppercase">Notes / Reference</span>
-                        <span className="font-medium text-slate-800 dark:text-slate-200">
-                          {selectedInvoiceForView.paymentNote}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-[11px]">
+                      <div>
+                        <span className="text-slate-500 font-semibold block text-[10px] uppercase">Payment Mode</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                          {selectedInvoiceForView.paymentMode || "Cash / Bank Transfer"}
                         </span>
                       </div>
-                    )}
+                      <div>
+                        <span className="text-slate-500 font-semibold block text-[10px] uppercase">Settlement Date</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                          {selectedInvoiceForView.paymentAt
+                            ? new Date(selectedInvoiceForView.paymentAt).toLocaleDateString("en-IN", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              })
+                            : selectedInvoiceForView.invDate || "-"}
+                        </span>
+                      </div>
+                      {selectedInvoiceForView.paymentNote && (
+                        <div className="col-span-2">
+                          <span className="text-slate-500 font-semibold block text-[10px] uppercase">Notes / Reference</span>
+                          <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {selectedInvoiceForView.paymentNote}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               <CashInvoicePreview
                 invoice={selectedInvoiceForView}

@@ -31,7 +31,10 @@ export type SavedDcHistoryEvent = {
   | "MOVE_CASH_TO_COMPLETED"
   | "CANCEL_CASE"
   | "RESTORE_FROM_CANCELLED"
-  | "PURCHASE";
+  | "PURCHASE"
+  | "DELINK_PAYMENT_MOVE_TO_CASH"
+  | "DELINK_PAYMENT_MOVE_TO_RETURNED"
+  | "DELETE_PART_PAYMENT_INSTALLMENT";
   fromStatus?: SavedDcStatus;
   toStatus: SavedDcStatus;
   meta?: Record<string, unknown>;
@@ -69,6 +72,14 @@ export type SavedDc = {
   paidAt?: string;
   cancelledAt?: string;
   cancelledRemarks?: string;
+  partPayments?: Array<{
+    at: string;
+    amount: number;
+    paymentMethod: "cash" | "bank_transfer";
+    collectedBy?: string;
+    utrNo?: string;
+    remarks?: string;
+  }>;
   history?: SavedDcHistoryEvent[];
 };
 
@@ -82,29 +93,72 @@ const createId = () => {
 };
 
 /**
- * Load DCs from Firestore
+ * Get local cached DCs synchronously
  */
-export const loadSavedDcs = async (): Promise<SavedDc[]> => {
+export const getLocalSavedDcs = (): SavedDc[] => {
   try {
-    const dcs = await fetchDcsFromFirestore();
-    return dcs;
-  } catch (error) {
-    console.error('Error loading DCs from Firestore:', error);
-    // Fallback to localStorage if Firestore fails
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed as SavedDc[];
-    } catch {
-      return [];
-    }
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as SavedDc[]) : [];
+  } catch {
+    return [];
   }
 };
 
 /**
- * Save a new DC to Firestore
+ * Save to local cache and broadcast update
+ */
+export const saveLocalDcs = (dcs: SavedDc[]): void => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dcs));
+    window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: dcs }));
+  } catch (err) {
+    console.warn("Failed to write to localStorage:", err);
+  }
+};
+
+/**
+ * Load DCs from Local Storage instantly, with background sync to Firestore
+ */
+export const loadSavedDcs = async (): Promise<SavedDc[]> => {
+  const localDcs = getLocalSavedDcs();
+  
+  // Background fetch from Firestore with 4-second timeout to prevent UI hanging
+  const fetchWithTimeout = Promise.race([
+    fetchDcsFromFirestore(),
+    new Promise<SavedDc[]>((_, reject) => 
+      setTimeout(() => reject(new Error('Firestore timeout')), 4000)
+    )
+  ]);
+
+  fetchWithTimeout
+    .then((firestoreDcs) => {
+      if (Array.isArray(firestoreDcs) && firestoreDcs.length >= 0) {
+        saveLocalDcs(firestoreDcs);
+      }
+    })
+    .catch((err) => {
+      console.warn('Firestore load fallback to local storage:', err?.message || err);
+    });
+
+  // Always return local cache immediately if present
+  if (localDcs.length > 0) {
+    return localDcs;
+  }
+
+  // If local cache is empty, wait for Firestore attempt
+  try {
+    const dcs = await fetchWithTimeout;
+    saveLocalDcs(dcs);
+    return dcs;
+  } catch {
+    return getLocalSavedDcs();
+  }
+};
+
+/**
+ * Save a new DC with instant local-first persistence
  */
 export const saveSavedDc = async (
   data: Omit<SavedDc, "id" | "savedAt" | "status"> & { status?: SavedDcStatus; customAt?: string },
@@ -125,79 +179,65 @@ export const saveSavedDc = async (
     ],
   };
 
-  try {
-    await saveDcToFirestore(saved);
-    try {
-      const dcs = await loadSavedDcs();
-      const updatedList = [saved, ...dcs.filter((d) => d.id !== saved.id)];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-      window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: updatedList }));
-    } catch {}
-    return saved;
-  } catch (error) {
-    console.error('Error saving DC to Firestore:', error);
-    throw error;
-  }
+  const currentDcs = getLocalSavedDcs();
+  const updatedList = [saved, ...currentDcs.filter((d) => d.id !== saved.id)];
+  saveLocalDcs(updatedList);
+
+  // Sync with Firestore asynchronously in background
+  saveDcToFirestore(saved).catch((error) => {
+    console.warn('Background Firestore save failed (offline/slow network):', error);
+  });
+
+  return saved;
 };
 
 /**
- * Delete a DC from Firestore
+ * Delete a DC with instant local-first persistence
  */
 export const deleteSavedDc = async (id: string): Promise<void> => {
-  try {
-    await deleteDcFromFirestore(id);
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const filtered = parsed.filter((d: any) => d.id !== id);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
-          window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: filtered }));
-        }
-      }
-    } catch {}
-  } catch (error) {
-    console.error('Error deleting DC from Firestore:', error);
-    throw error;
-  }
+  const currentDcs = getLocalSavedDcs();
+  const filtered = currentDcs.filter((d) => d.id !== id);
+  saveLocalDcs(filtered);
+
+  // Sync with Firestore asynchronously in background
+  deleteDcFromFirestore(id).catch((error) => {
+    console.warn('Background Firestore delete failed:', error);
+  });
 };
 
 /**
- * Update a DC in Firestore
+ * Update a DC with instant local-first persistence
  */
 export const updateSavedDc = async (id: string, updates: Partial<SavedDc>): Promise<SavedDc> => {
-  try {
-    // First, fetch all DCs to get the current DC
-    const dcs = await loadSavedDcs();
-    const dc = dcs.find((d) => d.id === id);
+  const dcs = getLocalSavedDcs();
+  let dc = dcs.find((d) => d.id === id);
 
-    if (!dc) {
-      throw new Error(`DC not found with id: ${id}`);
-    }
-
-    // Merge updates with existing DC
-    const updatedDc: SavedDc = { ...dc, ...updates };
-
-    // Update in Firestore
-    await updateDcInFirestore(updatedDc);
-
-    // Also update localStorage and broadcast
-    try {
-      const updatedList = dcs.map((d) => (d.id === id ? updatedDc : d));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-      window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: updatedList }));
-    } catch {}
-
-    return updatedDc;
-  } catch (error) {
-    console.error('Error updating DC in Firestore:', error);
-    throw error;
+  if (!dc) {
+    const fetched = await fetchDcsFromFirestore().catch(() => []);
+    dc = fetched.find((d) => d.id === id);
   }
+
+  if (!dc) {
+    throw new Error(`DC not found with id: ${id}`);
+  }
+
+  const updatedDc: SavedDc = { ...dc, ...updates };
+  const updatedList = dcs.map((d) => (d.id === id ? updatedDc : d));
+  if (!dcs.some(d => d.id === id)) {
+    updatedList.unshift(updatedDc);
+  }
+  saveLocalDcs(updatedList);
+
+  // Sync with Firestore asynchronously in background
+  updateDcInFirestore(updatedDc).catch((error) => {
+    console.warn('Background Firestore update failed:', error);
+  });
+
+  return updatedDc;
 };
 
 /**
- * Transition a DC to a new status with history tracking
+ * Transition a DC to a new status with instant local-first persistence and history tracking
  */
 export const transitionSavedDc = async (
   id: string,
@@ -209,79 +249,78 @@ export const transitionSavedDc = async (
     meta?: Record<string, unknown>;
   },
 ): Promise<SavedDc> => {
-  try {
-    // Fetch all DCs to get the current DC
-    const dcs = await loadSavedDcs();
-    const dc = dcs.find((d) => d.id === id);
+  let dcs = getLocalSavedDcs();
+  let dc = dcs.find((d) => d.id === id);
 
-    if (!dc) {
-      throw new Error(`DC not found with id: ${id}`);
+  if (!dc) {
+    const fetched = await fetchDcsFromFirestore().catch(() => []);
+    dc = fetched.find((d) => d.id === id);
+    if (fetched.length > 0) {
+      dcs = fetched;
     }
-
-    const now = new Date().toISOString();
-    const fromStatus = (dc.status ?? "pending") as SavedDcStatus;
-
-    const clearedSnapshot: Record<string, unknown> = {};
-    const cleared: Partial<SavedDc> = {};
-    for (const key of args.clear ?? []) {
-      clearedSnapshot[key as string] = (dc as any)[key];
-      (cleared as any)[key] = undefined;
-    }
-
-    const nextHistory: SavedDcHistoryEvent[] = [
-      ...(dc.history ?? []),
-      {
-        at: now,
-        action: args.action,
-        fromStatus,
-        toStatus: args.toStatus,
-        meta: {
-          ...(args.meta ?? {}),
-          ...(args.clear?.length ? { cleared: clearedSnapshot } : {}),
-        },
-      },
-    ];
-
-    const updatedDc: SavedDc = {
-      ...dc,
-      ...cleared,
-      ...(args.updates ?? {}),
-      status: args.toStatus,
-      history: nextHistory,
-    };
-
-    // Update in Firestore
-    await updateDcInFirestore(updatedDc);
-
-    // Also update localStorage and broadcast
-    try {
-      const updatedList = dcs.map((d) => (d.id === id ? updatedDc : d));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-      window.dispatchEvent(new CustomEvent("srrortho:saved_dcs_updated", { detail: updatedList }));
-    } catch {}
-
-    return updatedDc;
-  } catch (error) {
-    console.error('Error transitioning DC in Firestore:', error);
-    throw error;
   }
+
+  if (!dc) {
+    throw new Error(`DC not found with id: ${id}`);
+  }
+
+  const now = new Date().toISOString();
+  const fromStatus = (dc.status ?? "pending") as SavedDcStatus;
+
+  const clearedSnapshot: Record<string, unknown> = {};
+  const cleared: Partial<SavedDc> = {};
+  for (const key of args.clear ?? []) {
+    clearedSnapshot[key as string] = (dc as any)[key];
+    (cleared as any)[key] = undefined;
+  }
+
+  const nextHistory: SavedDcHistoryEvent[] = [
+    ...(dc.history ?? []),
+    {
+      at: now,
+      action: args.action,
+      fromStatus,
+      toStatus: args.toStatus,
+      meta: {
+        ...(args.meta ?? {}),
+        ...(args.clear?.length ? { cleared: clearedSnapshot } : {}),
+      },
+    },
+  ];
+
+  const updatedDc: SavedDc = {
+    ...dc,
+    ...cleared,
+    ...(args.updates ?? {}),
+    status: args.toStatus,
+    history: nextHistory,
+  };
+
+  const updatedList = dcs.map((d) => (d.id === id ? updatedDc : d));
+  if (!dcs.some(d => d.id === id)) {
+    updatedList.unshift(updatedDc);
+  }
+  saveLocalDcs(updatedList);
+
+  // Sync with Firestore asynchronously in background
+  updateDcInFirestore(updatedDc).catch((error) => {
+    console.warn('Background Firestore transition failed:', error);
+  });
+
+  return updatedDc;
 };
 
 /**
- * Clear all DCs from Firestore (use with caution!)
+ * Clear all DCs from Firestore & Local Storage
  */
 export const clearSavedDcs = async (): Promise<void> => {
+  saveLocalDcs([]);
   try {
-    // Note: Clearing all documents in a Firestore collection requires iterating and deleting,
-    // which can be costly. For a full clear, it's better to use the Firebase Console.
-    // For now, we'll keep the logic to delete one by one, but with a warning.
-    const dcs = await loadSavedDcs();
+    const dcs = await fetchDcsFromFirestore().catch(() => []);
     for (const dc of dcs) {
-      await deleteDcFromFirestore(dc.id);
+      await deleteDcFromFirestore(dc.id).catch(() => {});
     }
   } catch (error) {
     console.error('Error clearing DCs from Firestore:', error);
-    throw error;
   }
 };
-

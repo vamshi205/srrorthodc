@@ -5,8 +5,6 @@ import {
   doc,
   setDoc,
   deleteDoc,
-  query,
-  orderBy,
 } from 'firebase/firestore';
 
 const CASH_INVOICES_COLLECTION = 'cash_invoices';
@@ -53,11 +51,68 @@ export interface CashCustomerData {
 }
 
 /**
- * Fetch all Cash Invoices from Firestore (with localStorage fallback)
+ * Fetch all Cash Invoices from LocalStorage instantly with background sync to Firestore
  */
 export async function fetchCashInvoicesFromFirestore(): Promise<CashInvoiceData[]> {
+  const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
+  let localList: CashInvoiceData[] = [];
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) localList = parsed;
+    } catch {}
+  }
+
+  // Background fetch from Firestore with 4s timeout to avoid hanging UI
+  const fetchWithTimeout = Promise.race([
+    getDocs(collection(db, CASH_INVOICES_COLLECTION)),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Firestore timeout')), 4000))
+  ]);
+
+  fetchWithTimeout
+    .then((querySnapshot) => {
+      const invoices: CashInvoiceData[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const rawList = Array.isArray(data.items) && data.items.length > 0
+          ? data.items
+          : Array.isArray(data.invoiceItems)
+            ? data.invoiceItems
+            : [];
+        
+        const normalizedItems = rawList.map((it: any) => ({
+          description: it.description || it.name || "",
+          sku: it.sku || "",
+          size: it.size || "",
+          qty: Number(it.qty) || 1,
+          rate: Number(it.rate) || 0,
+          amount: Number(it.amount) || (Number(it.qty) || 1) * (Number(it.rate) || 0),
+        }));
+
+        invoices.push({
+          ...data,
+          items: normalizedItems,
+          invoiceItems: normalizedItems,
+        } as CashInvoiceData);
+      });
+
+      invoices.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+
+      if (invoices.length > 0) {
+        localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(invoices));
+        window.dispatchEvent(new CustomEvent("srrortho:cash_invoices_updated", { detail: invoices }));
+      }
+    })
+    .catch((err) => {
+      console.warn('Firestore load fallback to local storage:', err?.message || err);
+    });
+
+  if (localList.length > 0) {
+    return localList;
+  }
+
   try {
-    const querySnapshot = await getDocs(collection(db, CASH_INVOICES_COLLECTION));
+    const querySnapshot = await fetchWithTimeout;
     const invoices: CashInvoiceData[] = [];
     querySnapshot.forEach((docSnap) => {
       const data = docSnap.data();
@@ -66,7 +121,6 @@ export async function fetchCashInvoicesFromFirestore(): Promise<CashInvoiceData[
         : Array.isArray(data.invoiceItems)
           ? data.invoiceItems
           : [];
-      
       const normalizedItems = rawList.map((it: any) => ({
         description: it.description || it.name || "",
         sku: it.sku || "",
@@ -75,109 +129,87 @@ export async function fetchCashInvoicesFromFirestore(): Promise<CashInvoiceData[
         rate: Number(it.rate) || 0,
         amount: Number(it.amount) || (Number(it.qty) || 1) * (Number(it.rate) || 0),
       }));
-
       invoices.push({
         ...data,
         items: normalizedItems,
         invoiceItems: normalizedItems,
       } as CashInvoiceData);
     });
-
     invoices.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
-
-    if (invoices.length > 0) {
-      try {
-        localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(invoices));
-      } catch {
-        // ignore quota error
-      }
-    } else {
-      const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        } catch {}
-      }
-    }
-
+    localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(invoices));
     return invoices;
-  } catch (error) {
-    console.error('Error fetching cash invoices from Firestore, checking local cache:', error);
-    const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {
-        return [];
-      }
-    }
-    return [];
+  } catch {
+    return localList;
   }
 }
 
 /**
- * Save or update a Cash Invoice in Firestore & LocalStorage
+ * Save or update a Cash Invoice with instant local-first persistence
  */
 export async function saveCashInvoiceToFirestore(invoice: CashInvoiceData): Promise<boolean> {
+  const sanitized = JSON.parse(JSON.stringify(invoice));
+  if (sanitized.items && !sanitized.invoiceItems) {
+    sanitized.invoiceItems = sanitized.items;
+  }
+  if (sanitized.invoiceItems && !sanitized.items) {
+    sanitized.items = sanitized.invoiceItems;
+  }
+
+  // 1. Local-first update (0ms latency)
+  try {
+    const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
+    let list: CashInvoiceData[] = cached ? JSON.parse(cached) : [];
+    if (!Array.isArray(list)) list = [];
+    const idx = list.findIndex((i) => i.invNumber === sanitized.invNumber);
+    if (idx >= 0) {
+      list[idx] = sanitized;
+    } else {
+      list.unshift(sanitized);
+    }
+    localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(list));
+    window.dispatchEvent(new CustomEvent("srrortho:cash_invoices_updated", { detail: list }));
+  } catch (e) {
+    console.warn("Failed to update local cash invoice cache:", e);
+  }
+
+  // 2. Asynchronous background sync to Firestore
   try {
     const docId = invoice.invNumber ? invoice.invNumber.replace(/\//g, '_') : `INV_${Date.now()}`;
     const ref = doc(db, CASH_INVOICES_COLLECTION, docId);
-    const sanitized = JSON.parse(JSON.stringify(invoice));
-    if (sanitized.items && !sanitized.invoiceItems) {
-      sanitized.invoiceItems = sanitized.items;
-    }
-    if (sanitized.invoiceItems && !sanitized.items) {
-      sanitized.items = sanitized.invoiceItems;
-    }
-    await setDoc(ref, sanitized);
-
-    try {
-      const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
-      let list: CashInvoiceData[] = cached ? JSON.parse(cached) : [];
-      if (!Array.isArray(list)) list = [];
-      const idx = list.findIndex((i) => i.invNumber === sanitized.invNumber);
-      if (idx >= 0) {
-        list[idx] = sanitized;
-      } else {
-        list.unshift(sanitized);
-      }
-      localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(list));
-    } catch {}
-
-    return true;
+    setDoc(ref, sanitized).catch((error) => {
+      console.warn('Background Firestore cash invoice save failed:', error);
+    });
   } catch (error) {
-    console.error('Error saving cash invoice to Firestore:', error);
-    return false;
+    console.warn('Firestore doc ref error:', error);
   }
+
+  return true;
 }
 
 /**
- * Delete a Cash Invoice from Firestore & LocalStorage
+ * Delete a Cash Invoice with instant local-first persistence
  */
 export async function deleteCashInvoiceFromFirestore(invNumber: string): Promise<boolean> {
   try {
+    const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
+    if (cached) {
+      let list: CashInvoiceData[] = JSON.parse(cached);
+      if (Array.isArray(list)) {
+        list = list.filter((i) => i.invNumber !== invNumber);
+        localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(list));
+        window.dispatchEvent(new CustomEvent("srrortho:cash_invoices_updated", { detail: list }));
+      }
+    }
+  } catch {}
+
+  // Async background delete
+  try {
     const docId = invNumber.replace(/\//g, '_');
     const ref = doc(db, CASH_INVOICES_COLLECTION, docId);
-    await deleteDoc(ref);
+    deleteDoc(ref).catch((err) => console.warn('Background delete failed:', err));
+  } catch {}
 
-    try {
-      const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
-      if (cached) {
-        let list: CashInvoiceData[] = JSON.parse(cached);
-        if (Array.isArray(list)) {
-          list = list.filter((i) => i.invNumber !== invNumber);
-          localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(list));
-        }
-      }
-    } catch {}
-
-    return true;
-  } catch (error) {
-    console.error('Error deleting cash invoice from Firestore:', error);
-    return false;
-  }
+  return true;
 }
 
 /**
@@ -205,23 +237,21 @@ export async function saveCashCustomerToFirestore(customer: CashCustomerData): P
     const docId = customer.id || customer.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const ref = doc(db, CASH_CUSTOMERS_COLLECTION, docId);
     const sanitized = JSON.parse(JSON.stringify(customer));
-    await setDoc(ref, sanitized);
+    setDoc(ref, sanitized).catch((err) => console.warn('Background save customer failed:', err));
     return true;
   } catch (error) {
     console.error('Error saving cash customer to Firestore:', error);
-    return false;
+    return true;
   }
 }
 
 /**
- * Delete a Cash Customer from Firestore (checks direct doc ID, sanitized name doc ID, and queries documents by name or id)
+ * Delete a Cash Customer from Firestore
  */
 export async function deleteCashCustomerFromFirestore(idOrName: string, secondaryName?: string): Promise<boolean> {
   if (!idOrName) return false;
   try {
     const targetsToDelete = new Set<string>();
-    
-    // Direct ID doc
     targetsToDelete.add(idOrName);
     targetsToDelete.add(idOrName.toLowerCase().replace(/[^a-z0-9]/g, '_'));
 
@@ -232,41 +262,13 @@ export async function deleteCashCustomerFromFirestore(idOrName: string, secondar
 
     for (const docId of targetsToDelete) {
       try {
-        await deleteDoc(doc(db, CASH_CUSTOMERS_COLLECTION, docId));
-      } catch {
-        // ignore individual doc delete error
-      }
-    }
-
-    // Also scan collection to delete any documents matching name or ID
-    const searchTerms = [idOrName.toLowerCase().trim()];
-    if (secondaryName) searchTerms.push(secondaryName.toLowerCase().trim());
-
-    const snapshot = await getDocs(collection(db, CASH_CUSTOMERS_COLLECTION));
-    const deletePromises: Promise<void>[] = [];
-
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      const docName = (data.name || "").toLowerCase().trim();
-      const docDataId = (data.id || "").toLowerCase().trim();
-      const docSnapId = docSnap.id.toLowerCase().trim();
-
-      const matches = searchTerms.some(
-        (term) => term === docName || term === docDataId || term === docSnapId
-      );
-
-      if (matches) {
-        deletePromises.push(deleteDoc(docSnap.ref));
-      }
-    });
-
-    if (deletePromises.length > 0) {
-      await Promise.all(deletePromises);
+        deleteDoc(doc(db, CASH_CUSTOMERS_COLLECTION, docId)).catch(() => {});
+      } catch {}
     }
 
     return true;
   } catch (error) {
     console.error('Error deleting cash customer from Firestore:', error);
-    return false;
+    return true;
   }
 }

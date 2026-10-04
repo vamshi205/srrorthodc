@@ -57,6 +57,8 @@ import {
   Layers,
   Mail,
   ArrowDownLeft,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { extractHdfcNarration } from "@/services/gmailConnectorService";
 import { Button } from "@/components/ui/button";
@@ -67,7 +69,7 @@ import { getSavedCustomers, saveCustomer, Customer, HospitalContact, normalizeHo
 import { HospitalSelect } from "@/components/ortho/HospitalSelect";
 import { DoctorSelect } from "@/components/ortho/DoctorSelect";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
@@ -88,14 +90,14 @@ import { deleteSavedDc, loadSavedDcs, SavedDc, SavedDcHistoryEvent, SavedDcStatu
 import { AppLoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { auth } from "@/firebase";
 import html2pdf from "html2pdf.js";
-import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore, type CashInvoiceData } from "@/services/cashInvoiceFirebaseService";
+import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore, deleteCashInvoiceFromFirestore, type CashInvoiceData } from "@/services/cashInvoiceFirebaseService";
 import { CashInvoicePreview } from "@/components/cash-invoice/CashInvoicePreview";
 import { printCashMemo } from "@/lib/cashInvoicePrint";
 import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotifications";
 import { CollectPaymentsScroller } from "@/components/ortho/CollectPaymentsScroller";
 import { PersonnelSelect, TRANSPORT_MODES, getTransportMode, renderTransportIcon } from "@/components/ortho/PersonnelSelect";
 import { normalizePersonnelName, isDisallowedPersonnel, isTransportLogisticsName } from "@/lib/personnelStorage";
-import { fetchBankTransactionsFromFirestore, fetchBankAccountsFromFirestore, linkBankTransactionToCashInvoice, recordCashPaymentToCashInHand, type BankTransaction, type BankAccount } from "@/services/bankAccountFirebaseService";
+import { fetchBankTransactionsFromFirestore, fetchBankAccountsFromFirestore, linkBankTransactionToCashInvoice, unlinkBankTransactionFromCashInvoice, recordCashPaymentToCashInHand, type BankTransaction, type BankAccount } from "@/services/bankAccountFirebaseService";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -229,10 +231,14 @@ const SavedDcs = () => {
   const [adminPasswordOpen, setAdminPasswordOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [paymentDialog, setPaymentDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
+  const [delinkConfirmDialog, setDelinkConfirmDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
   const [paymentRemarksInput, setPaymentRemarksInput] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer" | "others">("cash");
   const [paymentCollectedBy, setPaymentCollectedBy] = useState("");
+  const [partialSettlementType, setPartialSettlementType] = useState<"pay_more" | "final_settlement">("pay_more");
+  const [finalSettlementReason, setFinalSettlementReason] = useState<"discount" | "doctor_commission" | "hospital_commission">("discount");
+  const [settlementDoctorName, setSettlementDoctorName] = useState<string>("");
   const [cashInvoices, setCashInvoices] = useState<CashInvoiceData[]>([]);
   const [linkedBankTx, setLinkedBankTx] = useState<BankTransaction | null>(null);
   const [availableBankCredits, setAvailableBankCredits] = useState<BankTransaction[]>([]);
@@ -297,6 +303,10 @@ const SavedDcs = () => {
     dc?: SavedDc;
     customer?: Customer | null;
   } | null>(null);
+
+  // Collapsible toggle state for multi-installment part payment history
+  const [isTrackPartPaymentsOpen, setIsTrackPartPaymentsOpen] = useState(false);
+  const [isRecordPartPaymentsOpen, setIsRecordPartPaymentsOpen] = useState(false);
 
   useEffect(() => {
     const handleCustUpdate = () => {
@@ -593,14 +603,31 @@ const SavedDcs = () => {
 
   const normalizedDcs = useMemo(
     () =>
-      savedDcs.map((dc) => ({
-        ...dc,
-        status: (dc.status ?? "pending") as SavedDcStatus,
-        receivedBy: dc.receivedBy ?? "",
-        deliveredBy: dc.deliveredBy ?? "",
-        remarks: dc.remarks ?? "",
-      })),
-    [savedDcs],
+      savedDcs.map((dc) => {
+        let effectiveCashAmount = dc.cashAmount;
+        if (dc.status === "cash" && dc.invoiceRef) {
+          const invClean = dc.invoiceRef.trim().toLowerCase();
+          const matchInv = cashInvoices.find(
+            (i) => i.invNumber && i.invNumber.trim().toLowerCase() === invClean
+          );
+          if (matchInv && (Number(matchInv.grandTotal) || Number(matchInv.actualReceivable))) {
+            const trueTotal = Number(matchInv.grandTotal || matchInv.actualReceivable);
+            if (trueTotal > 0) {
+              effectiveCashAmount = trueTotal;
+            }
+          }
+        }
+
+        return {
+          ...dc,
+          cashAmount: effectiveCashAmount,
+          status: (dc.status ?? "pending") as SavedDcStatus,
+          receivedBy: dc.receivedBy ?? "",
+          deliveredBy: dc.deliveredBy ?? "",
+          remarks: dc.remarks ?? "",
+        };
+      }),
+    [savedDcs, cashInvoices],
   );
 
   const dcCounts = useMemo(() => {
@@ -665,10 +692,25 @@ const SavedDcs = () => {
 
   const openPaymentDialog = (dc: SavedDc) => {
     setPaymentDialog({ open: true, dc });
-    setPaymentAmountInput(dc.cashAmount ? String(dc.cashAmount) : "");
+    
+    // Check if previously part-paid to calculate remaining balance default
+    let prevPaid = dc.paidAmount || 0;
+    let origTotal = dc.originalInvoiceTotal || dc.cashAmount || 0;
+    if (dc.cashRemarks && dc.cashRemarks.includes("Part Payment Received")) {
+      const match = dc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i);
+      if (match) {
+        prevPaid = parseFloat(match[1].replace(/,/g, "")) || prevPaid;
+        origTotal = parseFloat(match[2].replace(/,/g, "")) || origTotal;
+      }
+    }
+
+    const remainingDue = (origTotal > prevPaid && prevPaid > 0) ? (origTotal - prevPaid) : origTotal;
+
+    setPaymentAmountInput(remainingDue > 0 ? String(remainingDue) : (dc.cashAmount ? String(dc.cashAmount) : ""));
     setPaymentRemarksInput("");
     setPaymentMethod(dc.paymentMethod || "cash");
     setPaymentCollectedBy(dc.collectedBy || "");
+    setPartialSettlementType("pay_more");
     setSelectedCreditTxId("not_found");
     setSelectedBankAccountId("all");
   };
@@ -743,7 +785,30 @@ const SavedDcs = () => {
   const handleQuickRecordPayment = async () => {
     if (!paymentDialog.dc) return;
     const dc = paymentDialog.dc;
-    const paidAmount = parseFloat(paymentAmountInput) || (dc.cashAmount || 0);
+
+    let currentInstallment = parseFloat(paymentAmountInput) || 0;
+    let prevPaid = dc.paidAmount || 0;
+    let originalInvoiceTotal = dc.originalInvoiceTotal || dc.cashAmount || (dc.billedAmount ? dc.billedAmount - (dc.hospitalMargin || 0) : currentInstallment);
+
+    if (dc.cashRemarks && dc.cashRemarks.includes("Part Payment Received")) {
+      const match = dc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i);
+      if (match) {
+        prevPaid = parseFloat(match[1].replace(/,/g, "")) || prevPaid;
+        originalInvoiceTotal = parseFloat(match[2].replace(/,/g, "")) || originalInvoiceTotal;
+      }
+    }
+
+    // Cumulative paid amount across installments
+    const paidAmount = prevPaid + currentInstallment;
+    const isPartialPayment = paidAmount > 0 && paidAmount < originalInvoiceTotal;
+    const isFullPayment = paidAmount >= originalInvoiceTotal && originalInvoiceTotal > 0;
+
+    // Decision rule based on user choice for part payment:
+    // Option 1: "User will pay more" -> stay in cash queue so more payments can be recorded
+    // Option 2: "Final settlement" or full payment -> move to completed queue
+    const nextStatus: SavedDcStatus = (isPartialPayment && partialSettlementType === "pay_more")
+      ? "cash"
+      : "completed";
 
     if (paymentMethod === "cash" && !paymentCollectedBy.trim()) {
       toast({
@@ -766,12 +831,28 @@ const SavedDcs = () => {
       : matchedBankTx?.referenceNumber
       ? ` • Linked to Ref: ${matchedBankTx.referenceNumber}`
       : "";
-    const defaultRemark = hasHiked
-      ? `Paid ₹${paidAmount.toLocaleString('en-IN')} via ${methodLabel}${collectedInfo} (Hiked Bill ₹${dc.billedAmount!.toLocaleString('en-IN')}, Hospital Cut ₹${margin!.toLocaleString('en-IN')})`
+
+    let settlementReasonText = "";
+    if (isPartialPayment && partialSettlementType === "final_settlement") {
+      if (finalSettlementReason === "discount") {
+        settlementReasonText = ` • Reason: Discount given (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString('en-IN')})`;
+      } else if (finalSettlementReason === "hospital_commission") {
+        settlementReasonText = ` • Reason: Hospital Cut / Commission (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString('en-IN')})`;
+      } else if (finalSettlementReason === "doctor_commission") {
+        const drName = settlementDoctorName.trim() || dc.doctorName || "N/A";
+        settlementReasonText = ` • Reason: Doctor Commission for Dr. ${drName} (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString('en-IN')})`;
+      }
+    }
+
+    const statusRemarkText = isPartialPayment
+      ? partialSettlementType === "final_settlement"
+        ? `Part Payment Final Settled: ₹${paidAmount.toLocaleString('en-IN')} of ₹${originalInvoiceTotal.toLocaleString('en-IN')}${settlementReasonText} via ${methodLabel}${collectedInfo}`
+        : `Part Payment Received: ₹${paidAmount.toLocaleString('en-IN')} of ₹${originalInvoiceTotal.toLocaleString('en-IN')} (Balance Due: ₹${(originalInvoiceTotal - paidAmount).toLocaleString('en-IN')}) via ${methodLabel}${collectedInfo}`
       : `Paid ₹${paidAmount.toLocaleString('en-IN')} via ${methodLabel}${collectedInfo}`;
+
     const finalRemarks = paymentRemarksInput.trim()
-      ? `${paymentRemarksInput.trim()} (${methodLabel}${collectedInfo})`
-      : defaultRemark;
+      ? `${paymentRemarksInput.trim()} (${statusRemarkText})`
+      : statusRemarkText;
 
     setIsActionLoading(true);
     try {
@@ -781,16 +862,31 @@ const SavedDcs = () => {
       const bankName = matchedBankTx?.description || "Bank Account";
       const utrNo = matchedBankTx?.referenceNumber || matchedBankTx?.id;
 
+      const existingPartPayments = dc.partPayments || [];
+      const newInstallmentEntry = {
+        at: new Date().toISOString(),
+        amount: currentInstallment,
+        paymentMethod,
+        collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+        utrNo: matchedBankTx?.referenceNumber || matchedBankTx?.id,
+        remarks: paymentRemarksInput.trim() || undefined,
+      };
+      const updatedPartPayments = [...existingPartPayments, newInstallmentEntry];
+
       await transitionSavedDc(dc.id, {
-        toStatus: "completed",
-        action: "MOVE_CASH_TO_COMPLETED",
+        toStatus: nextStatus,
+        action: nextStatus === "completed" ? "MOVE_CASH_TO_COMPLETED" : "MOVE_TO_CASH",
         updates: {
-          cashAmount: paidAmount,
+          cashAmount: originalInvoiceTotal,
+          paidAmount,
+          originalInvoiceTotal,
+          isPartialPayment,
           hospitalMargin: margin,
           paymentMethod,
           collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
           paidAt: new Date().toISOString(),
           cashRemarks: finalRemarks,
+          partPayments: updatedPartPayments,
           ...(matchedBankTx ? {
             bankAccountId,
             bankName,
@@ -800,10 +896,13 @@ const SavedDcs = () => {
         meta: {
           paidAt: new Date().toISOString(),
           paidAmount,
+          originalInvoiceTotal,
+          isPartialPayment,
           paymentMethod,
           collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
           billedAmount: dc.billedAmount,
           hospitalMargin: margin,
+          partPayments: updatedPartPayments,
           remarks: finalRemarks,
           ...(matchedBankTx ? { bankAccountId, utrNo } : {})
         }
@@ -972,14 +1071,7 @@ const SavedDcs = () => {
   }, [selectedDc, selectedIsTaxInvoice]);
 
   const getDisplayDate = (dc: SavedDc) => {
-    if (dc.status === "pending") return dc.savedAt;
-    if (dc.status === "returned") return dc.returnedAt || dc.savedAt;
-    if (dc.status === "cash") return dc.cashAt || dc.returnedAt || dc.savedAt;
-    if (dc.status === "completed") {
-      const completedEvent = dc.history?.find(h => h.action.includes("COMPLETED") || h.action.includes("INVOICE"));
-      return completedEvent?.at || dc.returnedAt || dc.savedAt;
-    }
-    return dc.savedAt;
+    return dc.savedAt || (dc as any).createdAt || new Date().toISOString();
   };
 
   const filteredDcs = useMemo(() => {
@@ -1643,6 +1735,232 @@ const SavedDcs = () => {
         variant: 'destructive'
       });
     } finally {
+      setLoadingDcIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(dc.id);
+        return newSet;
+      });
+    }
+  };
+
+    const openDelinkConfirmDialog = (dc: SavedDc) => {
+    setPaymentDialog({ open: false, dc: null });
+    setDelinkConfirmDialog({ open: true, dc });
+  };
+
+  const executeDelinkPayment = async (dc: SavedDc, targetStatus: "cash" | "returned") => {
+    setLoadingDcIds(prev => new Set(prev).add(dc.id));
+    setIsActionLoading(true);
+    try {
+      // 1. Unlink bank credit transaction in Bank Accounts / Treasury
+      try {
+        const txs = await fetchBankTransactionsFromFirestore(undefined, 300);
+        const dcNoClean = (dc.dcNo || "").toLowerCase().trim();
+        const invRefClean = (dc.invoiceRef || "").toLowerCase().trim();
+        const utrClean = (dc.utrNo || "").toLowerCase().trim();
+
+        const matchingTxs = txs.filter((t) => {
+          const linkedInv = (t.linkedInvoiceNumber || t.linkedInvoiceId || "").toLowerCase().trim();
+          const refNo = (t.referenceNumber || "").toLowerCase().trim();
+          if (utrClean && refNo === utrClean) return true;
+          if (linkedInv && (linkedInv === invRefClean || linkedInv === "dc #" + dcNoClean || linkedInv === dcNoClean)) return true;
+          return false;
+        });
+
+        for (const tx of matchingTxs) {
+          await unlinkBankTransactionFromCashInvoice(tx.id, false);
+        }
+      } catch (err) {
+        console.warn('Could not unlink bank transaction during delink:', err);
+      }
+
+      // 2. Unlink & Reset Cash Invoice payment status if linked
+      if (dc.invoiceRef) {
+        try {
+          const invs = await fetchCashInvoicesFromFirestore();
+          const invRefClean = dc.invoiceRef.trim().toLowerCase();
+          const matchingInv = invs.find(
+            (i) => i.invNumber && i.invNumber.trim().toLowerCase() === invRefClean
+          );
+
+          if (matchingInv) {
+            if (targetStatus === "returned") {
+              await deleteCashInvoiceFromFirestore(matchingInv.invNumber);
+            } else {
+              const resetInv: CashInvoiceData = {
+                ...matchingInv,
+                paymentReceived: 0,
+                status: "pending",
+                paymentMode: undefined,
+                paymentAt: undefined,
+                paymentNote: undefined,
+                lastBankPaymentRef: undefined,
+                lastBankPaymentDate: undefined,
+                lastBankPaymentAccountId: undefined,
+                savedAt: Date.now(),
+              };
+              await saveCashInvoiceToFirestore(resetInv);
+            }
+          }
+        } catch (invErr) {
+          console.warn("Could not reset cash invoice payment state during delink:", invErr);
+        }
+      }
+
+      // 3. Determine original Cash Invoice / DC amount before delinking
+      let originalCashAmount = dc.cashAmount || 0;
+      if (dc.invoiceRef) {
+        try {
+          const invs = await fetchCashInvoicesFromFirestore();
+          const match = invs.find(i => i.invNumber && i.invNumber.trim().toLowerCase() === dc.invoiceRef?.trim().toLowerCase());
+          if (match && (Number(match.grandTotal) || Number(match.actualReceivable))) {
+            originalCashAmount = Number(match.grandTotal || match.actualReceivable);
+          }
+        } catch {}
+      }
+      if (!originalCashAmount && dc.billedAmount) {
+        originalCashAmount = dc.billedAmount - (dc.hospitalMargin || 0);
+      }
+
+      // 4. Clear payment metadata fields
+      const clearFields: Array<keyof SavedDc> = [
+        "paidAt",
+        "paymentMethod",
+        "utrNo",
+        "bankName",
+        "accountNumber",
+        "collectedBy",
+        "cashAt",
+        "cashRemarks",
+        "paidAmount",
+        "originalInvoiceTotal",
+        "isPartialPayment",
+        "partPayments",
+      ];
+
+      if (targetStatus === "returned") {
+        clearFields.push("invoiceRef", "invoiceRemarks", "invoiceUrl", "isTaxInvoice", "cashAmount", "billedAmount", "hospitalMargin");
+      }
+
+      await transitionSavedDc(dc.id, {
+        toStatus: targetStatus,
+        action: targetStatus === "returned" ? "DELINK_PAYMENT_MOVE_TO_RETURNED" : "DELINK_PAYMENT_MOVE_TO_CASH",
+        clear: clearFields,
+        updates: {
+          paidAmount: 0,
+          isPartialPayment: false,
+          partPayments: [],
+          ...(targetStatus === "cash" ? { 
+            cashAmount: originalCashAmount > 0 ? originalCashAmount : (dc.originalInvoiceTotal || dc.cashAmount),
+            cashRemarks: "Payment delinked & reset like new. Awaiting fresh collection." 
+          } : {}),
+        },
+        meta: {
+          note: `Payment delinked by user. Reset all part payments like new. Moved to ${targetStatus === 'returned' ? 'Returned Queue' : 'Cash Queue'}.`,
+          previousPaidAmount: dc.paidAmount,
+          previousPartPayments: dc.partPayments,
+          previousPaidAt: dc.paidAt,
+          previousUtrNo: dc.utrNo,
+          previousPaymentMethod: dc.paymentMethod,
+        }
+      });
+
+      // 4. Refresh local states instantly
+      setLinkedBankTx(null);
+      const [refreshedDcs, refreshedInvs] = await Promise.all([
+        loadSavedDcs(),
+        fetchCashInvoicesFromFirestore()
+      ]);
+      setSavedDcs(refreshedDcs);
+      setCashInvoices(refreshedInvs);
+      setDelinkConfirmDialog({ open: false, dc: null });
+
+      toast({
+        title: "⚡ Payment Delinked & Reset",
+        description: `DC #${dc.dcNo} payment & part payments reset like new! Moved to ${targetStatus === 'returned' ? 'Returned Queue' : 'Cash Queue'}.`,
+      });
+    } catch (error) {
+      console.error('Error delinking payment:', error);
+      toast({
+        title: "Error Delinking Payment",
+        description: error instanceof Error ? error.message : 'Failed to update DC',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsActionLoading(false);
+      setLoadingDcIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(dc.id);
+        return newSet;
+      });
+    }
+  };
+
+  const handleDeletePartPaymentInstallment = async (dc: SavedDc, indexToDelete: number) => {
+    const existingPartPayments = dc.partPayments || [];
+    if (indexToDelete < 0 || indexToDelete >= existingPartPayments.length) return;
+
+    const deletedItem = existingPartPayments[indexToDelete];
+    const confirmText = `Are you sure you want to delete Installment #${indexToDelete + 1} (+₹${deletedItem.amount.toLocaleString('en-IN')})?`;
+    if (!window.confirm(confirmText)) return;
+
+    setLoadingDcIds(prev => new Set(prev).add(dc.id));
+    setIsActionLoading(true);
+    try {
+      const updatedPartPayments = existingPartPayments.filter((_, idx) => idx !== indexToDelete);
+      const newPaidAmount = updatedPartPayments.reduce((sum, item) => sum + (item.amount || 0), 0);
+      const originalInvoiceTotal = dc.originalInvoiceTotal || dc.cashAmount || (dc.billedAmount ? dc.billedAmount - (dc.hospitalMargin || 0) : newPaidAmount);
+
+      const isStillPartial = newPaidAmount > 0 && newPaidAmount < originalInvoiceTotal;
+      const nextStatus: SavedDcStatus = isStillPartial ? "cash" : (newPaidAmount >= originalInvoiceTotal && originalInvoiceTotal > 0 ? "completed" : "cash");
+
+      const methodLabel = updatedPartPayments.length > 0 ? (updatedPartPayments[updatedPartPayments.length - 1].paymentMethod === "cash" ? "Cash" : "Bank Transfer") : "Cash";
+      const newCashRemarks = updatedPartPayments.length === 0 || newPaidAmount === 0
+        ? "Part payment installment deleted. Awaiting re-collection."
+        : isStillPartial
+        ? `Part Payment Received: ₹${newPaidAmount.toLocaleString('en-IN')} of ₹${originalInvoiceTotal.toLocaleString('en-IN')} (Balance Due: ₹${(originalInvoiceTotal - newPaidAmount).toLocaleString('en-IN')}) via ${methodLabel}`
+        : `Paid ₹${newPaidAmount.toLocaleString('en-IN')} via ${methodLabel}`;
+
+      await transitionSavedDc(dc.id, {
+        toStatus: nextStatus,
+        action: "DELETE_PART_PAYMENT_INSTALLMENT",
+        updates: {
+          partPayments: updatedPartPayments,
+          paidAmount: newPaidAmount,
+          isPartialPayment: isStillPartial,
+          cashRemarks: newCashRemarks,
+        },
+        meta: {
+          note: `Deleted installment #${indexToDelete + 1} (₹${deletedItem.amount.toLocaleString('en-IN')}).`,
+          deletedInstallment: deletedItem,
+          deletedIndex: indexToDelete,
+          remainingPartPaymentsCount: updatedPartPayments.length,
+          newPaidAmount,
+          originalInvoiceTotal,
+        }
+      });
+
+      const refreshedDcs = await loadSavedDcs();
+      setSavedDcs(refreshedDcs);
+
+      const updatedDcObj = refreshedDcs.find(d => d.id === dc.id);
+      if (updatedDcObj && paymentDialog.open && paymentDialog.dc?.id === dc.id) {
+        setPaymentDialog({ open: true, dc: updatedDcObj });
+      }
+
+      toast({
+        title: "🗑️ Installment Deleted",
+        description: `Installment #${indexToDelete + 1} (₹${deletedItem.amount.toLocaleString('en-IN')}) removed. Paid total is now ₹${newPaidAmount.toLocaleString('en-IN')}.`,
+      });
+    } catch (error) {
+      console.error('Error deleting part payment installment:', error);
+      toast({
+        title: "Error Deleting Installment",
+        description: error instanceof Error ? error.message : 'Failed to update DC',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsActionLoading(false);
       setLoadingDcIds(prev => {
         const newSet = new Set(prev);
         newSet.delete(dc.id);
@@ -2576,59 +2894,67 @@ const SavedDcs = () => {
                                           </>
                                         )}
                                         {dc.status === "completed" && (
-                                          <>
-                                            {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                              <>
-                                                <DropdownMenuItem
-                                                  onClick={() => openActionDialog("invoice", dc)}
-                                                  className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
-                                                >
-                                                  <FileText className="h-4 w-4 text-purple-600" />
-                                                  Tax Invoice: {dc.invoiceRef}
-                                                </DropdownMenuItem>
-                                                {dc.invoiceUrl ? (
-                                                  <DropdownMenuItem
-                                                    onClick={() => window.open(dc.invoiceUrl, '_blank')}
-                                                    className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                                  >
-                                                    <ExternalLink className="h-4 w-4 text-emerald-600" />
-                                                    Open GoGSTBill
-                                                  </DropdownMenuItem>
-                                                ) : (
-                                                  <DropdownMenuItem
-                                                    onClick={() => openActionDialog("invoice", dc)}
-                                                    className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
-                                                  >
-                                                    <Link2 className="h-4 w-4 text-indigo-600" />
-                                                    Enter GoGSTBill URL
-                                                  </DropdownMenuItem>
-                                                )}
-                                              </>
-                                            )}
-                                            {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                              <DropdownMenuItem
-                                                onClick={() => {
-                                                  setViewingCashMemoRef(dc.invoiceRef!);
-                                                  setCashMemoModalOpen(true);
-                                                }}
-                                                className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
-                                              >
-                                                <Receipt className="h-4 w-4 text-blue-600" />
-                                                View Cash Memo ({dc.invoiceRef})
-                                              </DropdownMenuItem>
-                                            )}
-                                            <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
-                                              <Undo2 className="h-4 w-4" />
-                                              Move back to Returned
-                                            </DropdownMenuItem>
-                                          </>
-                                        )}
-                                        {dc.status === "returned" && (
-                                          <DropdownMenuItem onClick={() => setMoveToPendingDialog({ open: true, dc })} className="gap-2">
-                                            <Undo2 className="h-4 w-4" />
-                                            Move back to Pending
-                                          </DropdownMenuItem>
-                                        )}
+                                           <>
+                                             {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                                               <>
+                                                 <DropdownMenuItem
+                                                   onClick={() => openActionDialog("invoice", dc)}
+                                                   className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
+                                                 >
+                                                   <FileText className="h-4 w-4 text-purple-600" />
+                                                   Tax Invoice: {dc.invoiceRef}
+                                                 </DropdownMenuItem>
+                                                 {dc.invoiceUrl ? (
+                                                   <DropdownMenuItem
+                                                     onClick={() => window.open(dc.invoiceUrl, '_blank')}
+                                                     className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                                   >
+                                                     <ExternalLink className="h-4 w-4 text-emerald-600" />
+                                                     Open GoGSTBill
+                                                   </DropdownMenuItem>
+                                                 ) : (
+                                                   <DropdownMenuItem
+                                                     onClick={() => openActionDialog("invoice", dc)}
+                                                     className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
+                                                   >
+                                                     <Link2 className="h-4 w-4 text-indigo-600" />
+                                                     Enter GoGSTBill URL
+                                                   </DropdownMenuItem>
+                                                 )}
+                                               </>
+                                             )}
+                                             {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                                               <DropdownMenuItem
+                                                 onClick={() => {
+                                                   setViewingCashMemoRef(dc.invoiceRef!);
+                                                   setCashMemoModalOpen(true);
+                                                 }}
+                                                 className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
+                                               >
+                                                 <Receipt className="h-4 w-4 text-blue-600" />
+                                                 View Cash Memo ({dc.invoiceRef})
+                                               </DropdownMenuItem>
+                                             )}
+                                             <DropdownMenuItem
+                                               onClick={() => openPaymentDialog(dc)}
+                                               className="gap-2 font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                             >
+                                               <Wallet className="h-4 w-4 text-emerald-600" />
+                                               Edit Payment Info
+                                             </DropdownMenuItem>
+                                             <DropdownMenuItem
+                                               onClick={() => openDelinkConfirmDialog(dc)}
+                                               className="gap-2 font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 cursor-pointer"
+                                             >
+                                               <Undo2 className="h-4 w-4 text-amber-600" />
+                                               Delink & Move to Cash Queue
+                                             </DropdownMenuItem>
+                                             <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
+                                               <Undo2 className="h-4 w-4" />
+                                               Move back to Returned
+                                             </DropdownMenuItem>
+                                           </>
+                                         )}
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem onClick={() => requestDelete(dc)} className="text-destructive gap-2">
                                           <X className="h-4 w-4" />
@@ -2820,29 +3146,48 @@ const SavedDcs = () => {
                                                   <Receipt className="w-3 h-3 text-blue-600 shrink-0" />
                                                   <span>{dc.invoiceRef}</span>
                                                 </button>
-                                                {dc.status === "cash" && (
-                                                   <span
-                                                     className={`inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border whitespace-nowrap ${
-                                                       getCashMemoAgingDays(dc) > 15
-                                                         ? "bg-rose-100 text-rose-800 border-rose-300 animate-pulse"
-                                                         : getCashMemoAgingDays(dc) > 7
-                                                         ? "bg-amber-100 text-amber-800 border-amber-300"
-                                                         : "bg-blue-50 text-blue-700 border-blue-200"
-                                                     }`}
-                                                     title={
-                                                       dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0)
-                                                         ? `Our Expected Cash: ₹${(dc.cashAmount || 0).toLocaleString('en-IN')} (Printed Bill: ₹${dc.billedAmount.toLocaleString('en-IN')} | Hospital Cut: ₹${(dc.hospitalMargin || (dc.billedAmount - (dc.cashAmount || 0))).toLocaleString('en-IN')}) • Unpaid for ${getCashMemoAgingDays(dc)} days`
-                                                         : `Unpaid for ${getCashMemoAgingDays(dc)} days`
-                                                     }
-                                                   >
-                                                     ● UNPAID {dc.cashAmount ? `₹${dc.cashAmount}` : ''} ({getCashMemoAgingDays(dc)}d)
-                                                     {dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0) && (
-                                                       <span className="text-[8px] font-extrabold text-amber-800 bg-amber-200/90 px-1 py-0.2 rounded ml-0.5" title={`Printed Hiked Bill: ₹${dc.billedAmount}`}>
-                                                         Hiked
-                                                       </span>
-                                                     )}
-                                                   </span>
-                                                 )}
+                                                {dc.status === "cash" && (() => {
+                                                  const isPart = Boolean(dc.cashRemarks?.includes("Part Payment") || dc.cashRemarks?.includes("Partial"));
+                                                  const partMatch = dc.cashRemarks?.match(/₹?\s*([0-9,]+)\s*of\s*₹?\s*([0-9,]+)/i);
+                                                  const paidAmt = partMatch ? parseFloat(partMatch[1].replace(/,/g, "")) : 0;
+                                                  const origAmt = partMatch ? parseFloat(partMatch[2].replace(/,/g, "")) : (dc.cashAmount || 0);
+
+                                                  if (isPart && paidAmt > 0 && origAmt > 0) {
+                                                    const dueAmt = Math.max(0, origAmt - paidAmt);
+                                                    return (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border border-amber-400 bg-amber-100 text-amber-900 shadow-2xs whitespace-nowrap"
+                                                        title={`Part Payment Recorded: Paid ₹${paidAmt} of Original Invoice ₹${origAmt}. Balance Due: ₹${dueAmt}`}
+                                                      >
+                                                        ⚠️ PART PAYMENT: PAID ₹{paidAmt.toLocaleString('en-IN')} / ₹{origAmt.toLocaleString('en-IN')} (DUE ₹{dueAmt.toLocaleString('en-IN')})
+                                                      </span>
+                                                    );
+                                                  }
+
+                                                  return (
+                                                    <span
+                                                      className={`inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                                                        getCashMemoAgingDays(dc) > 15
+                                                          ? "bg-rose-100 text-rose-800 border-rose-300 animate-pulse"
+                                                          : getCashMemoAgingDays(dc) > 7
+                                                          ? "bg-amber-100 text-amber-800 border-amber-300"
+                                                          : "bg-blue-50 text-blue-700 border-blue-200"
+                                                      }`}
+                                                      title={
+                                                        dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0)
+                                                          ? `Our Expected Cash: ₹${(dc.cashAmount || 0).toLocaleString('en-IN')} (Printed Bill: ₹${dc.billedAmount.toLocaleString('en-IN')} | Hospital Cut: ₹${(dc.hospitalMargin || (dc.billedAmount - (dc.cashAmount || 0))).toLocaleString('en-IN')}) • Unpaid for ${getCashMemoAgingDays(dc)} days`
+                                                          : `Unpaid for ${getCashMemoAgingDays(dc)} days`
+                                                      }
+                                                    >
+                                                      ● UNPAID {dc.cashAmount ? `₹${dc.cashAmount}` : ''} ({getCashMemoAgingDays(dc)}d)
+                                                      {dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0) && (
+                                                        <span className="text-[8px] font-extrabold text-amber-800 bg-amber-200/90 px-1 py-0.2 rounded ml-0.5" title={`Printed Hiked Bill: ₹${dc.billedAmount}`}>
+                                                          Hiked
+                                                        </span>
+                                                      )}
+                                                    </span>
+                                                  );
+                                                })()}
                                                 {dc.status === "completed" && dc.cashAmount && (
                                                   <span 
                                                     className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full whitespace-nowrap" 
@@ -2852,7 +3197,9 @@ const SavedDcs = () => {
                                                         : "Cash Memo Paid"
                                                     }
                                                   >
-                                                    ✓ PAID ₹{dc.cashAmount}
+                                                    {(dc.isPartialPayment || (dc.paidAmount && dc.originalInvoiceTotal && dc.paidAmount < dc.originalInvoiceTotal) || (dc.cashRemarks && dc.cashRemarks.includes("Part Payment Received")))
+                                                      ? `⚡ PARTLY PAID ₹${(dc.paidAmount || 0).toLocaleString('en-IN')} / ₹${(dc.originalInvoiceTotal || dc.cashAmount || 0).toLocaleString('en-IN')}`
+                                                      : `✓ PAID ₹${(dc.cashAmount || 0).toLocaleString('en-IN')}`}
                                                     {dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0) && (
                                                       <span className="text-[8px] font-bold text-emerald-950 bg-emerald-200 px-1 rounded ml-0.5">
                                                         Hiked
@@ -3167,11 +3514,67 @@ const SavedDcs = () => {
                                               </>
                                             )}
                                             {dc.status === "completed" && (
-                                              <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
-                                                <Undo2 className="h-4 w-4" />
-                                                Move back to Returned
-                                              </DropdownMenuItem>
-                                            )}
+                                           <>
+                                             {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                                               <>
+                                                 <DropdownMenuItem
+                                                   onClick={() => openActionDialog("invoice", dc)}
+                                                   className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
+                                                 >
+                                                   <FileText className="h-4 w-4 text-purple-600" />
+                                                   Tax Invoice: {dc.invoiceRef}
+                                                 </DropdownMenuItem>
+                                                 {dc.invoiceUrl ? (
+                                                   <DropdownMenuItem
+                                                     onClick={() => window.open(dc.invoiceUrl, '_blank')}
+                                                     className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                                   >
+                                                     <ExternalLink className="h-4 w-4 text-emerald-600" />
+                                                     Open GoGSTBill
+                                                   </DropdownMenuItem>
+                                                 ) : (
+                                                   <DropdownMenuItem
+                                                     onClick={() => openActionDialog("invoice", dc)}
+                                                     className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
+                                                   >
+                                                     <Link2 className="h-4 w-4 text-indigo-600" />
+                                                     Enter GoGSTBill URL
+                                                   </DropdownMenuItem>
+                                                 )}
+                                               </>
+                                             )}
+                                             {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                                               <DropdownMenuItem
+                                                 onClick={() => {
+                                                   setViewingCashMemoRef(dc.invoiceRef!);
+                                                   setCashMemoModalOpen(true);
+                                                 }}
+                                                 className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
+                                               >
+                                                 <Receipt className="h-4 w-4 text-blue-600" />
+                                                 View Cash Memo ({dc.invoiceRef})
+                                               </DropdownMenuItem>
+                                             )}
+                                             <DropdownMenuItem
+                                               onClick={() => openPaymentDialog(dc)}
+                                               className="gap-2 font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                             >
+                                               <Wallet className="h-4 w-4 text-emerald-600" />
+                                               Edit Payment Info
+                                             </DropdownMenuItem>
+                                             <DropdownMenuItem
+                                               onClick={() => openDelinkConfirmDialog(dc)}
+                                               className="gap-2 font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 cursor-pointer"
+                                             >
+                                               <Undo2 className="h-4 w-4 text-amber-600" />
+                                               Delink & Move to Cash Queue
+                                             </DropdownMenuItem>
+                                             <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
+                                               <Undo2 className="h-4 w-4" />
+                                               Move back to Returned
+                                             </DropdownMenuItem>
+                                           </>
+                                         )}
                                             {dc.status === "returned" && (
                                               <DropdownMenuItem onClick={() => setMoveToPendingDialog({ open: true, dc })} className="gap-2">
                                                 <Undo2 className="h-4 w-4" />
@@ -4328,7 +4731,13 @@ const SavedDcs = () => {
                 <Badge className={`${getStatusBadgeClass(selectedDc.status)} flex items-center gap-1 text-xs font-bold border px-2.5 py-0.5`}>
                   {getStatusIcon(selectedDc.status)}
                   {selectedDc.status === 'completed'
-                    ? (selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '⚡ PAYMENT LINKED & SETTLED' : '✅ PAID (NOT LINKED TO BANK)')
+                    ? (
+                        selectedDc.isPartialPayment || (selectedDc.paidAmount && selectedDc.originalInvoiceTotal && selectedDc.paidAmount < selectedDc.originalInvoiceTotal) || selectedDc.cashRemarks?.includes("Part Payment Received")
+                          ? '⚡ COMPLETED (PART PAYMENT SETTLED)'
+                          : (selectedDc.isTaxInvoice || (!selectedDc.cashAmount && selectedDc.invoiceRef && !selectedDc.invoiceRef.startsWith('SRR-')))
+                          ? '📄 TAX INVOICE LINKED (GOGST)'
+                          : (selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '⚡ PAYMENT LINKED & SETTLED' : '✅ PAID (NOT LINKED TO BANK)')
+                      )
                     : selectedDc.status === 'cash'
                     ? '⚡ AWAITING PAYMENT (CASH QUEUE)'
                     : selectedDc.status.toUpperCase()}
@@ -4441,9 +4850,147 @@ const SavedDcs = () => {
                 </TabsList>
 
                 <TabsContent value="overview" className="mt-3 space-y-3">
-                  {/* Bank & Payment Settlement Transaction Details (Only when DC is Settled/Completed) */}
-                  {(selectedDc.status === "completed" || Boolean(selectedDc.paidAt || linkedBankTx)) && (
+                  {/* Bank & Payment Settlement Transaction Details */}
+                  {(selectedDc.isTaxInvoice || (!selectedDc.cashAmount && selectedDc.invoiceRef && !selectedDc.invoiceRef.startsWith("SRR-"))) ? (
+                    <div className="rounded-xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 p-3.5 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg bg-blue-600 text-white shadow-xs">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-xs text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                            <span>GoGST Tax Invoice Linked ({selectedDc.invoiceRef || 'Linked'})</span>
+                            <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-[10px] py-0 px-1.5 font-bold border border-blue-300">
+                              Tax Invoice
+                            </Badge>
+                          </h4>
+                          <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
+                            Payments and bank settlements for GoGST bill transactions are tracked directly in GoGST.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (selectedDc.status === "completed" || Boolean(selectedDc.paidAt || linkedBankTx)) && (
                     <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-emerald-50/20 dark:from-emerald-950/40 dark:to-slate-900 p-3.5 space-y-2.5 shadow-2xs">
+                      {/* Part Payment Alert Banner if Partial Payment */}
+                      {(() => {
+                        let isPart = Boolean(selectedDc.isPartialPayment);
+                        let paid = selectedDc.paidAmount ?? 0;
+                        let orig = selectedDc.originalInvoiceTotal ?? (selectedDc.cashAmount || 0);
+
+                        // Fallback parsing from cashRemarks string if stored prior: e.g. "Part Payment Received: ₹6 of ₹1,200"
+                        if (selectedDc.cashRemarks && selectedDc.cashRemarks.includes("Part Payment Received")) {
+                          isPart = true;
+                          const match = selectedDc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i);
+                          if (match) {
+                            paid = parseFloat(match[1].replace(/,/g, "")) || paid;
+                            orig = parseFloat(match[2].replace(/,/g, "")) || orig;
+                          }
+                        }
+
+                        if (!isPart && paid > 0 && orig > 0 && paid < orig) {
+                          isPart = true;
+                        }
+
+                        const due = Math.max(0, orig - paid);
+
+                        if (!isPart && due <= 0) return null;
+
+                        const partPaymentsList = selectedDc.partPayments || [];
+
+                        return (
+                          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 p-2.5 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+                            <div className="flex items-center justify-between font-bold">
+                              <span className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                ⚡ Part Payment Settlement Recorded
+                              </span>
+                              <Badge className="bg-amber-500 text-white font-bold text-[10px] px-2">PART PAID</Badge>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 font-mono text-center text-[11px]">
+                              <div className="bg-white/80 dark:bg-slate-900/80 p-1.5 rounded border border-amber-200 dark:border-amber-800">
+                                <span className="text-[10px] font-sans text-slate-500 block">Original Invoice</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-200">₹{orig.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div className="bg-emerald-100/80 dark:bg-emerald-950/80 p-1.5 rounded border border-emerald-300 dark:border-emerald-800">
+                                <span className="text-[10px] font-sans text-emerald-800 dark:text-emerald-300 block">Amount Settled</span>
+                                <span className="font-bold text-emerald-700 dark:text-emerald-400">₹{paid.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div className="bg-rose-100/80 dark:bg-rose-950/80 p-1.5 rounded border border-rose-300 dark:border-rose-800">
+                                <span className="text-[10px] font-sans text-rose-800 dark:text-rose-300 block">Unpaid Balance</span>
+                                <span className="font-bold text-rose-700 dark:text-rose-400">₹{due.toLocaleString('en-IN')}</span>
+                              </div>
+                            </div>
+
+                            {/* Collapsible Installments Breakdown */}
+                            {partPaymentsList.length > 0 && (
+                              <div className="pt-2 border-t border-amber-200/80 dark:border-amber-800/80">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsTrackPartPaymentsOpen(!isTrackPartPaymentsOpen)}
+                                  className="w-full flex items-center justify-between text-[11px] font-bold text-amber-900 dark:text-amber-100 hover:text-amber-700 transition-colors py-1 cursor-pointer"
+                                >
+                                  <span className="flex items-center gap-1.5">
+                                    <Banknote className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>Installment Breakdown ({partPaymentsList.length} Payments)</span>
+                                  </span>
+                                  <span className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded-full border border-amber-300">
+                                    {isTrackPartPaymentsOpen ? "Hide Breakdown" : "View Breakdown"}
+                                    {isTrackPartPaymentsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                  </span>
+                                </button>
+
+                                {isTrackPartPaymentsOpen && (
+                                  <div className="mt-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    {partPaymentsList.map((inst, index) => (
+                                      <div
+                                        key={index}
+                                        className="p-2 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-amber-200/90 dark:border-amber-800/90 text-[11px] flex items-center justify-between gap-2 shadow-2xs"
+                                      >
+                                        <div className="space-y-0.5">
+                                          <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                            <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 text-[9px] px-1.5 py-0 border-amber-300">
+                                              #{index + 1}
+                                            </Badge>
+                                            <span>Installment #{index + 1} ({inst.paymentMethod === 'bank_transfer' ? '🏦 Bank Transfer' : '💵 Cash'})</span>
+                                          </div>
+                                          <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                                            <span>{formatDate(inst.at)}</span>
+                                            {inst.collectedBy && <span>• Collected by {inst.collectedBy}</span>}
+                                            {inst.utrNo && <span>• UTR: {inst.utrNo}</span>}
+                                          </div>
+                                          {inst.remarks && (
+                                            <div className="text-[10px] italic text-slate-600 dark:text-slate-400">
+                                              "{inst.remarks}"
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className="font-extrabold font-mono text-emerald-700 dark:text-emerald-400 text-xs">
+                                            +₹{inst.amount.toLocaleString('en-IN')}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeletePartPaymentInstallment(selectedDc, index);
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                            title={`Delete wrong installment #${index + 1} (+₹${inst.amount.toLocaleString('en-IN')})`}
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="p-2 rounded-lg bg-emerald-700 text-white shadow-xs">
@@ -4451,19 +4998,23 @@ const SavedDcs = () => {
                           </div>
                           <div>
                             <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                              <span>Payment &amp; Bank Transaction Details</span>
-                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[10px] py-0 px-1.5 font-bold border border-emerald-300">
-                                {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx ? '🏦 Bank Transfer / UPI' : '💵 Cash Received'}
-                              </Badge>
-                            </h4>
-                            <p className="text-[11px] text-slate-500">Reconciled transaction record for DC #{selectedDc.dcNo}</p>
+                               <span>{selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? 'Payment & Bank Transaction Details' : 'Cash Collection Record (Physical Cash)'}</span>
+                               <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[10px] py-0 px-1.5 font-bold border border-emerald-300">
+                                 {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '🏦 Bank Transfer / UPI' : '💵 Physical Cash (Hand Collected)'}
+                               </Badge>
+                             </h4>
+                             <p className="text-[11px] text-slate-500">
+                               {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo 
+                                 ? `Reconciled bank transaction record for DC #${selectedDc.dcNo}`
+                                 : `Physical cash collected in hand for DC #${selectedDc.dcNo} • Unlinked to bank statement`}
+                             </p>
                           </div>
                         </div>
-                        {(selectedDc.cashAmount || linkedBankTx?.amount) ? (
+                        {(selectedDc.paidAmount || selectedDc.cashAmount || linkedBankTx?.amount) ? (
                           <div className="text-right">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Settled Amount</span>
+                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Paid Amount</span>
                             <span className="text-base font-black font-mono text-emerald-700 dark:text-emerald-400">
-                              ₹{(selectedDc.cashAmount || linkedBankTx?.amount || 0).toLocaleString('en-IN')}
+                              ₹{(selectedDc.paidAmount || selectedDc.cashAmount || linkedBankTx?.amount || 0).toLocaleString('en-IN')}
                             </span>
                           </div>
                         ) : null}
@@ -4474,7 +5025,7 @@ const SavedDcs = () => {
                           <span className="text-[10px] font-bold uppercase text-slate-500 block">Bank Account</span>
                           <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1 mt-0.5">
                             <Building2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                            {selectedDc.bankName || 'Operating Account'} {selectedDc.accountNumber ? `(${selectedDc.accountNumber})` : ''}
+                            {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? (selectedDc.bankName || 'Operating Account') : (selectedDc.bankName || 'Physical Cash Treasury (In Hand)')} {selectedDc.accountNumber ? `(${selectedDc.accountNumber})` : ''}
                           </span>
                         </div>
 
@@ -4548,9 +5099,11 @@ const SavedDcs = () => {
                           const isCompleted = selectedDc.status === "completed";
                           const isBankLinked = Boolean(selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo);
 
-                          const isAwaitingPayment = selectedDc.status === "cash" || selectedDc.status === "pending" || selectedDc.status === "returned";
+                          const isCashQueue = selectedDc.status === "cash";
+                          const isAwaitingPayment = isCashQueue;
                           const isPaidNotLinked = isCompleted && !isBankLinked;
                           const isPaidAndLinked = isCompleted && isBankLinked;
+                          const selectedIsTaxInvoice = Boolean((selectedDc as any)?.isTaxInvoice || (!selectedDc?.cashAmount && selectedDc?.invoiceRef && !selectedDc?.invoiceRef.startsWith("SRR-")));
 
                           const Step = ({
                             num, label, sublabel, state
@@ -4590,47 +5143,144 @@ const SavedDcs = () => {
 
                           if (isCancelled) return (
                             <div className="flex items-center gap-1">
-                              <Step num={1} label="Created" sublabel={formatDate(getDisplayDate(selectedDc))} state="done" />
+                              <Step num={1} label="Created" sublabel={formatDate(selectedDc.savedAt || getDisplayDate(selectedDc))} state="done" />
                               <Line done={true} />
                               <Step num={2} label="Cancelled" sublabel={selectedDc.cancelledAt ? formatDate(selectedDc.cancelledAt) : "–"} state="cancelled" />
                             </div>
                           );
 
+                          if (selectedIsTaxInvoice) return (
+                            <div className="flex items-center gap-1">
+                              {/* Step 1: Created */}
+                              <Step
+                                num={1}
+                                label="Created"
+                                sublabel={formatDate(selectedDc.savedAt || getDisplayDate(selectedDc))}
+                                state="done"
+                              />
+                              <Line done={isReturned} />
+
+                              {/* Step 2: Returned / Purchased */}
+                              <Step
+                                num={2}
+                                label={isPurchase ? "Purchased" : "Returned"}
+                                sublabel={selectedDc.returnedAt ? formatDate(selectedDc.returnedAt) : isPurchase ? "Direct Sale" : "Pending"}
+                                state={isReturned ? "done" : "active"}
+                              />
+                              <Line done={isReturned} />
+
+                              {/* Step 3: Awaiting Billing */}
+                              <Step
+                                num={3}
+                                label="Awaiting Billing"
+                                sublabel="Passed (GoGST Selected)"
+                                state="done"
+                              />
+                              <Line done={Boolean(selectedDc.invoiceRef)} />
+
+                              {/* Step 4: GoGST Bill Linked */}
+                              <Step
+                                num={4}
+                                label="GoGST Bill Linked"
+                                sublabel={
+                                  selectedDc.invoiceRef
+                                    ? `${selectedDc.invoiceRef} (Check in GoGST to track payments)`
+                                    : "(Check in GoGST to track payments)"
+                                }
+                                state={selectedDc.invoiceRef ? "done" : "pending"}
+                              />
+                            </div>
+                          );
+
+                          const hasBilled = isCashQueue || isCompleted;
+
                           return (
                             <div className="flex items-center gap-1">
                               {/* Step 1: Created */}
-                              <Step num={1} label="Created" sublabel={formatDate(getDisplayDate(selectedDc))} state="done" />
+                              <Step num={1} label="Created" sublabel={formatDate(selectedDc.savedAt || getDisplayDate(selectedDc))} state="done" />
                               <Line done={isReturned} />
 
                               {/* Step 2: Returned / Purchased */}
                               <Step num={2} label={isPurchase ? "Purchased" : "Returned"} sublabel={selectedDc.returnedAt ? formatDate(selectedDc.returnedAt) : isPurchase ? "Direct Sale" : "Pending"} state={isReturned ? "done" : "active"} />
-                              <Line done={!isAwaitingPayment} />
+                              <Line done={hasBilled || isReturned} />
 
-                              {/* Step 3: Awaiting Payment */}
+                              {/* Step 3: Awaiting Billing */}
                               <Step
                                 num={3}
-                                label="Awaiting Payment"
-                                sublabel={isAwaitingPayment ? `Due ₹${(selectedDc.cashAmount || 0).toLocaleString('en-IN')}` : "Passed"}
-                                state={isAwaitingPayment ? "active" : "done"}
+                                label="Awaiting Billing"
+                                sublabel={isCashQueue ? "Passed (Cash Memo Created)" : hasBilled ? "Passed" : isReturned ? "Cash or GoGST decision" : "Pending Return"}
+                                state={hasBilled ? "done" : isReturned ? "active" : "pending"}
+                              />
+                              <Line done={hasBilled} />
+
+                              {/* Step 4: Cash Invoice */}
+                              <Step
+                                num={4}
+                                label={
+                                  isCashQueue || isCompleted
+                                    ? "Cash Invoice"
+                                    : isReturned
+                                    ? "Cash Invoice OR GoGST Bill"
+                                    : "Cash Invoice"
+                                }
+                                sublabel={
+                                  isCashQueue
+                                    ? `(Awaiting Payment) • Due ₹${Math.max(0, (selectedDc.originalInvoiceTotal || selectedDc.cashAmount || selectedDc.billedAmount || 0) - (selectedDc.paidAmount || 0)).toLocaleString('en-IN')}`
+                                    : isCompleted
+                                    ? "Passed"
+                                    : isReturned ? "Branching: GoGST Tax Invoice OR Cash Memo" : "Bill Not Raised Yet"
+                                }
+                                state={isCashQueue ? "active" : isCompleted ? "done" : "pending"}
                               />
                               <Line done={isCompleted} />
 
-                              {/* Step 4: Paid but not linked */}
+                              {/* Step 5: Paid (Not Linked) */}
                               <Step
-                                num={4}
+                                num={5}
                                 label="Paid (Not Linked)"
                                 sublabel={isPaidNotLinked ? "Cash Collected" : isPaidAndLinked ? "Passed" : "Pending"}
                                 state={isPaidNotLinked ? "active" : isPaidAndLinked ? "done" : "pending"}
                               />
                               <Line done={isPaidAndLinked} />
 
-                              {/* Step 5: Paid and linked and settled */}
-                              <Step
-                                num={5}
-                                label="Paid & Linked & Settled"
-                                sublabel={isPaidAndLinked ? (selectedDc.utrNo || linkedBankTx?.referenceNumber ? `Ref: ${selectedDc.utrNo || linkedBankTx?.referenceNumber}` : "Bank Settled") : "Bank Match"}
-                                state={isPaidAndLinked ? "done" : "pending"}
-                              />
+                              {/* Step 6: Paid & Linked & Settled */}
+                              {(() => {
+                                let isPart = Boolean(selectedDc.isPartialPayment);
+                                let paid = selectedDc.paidAmount ?? 0;
+                                let orig = selectedDc.originalInvoiceTotal ?? (selectedDc.cashAmount || 0);
+
+                                if (selectedDc.cashRemarks && selectedDc.cashRemarks.includes("Part Payment Received")) {
+                                  isPart = true;
+                                  const match = selectedDc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i);
+                                  if (match) {
+                                    paid = parseFloat(match[1].replace(/,/g, "")) || paid;
+                                    orig = parseFloat(match[2].replace(/,/g, "")) || orig;
+                                  }
+                                }
+
+                                if (!isPart && paid > 0 && orig > 0 && paid < orig) {
+                                  isPart = true;
+                                }
+
+                                const due = Math.max(0, orig - paid);
+
+                                return (
+                                  <Step
+                                    num={6}
+                                    label={isPart ? "Part Paid Settled" : "Paid & Linked & Settled"}
+                                    sublabel={
+                                      isPart
+                                        ? `⚠️ Paid ₹${paid.toLocaleString('en-IN')} / ₹${orig.toLocaleString('en-IN')} (Due ₹${due.toLocaleString('en-IN')})`
+                                        : isPaidAndLinked
+                                        ? (selectedDc.paidAt ? formatDate(selectedDc.paidAt) : selectedDc.utrNo || linkedBankTx?.referenceNumber ? `Ref: ${selectedDc.utrNo || linkedBankTx?.referenceNumber}` : "Bank Settled")
+                                        : isCompleted
+                                        ? "Completed"
+                                        : "Bank Match"
+                                    }
+                                    state={isCompleted || isPaidAndLinked ? "done" : "pending"}
+                                  />
+                                );
+                              })()}
                             </div>
                           );
                         })()}
@@ -4647,10 +5297,19 @@ const SavedDcs = () => {
                               Next Steps
                             </span>
                           </div>
-                          {selectedDc.status === "completed" ? (
+                          {(selectedDc.isTaxInvoice || (!selectedDc.cashAmount && selectedDc.invoiceRef && !selectedDc.invoiceRef.startsWith('SRR-'))) ? (
+                            <Badge variant="outline" className="text-[10px] font-bold border-purple-300 text-purple-800 bg-purple-100 gap-1 py-0.5 px-2">
+                              <FileText className="h-3 w-3 text-purple-600" />
+                              Invoice Linked • Track Payments in GoGSTBill
+                            </Badge>
+                          ) : selectedDc.status === "completed" ? (
                             <Badge variant="outline" className="text-[10px] font-bold border-emerald-300 text-emerald-800 bg-emerald-100 gap-1 py-0.5 px-2">
                               <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                              {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '⚡ Payment Linked & Settled' : '✅ Payment Settled & Completed'}
+                              {selectedDc.isPartialPayment || (selectedDc.paidAmount && selectedDc.originalInvoiceTotal && selectedDc.paidAmount < selectedDc.originalInvoiceTotal) || selectedDc.cashRemarks?.includes("Part Payment Received")
+                                ? '⚡ Part Payment Settled & Completed'
+                                : selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo
+                                ? '⚡ Payment Linked & Settled'
+                                : '✅ Payment Settled & Completed'}
                             </Badge>
                           ) : selectedDc.status === "cash" ? (
                             <Badge variant="outline" className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50 gap-1 py-0 h-5">
@@ -4807,7 +5466,7 @@ const SavedDcs = () => {
                                   </Badge>
                                 </div>
                                 <p className="text-[11px] text-slate-600 mt-0.5">
-                                  Unpaid in Cash Queue. Expected cash: <span className="font-bold text-slate-800">₹{((selectedDc as any).cashAmount || 0).toLocaleString("en-IN")}</span>
+                                  Unpaid in Cash Queue. Remaining Due: <span className="font-bold text-slate-800">₹{Math.max(0, (selectedDc.originalInvoiceTotal || selectedDc.cashAmount || 0) - (selectedDc.paidAmount || 0)).toLocaleString("en-IN")}</span>
                                 </p>
                               </div>
                             </div>
@@ -4838,67 +5497,74 @@ const SavedDcs = () => {
                           </div>
                         )}
 
-                        {/* State: Invoiced or Cash Settled (Completed) */}
-                        {(selectedDc.status === "completed" || (selectedDc.status !== "cash" && selectedDc.invoiceRef)) && (
-                          <div className="rounded-xl border border-emerald-300/90 bg-emerald-50/70 dark:bg-emerald-950/40 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-2xs">
+                        {/* State: GoGST Tax Invoice Linked */}
+                        {(selectedDc.isTaxInvoice || (!selectedDc.cashAmount && selectedDc.invoiceRef && !selectedDc.invoiceRef.startsWith('SRR-'))) ? (
+                          <div className="rounded-xl border border-purple-300/90 bg-purple-50/70 dark:bg-purple-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-2xs">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-9 w-9 rounded-xl bg-purple-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                <FileText className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <div className="text-xs font-bold text-purple-950 dark:text-purple-200 flex items-center gap-2 flex-wrap">
+                                  <span>GoGST Tax Invoice Linked: {selectedDc.invoiceRef}</span>
+                                  <Badge className="bg-purple-700 text-white text-[10px] font-bold py-0.5 px-2">
+                                    INVOICE LINKED
+                                  </Badge>
+                                </div>
+                                <p className="text-[11px] text-purple-800 dark:text-purple-300 mt-0.5 leading-relaxed">
+                                  Invoice linked is final step in OrthoDC. Payment details and collection are tracked directly in GoGSTBill.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs border-purple-300 text-purple-800 bg-white hover:bg-purple-50 font-semibold"
+                                onClick={() => {
+                                  setDetailsDialogOpen(false);
+                                  openActionDialog("invoice", selectedDc);
+                                }}
+                              >
+                                <FileText className="h-3 w-3 mr-1 text-purple-600" /> View / Edit Link
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs bg-purple-700 hover:bg-purple-800 text-white font-bold shadow-xs gap-1"
+                                onClick={() => window.open(selectedDc.invoiceUrl || "https://gogstbill.com", "_blank")}
+                              >
+                                <ExternalLink className="h-3 w-3" /> Open GoGSTBill
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (selectedDc.status === "completed" || (selectedDc.status !== "cash" && selectedDc.invoiceRef)) && (
+                          <div className="rounded-xl border border-emerald-300/90 bg-emerald-50/70 dark:bg-emerald-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-2xs">
                             <div className="flex items-center gap-2.5">
                               <div className="h-9 w-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-xs">
                                 <CheckCircle2 className="h-5 w-5" />
                               </div>
                               <div>
                                 <div className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-2 flex-wrap">
-                                  <span>{selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '⚡ Bank Payment Linked & Settled' : '✅ Payment Settled & Case Closed'}</span>
+                                  <span>
+                                    {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo
+                                      ? '⚡ Bank Payment Linked & Settled'
+                                      : '💵 Physical Cash Collected (Unlinked to Bank Deposit)'}
+                                  </span>
                                   <Badge className="bg-emerald-700 text-white text-[10px] font-bold py-0.5 px-2">
-                                    SETTLED
+                                    {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? 'BANK SETTLED' : 'CASH COLLECTED'}
                                   </Badge>
                                 </div>
                                 <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                                  {selectedDc.invoiceRef ? `${selectedIsTaxInvoice ? "Tax Invoice" : "Cash Memo"}: ${selectedDc.invoiceRef} • ` : ''}
+                                  {selectedDc.invoiceRef ? `Cash Memo: ${selectedDc.invoiceRef} • ` : ''}
                                   {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo
                                     ? `Reconciled with Bank Deposit (UTR: ${selectedDc.utrNo || linkedBankTx?.referenceNumber || 'Verified'})`
-                                    : `Cash payment settled for ₹${((selectedDc as any).cashAmount || 0).toLocaleString('en-IN')}`}
+                                    : `Cash payment of ₹${((selectedDc as any).cashAmount || 0).toLocaleString('en-IN')} collected${selectedDc.collectedBy ? ` by ${selectedDc.collectedBy}` : ''}. Optional bank deposit link pending.`}
                                 </p>
                               </div>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                              {selectedIsTaxInvoice && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 text-xs border-purple-300 text-purple-700 bg-white hover:bg-purple-50 font-medium"
-                                    onClick={() => {
-                                      setDetailsDialogOpen(false);
-                                      openActionDialog("invoice", selectedDc);
-                                    }}
-                                  >
-                                    <FileText className="h-3 w-3 mr-1" /> View Details
-                                  </Button>
-                                  {selectedDc.invoiceUrl ? (
-                                    <Button
-                                      size="sm"
-                                      className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
-                                      onClick={() => window.open(selectedDc.invoiceUrl, '_blank')}
-                                    >
-                                      <ExternalLink className="h-3 w-3 mr-1" /> Open GoGSTBill
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 text-xs border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50 font-medium"
-                                      onClick={() => {
-                                        setDetailsDialogOpen(false);
-                                        openActionDialog("invoice", selectedDc);
-                                      }}
-                                    >
-                                      <Link2 className="h-3 w-3 mr-1" /> Add Invoice URL
-                                    </Button>
-                                  )}
-                                </>
-                              )}
-
                               {selectedIsCashMemo && (
                                 <Button
                                   size="sm"
@@ -4909,7 +5575,20 @@ const SavedDcs = () => {
                                     setCashMemoModalOpen(true);
                                   }}
                                 >
-                                  <Receipt className="h-3 w-3 mr-1" /> View Cash Memo
+                                  <Receipt className="h-3.5 w-3.5 mr-1" /> View Cash Memo
+                                </Button>
+                              )}
+                              {!(selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-emerald-400 text-emerald-800 bg-white hover:bg-emerald-50 font-semibold shadow-2xs"
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    openPaymentDialog(selectedDc);
+                                  }}
+                                >
+                                  <Landmark className="h-3 w-3 mr-1 text-emerald-600" /> Link Bank Deposit
                                 </Button>
                               )}
                             </div>
@@ -5022,12 +5701,33 @@ const SavedDcs = () => {
                               )}
                               <div className="flex items-center justify-between gap-3">
                                 <span className="text-slate-500">
-                                  {selectedDc.status === "cash" ? "Net Cash Due" : ((selectedDc as any).billedAmount ? "Our Net Cash" : "Cash Amount")}
+                                  {selectedDc.status === "cash"
+                                    ? "Net Cash Due"
+                                    : (selectedDc.isPartialPayment || (selectedDc.paidAmount && selectedDc.originalInvoiceTotal && selectedDc.paidAmount < selectedDc.originalInvoiceTotal) || selectedDc.cashRemarks?.includes("Part Payment Received"))
+                                    ? "Settled Part Paid Amount"
+                                    : ((selectedDc as any).billedAmount ? "Our Net Cash" : "Cash Amount")}
                                 </span>
                                 <span className={`font-bold ${selectedDc.status === "cash" ? "text-amber-800 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-400"}`}>
-                                  {typeof (selectedDc as any).cashAmount === "number"
-                                    ? `₹${(selectedDc as any).cashAmount.toLocaleString('en-IN')}`
-                                    : "-"}
+                                  {(() => {
+                                    if (selectedDc.status === "cash") {
+                                      const orig = selectedDc.originalInvoiceTotal || selectedDc.cashAmount || 0;
+                                      const paid = selectedDc.paidAmount || 0;
+                                      const remaining = Math.max(0, orig - paid);
+                                      return `₹${remaining.toLocaleString('en-IN')}`;
+                                    }
+                                    const isPart = selectedDc.isPartialPayment || (selectedDc.paidAmount && selectedDc.originalInvoiceTotal && selectedDc.paidAmount < selectedDc.originalInvoiceTotal) || selectedDc.cashRemarks?.includes("Part Payment Received");
+                                    if (isPart) {
+                                      let paid = selectedDc.paidAmount ?? 0;
+                                      if (selectedDc.cashRemarks && selectedDc.cashRemarks.includes("Part Payment Received")) {
+                                        const match = selectedDc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of/i);
+                                        if (match) paid = parseFloat(match[1].replace(/,/g, "")) || paid;
+                                      }
+                                      return `₹${paid.toLocaleString('en-IN')} (Part Paid)`;
+                                    }
+                                    return typeof (selectedDc as any).cashAmount === "number"
+                                      ? `₹${(selectedDc as any).cashAmount.toLocaleString('en-IN')}`
+                                      : "-";
+                                  })()}
                                   {selectedDc.status === "cash" ? " (Unpaid)" : ""}
                                 </span>
                               </div>
@@ -5723,6 +6423,72 @@ const SavedDcs = () => {
                   </div>
                 )}
 
+                {/* Collapsible History of Prior Part Payments (if any exist) */}
+                {paymentDialog.dc?.partPayments && paymentDialog.dc.partPayments.length > 0 && (
+                  <div className="rounded-xl border border-amber-300 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 p-3 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsRecordPartPaymentsOpen(!isRecordPartPaymentsOpen)}
+                      className="w-full flex items-center justify-between text-xs font-bold text-amber-950 dark:text-amber-100 hover:text-amber-800 transition-colors cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Banknote className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                        <span>Previous Installments Collected ({paymentDialog.dc.partPayments.length})</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px] text-amber-800 dark:text-amber-200 bg-amber-200/70 dark:bg-amber-900/80 px-2 py-0.5 rounded-full border border-amber-300">
+                        {isRecordPartPaymentsOpen ? "Hide Breakdown" : "View Breakdown"}
+                        {isRecordPartPaymentsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </span>
+                    </button>
+
+                    {isRecordPartPaymentsOpen && (
+                      <div className="mt-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                        {paymentDialog.dc.partPayments.map((inst, idx) => (
+                          <div
+                            key={idx}
+                            className="p-2.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-amber-200 dark:border-amber-800 text-xs flex items-center justify-between gap-2 shadow-2xs"
+                          >
+                            <div className="space-y-0.5">
+                              <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 text-[9px] px-1.5 py-0 border-amber-300">
+                                  #{idx + 1}
+                                </Badge>
+                                <span>Installment #{idx + 1} ({inst.paymentMethod === 'bank_transfer' ? '🏦 Bank Transfer' : '💵 Cash'})</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                                <span>{formatDate(inst.at)}</span>
+                                {inst.collectedBy && <span>• Collected by {inst.collectedBy}</span>}
+                                {inst.utrNo && <span>• UTR: {inst.utrNo}</span>}
+                              </div>
+                              {inst.remarks && (
+                                <div className="text-[10px] italic text-slate-600 dark:text-slate-400">
+                                  "{inst.remarks}"
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-extrabold font-mono text-emerald-700 dark:text-emerald-400 text-xs">
+                                +₹{inst.amount.toLocaleString('en-IN')}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePartPaymentInstallment(paymentDialog.dc!, idx);
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                title={`Delete wrong installment #${idx + 1} (+₹${inst.amount.toLocaleString('en-IN')})`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Payment Mode Selector */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -5731,7 +6497,18 @@ const SavedDcs = () => {
                   <div className="grid grid-cols-2 gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setPaymentMethod("cash")}
+                      onClick={() => {
+                        if (paymentMethod !== "cash") {
+                          setPaymentMethod("cash");
+                          setPaymentAmountInput("");
+                          setPaymentRemarksInput("");
+                          setPaymentCollectedBy("");
+                          setPartialSettlementType("pay_more");
+                          setFinalSettlementReason("discount");
+                          setSettlementDoctorName("");
+                          setSelectedCreditTxId("not_found");
+                        }
+                      }}
                       className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMethod === "cash"
                           ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs"
@@ -5744,7 +6521,17 @@ const SavedDcs = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setPaymentMethod("bank_transfer")}
+                      onClick={() => {
+                        if (paymentMethod !== "bank_transfer") {
+                          setPaymentMethod("bank_transfer");
+                          setPaymentAmountInput("");
+                          setPaymentRemarksInput("");
+                          setPaymentCollectedBy("");
+                          setPartialSettlementType("pay_more");
+                          setFinalSettlementReason("discount");
+                          setSettlementDoctorName("");
+                        }
+                      }}
                       className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMethod === "bank_transfer"
                           ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
@@ -5752,11 +6539,13 @@ const SavedDcs = () => {
                       }`}
                     >
                       <Landmark className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
-                      <span>Bank Transfer / UPI</span>
+                      <span>Bank / UPI</span>
                       {paymentMethod === "bank_transfer" && <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />}
                     </button>
                   </div>
                 </div>
+
+
 
                 {/* Cash Collector Selection (Only when Cash is selected) */}
                 {paymentMethod === "cash" && (
@@ -6070,38 +6859,311 @@ const SavedDcs = () => {
             </div>
           </div>
 
-          {/* 3. FOOTER ACTION BAR */}
-          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setPaymentDialog({ open: false, dc: null });
-                setPaymentAmountInput("");
-                setPaymentRemarksInput("");
-                setPaymentMethod("cash");
-                setPaymentCollectedBy("");
-              }} 
-              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+          {/* FIXED BOTTOM FOOTER & LIVE CONFIRMATION BANNER */}
+          <div className="shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 py-3 space-y-2.5 z-30 shadow-lg">
+            {/* Live Part Payment Banner */}
+            {(() => {
+              const prevPaid = paymentDialog.dc?.paidAmount || 0;
+              const origAmt = paymentDialog.dc?.originalInvoiceTotal || paymentDialog.dc?.cashAmount || (paymentDialog.dc?.billedAmount ? paymentDialog.dc.billedAmount - (paymentDialog.dc.hospitalMargin || 0) : 0) || 0;
+              const remainingBalance = Math.max(0, origAmt - prevPaid);
+              const currentInstallment = parseFloat(paymentAmountInput) || 0;
+              const totalCollectedAfter = prevPaid + currentInstallment;
+              const remainingDueAfter = Math.max(0, origAmt - totalCollectedAfter);
+              // Show part payment options ONLY if entered amount is less than remaining balance
+              const isPart = origAmt > 0 && currentInstallment > 0 && currentInstallment < remainingBalance;
+
+              if (isPart) {
+                return (
+                  <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 overflow-hidden">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-3 py-2 bg-amber-100/80 dark:bg-amber-900/40 border-b border-amber-200 dark:border-amber-800">
+                      <span className="flex items-center gap-1.5 text-amber-900 dark:text-amber-100 text-xs font-bold">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        Part Payment — ₹{remainingDueAfter.toLocaleString("en-IN")} still outstanding
+                      </span>
+                      <Badge className="bg-amber-500 text-white text-[9px] font-extrabold px-1.5 py-0 uppercase tracking-wide">
+                        Action Required
+                      </Badge>
+                    </div>
+
+                    {/* Compact Metrics Strip */}
+                    <div className="grid grid-cols-4 divide-x divide-amber-200 dark:divide-amber-800 text-center text-[10px]">
+                      <div className="py-1.5 px-2">
+                        <div className="text-slate-500 font-medium uppercase tracking-wide text-[9px]">Invoice</div>
+                        <div className="font-extrabold text-slate-800 dark:text-slate-100 font-mono text-xs">₹{origAmt.toLocaleString("en-IN")}</div>
+                      </div>
+                      <div className="py-1.5 px-2 bg-blue-50/60 dark:bg-blue-950/30">
+                        <div className="text-blue-600 font-medium uppercase tracking-wide text-[9px]">Prev. Paid</div>
+                        <div className="font-extrabold text-blue-700 dark:text-blue-400 font-mono text-xs">₹{prevPaid.toLocaleString("en-IN")}</div>
+                      </div>
+                      <div className="py-1.5 px-2 bg-emerald-50/60 dark:bg-emerald-950/30">
+                        <div className="text-emerald-700 font-medium uppercase tracking-wide text-[9px]">Now</div>
+                        <div className="font-extrabold text-emerald-700 dark:text-emerald-400 font-mono text-xs">₹{currentInstallment.toLocaleString("en-IN")}</div>
+                      </div>
+                      <div className="py-1.5 px-2 bg-rose-50/60 dark:bg-rose-950/30">
+                        <div className="text-rose-600 font-medium uppercase tracking-wide text-[9px]">Remaining</div>
+                        <div className="font-extrabold text-rose-700 dark:text-rose-400 font-mono text-xs">₹{remainingDueAfter.toLocaleString("en-IN")}</div>
+                      </div>
+                    </div>
+
+                    {/* Settlement Action */}
+                    <div className="px-3 py-2.5 space-y-2">
+                      <p className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">How should we record this?</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Option 1: Keep in Cash Queue */}
+                        <button
+                          type="button"
+                          onClick={() => setPartialSettlementType("pay_more")}
+                          className={`text-left p-2.5 rounded-lg border-2 transition-all ${
+                            partialSettlementType === "pay_more"
+                              ? "border-amber-500 bg-amber-50 dark:bg-amber-950/50 ring-1 ring-amber-400/30"
+                              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-amber-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${partialSettlementType === "pay_more" ? "border-amber-500 bg-amber-500" : "border-slate-300"}`}>
+                              {partialSettlementType === "pay_more" && <Check className="w-2 h-2 text-white stroke-[4]" />}
+                            </div>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Keep in Cash Queue</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug pl-5">
+                            Mark as <strong>Part Paid</strong>. Patient owes ₹{remainingDueAfter.toLocaleString("en-IN")} more.
+                          </p>
+                        </button>
+
+                        {/* Option 2: Final Settlement */}
+                        <button
+                          type="button"
+                          onClick={() => setPartialSettlementType("final_settlement")}
+                          className={`text-left p-2.5 rounded-lg border-2 transition-all ${
+                            partialSettlementType === "final_settlement"
+                              ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 ring-1 ring-emerald-400/30"
+                              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-emerald-300"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${partialSettlementType === "final_settlement" ? "border-emerald-500 bg-emerald-500" : "border-slate-300"}`}>
+                              {partialSettlementType === "final_settlement" && <Check className="w-2 h-2 text-white stroke-[4]" />}
+                            </div>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Final Settlement</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug pl-5">
+                            Accept ₹{totalCollectedAfter.toLocaleString("en-IN")} as full & final. Move to <strong>Completed</strong>.
+                          </p>
+                        </button>
+                      </div>
+
+                      {/* Reason sub-form — only for Final Settlement */}
+                      {partialSettlementType === "final_settlement" && (
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                          <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Reason for shortfall</p>
+                          <div className="flex gap-1.5">
+                            {(["discount", "doctor_commission", "hospital_commission"] as const).map((r) => {
+                              const labels: Record<string, string> = { discount: "Discount", doctor_commission: "Dr. Commission", hospital_commission: "Hospital Cut" };
+                              return (
+                                <button
+                                  key={r}
+                                  type="button"
+                                  onClick={() => setFinalSettlementReason(r)}
+                                  className={`flex-1 py-1 px-2 rounded text-[10px] font-bold border transition-colors ${
+                                    finalSettlementReason === r
+                                      ? "bg-emerald-600 text-white border-emerald-600"
+                                      : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {labels[r]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {finalSettlementReason === "doctor_commission" && (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="text"
+                                value={settlementDoctorName}
+                                onChange={(e) => setSettlementDoctorName(e.target.value)}
+                                placeholder={paymentDialog.dc?.doctorName ? `Dr. ${paymentDialog.dc.doctorName}` : "Doctor name (or N/A)"}
+                                className="h-7 text-xs flex-1 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 rounded"
+                              />
+                              <span className="text-[9px] text-slate-400 shrink-0">Leave blank = N/A</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* 3. FOOTER ACTION BAR */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
+              <div className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
+                {paymentMethod === "bank_transfer" ? (
+                  <span>Select bank deposit credit or choose "Not Found" to link later</span>
+                ) : (
+                  <span>Collect physical cash payment into treasury</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 ml-auto w-full sm:w-auto justify-end">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setPaymentDialog({ open: false, dc: null });
+                    setPaymentAmountInput("");
+                    setPaymentRemarksInput("");
+                    setPaymentMethod("cash");
+                    setPaymentCollectedBy("");
+                  }} 
+                  className="rounded-xl h-11 px-5 text-sm font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700 cursor-pointer"
+                  disabled={isActionLoading}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleQuickRecordPayment} 
+                  className="rounded-xl h-11 px-6 text-sm font-extrabold gap-2 shadow-md min-w-[200px] cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white"
+                  disabled={isActionLoading}
+                >
+                  {isActionLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
+                      <span>Confirm Payment Collection</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION DIALOG: DELINK PAYMENT & RESET STATUS */}
+      <Dialog
+        open={delinkConfirmDialog.open}
+        onOpenChange={(open) => {
+          if (!open && !isActionLoading) {
+            setDelinkConfirmDialog({ open: false, dc: null });
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0">
+          <DialogHeader className="p-5 bg-amber-50/70 dark:bg-amber-950/40 border-b border-amber-200/80 dark:border-amber-900/40">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 flex items-center justify-center text-amber-800 dark:text-amber-200 shrink-0 shadow-xs">
+                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-amber-950 dark:text-amber-100">
+                  Delink Payment &amp; Reset Status
+                </DialogTitle>
+                <DialogDescription className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                  Confirm delinking payment details for DC #{delinkConfirmDialog.dc?.dcNo}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="p-5 space-y-4 text-xs">
+            {/* DC Details Summary Box */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-900 dark:text-slate-100 font-mono">
+                  DC #{delinkConfirmDialog.dc?.dcNo}
+                </span>
+                <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-200">
+                  Paid ₹{(delinkConfirmDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-2 flex-wrap">
+                <span className="font-semibold">{delinkConfirmDialog.dc?.hospitalName}</span>
+                {delinkConfirmDialog.dc?.utrNo && (
+                  <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[10px]">
+                    Ref: {delinkConfirmDialog.dc.utrNo}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Impact Explanation List */}
+            <div className="space-y-2">
+              <span className="font-bold text-slate-900 dark:text-slate-100 block">
+                What will happen when you confirm:
+              </span>
+              <ul className="space-y-2 text-slate-600 dark:text-slate-300">
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-600 font-bold shrink-0">1.</span>
+                  <span><strong>Payment metadata cleared:</strong> Paid timestamp, payment method, collector name, and payment remarks will be deleted.</span>
+                </li>
+                {delinkConfirmDialog.dc?.utrNo && (
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-600 font-bold shrink-0">2.</span>
+                    <span><strong>Bank credit unlinked:</strong> Bank transaction matching UTR <code className="font-mono bg-amber-100 dark:bg-amber-950 px-1 rounded">{delinkConfirmDialog.dc.utrNo}</code> will be unlinked and returned to available treasury credits.</span>
+                  </li>
+                )}
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-600 font-bold shrink-0">{delinkConfirmDialog.dc?.utrNo ? "3." : "2."}</span>
+                  <span><strong>Status moved:</strong> Choose destination below: move to <strong>Cash Queue</strong> (to re-record payment) OR <strong>Returned Queue</strong> (to reset billing path).</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Destination Selection Buttons */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                Select Destination Queue:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  onClick={() => delinkConfirmDialog.dc && executeDelinkPayment(delinkConfirmDialog.dc, "cash")}
+                  disabled={isActionLoading}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white rounded-xl h-11 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  {isActionLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Wallet className="w-4 h-4" />
+                      <span>Move to Cash Queue</span>
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={() => delinkConfirmDialog.dc && executeDelinkPayment(delinkConfirmDialog.dc, "returned")}
+                  disabled={isActionLoading}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-11 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  {isActionLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Undo2 className="w-4 h-4" />
+                      <span>Move to Returned Queue</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-3 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setDelinkConfirmDialog({ open: false, dc: null })}
               disabled={isActionLoading}
+              className="rounded-xl h-9 px-4 text-xs font-semibold"
             >
               Cancel
-            </Button>
-            <Button 
-              onClick={handleQuickRecordPayment} 
-              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-10 px-5 text-xs font-bold gap-1.5 shadow-sm min-w-[150px]"
-              disabled={isActionLoading}
-            >
-              {isActionLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4" />
-                  <span>Confirm Payment</span>
-                </>
-              )}
             </Button>
           </div>
         </DialogContent>
