@@ -140,24 +140,61 @@ export async function fetchBankAccountsFromFirestore(): Promise<BankAccount[]> {
           // ignore
         }
       }
-      return [];
     }
 
-    accounts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    localStorage.setItem(LOCAL_STORAGE_ACCOUNTS_KEY, JSON.stringify(accounts));
-    return accounts;
+    // Ensure default accounts are present
+    DEFAULT_ACCOUNTS.forEach((defAcc) => {
+      if (!accounts.some((a) => a.id === defAcc.id)) {
+        accounts.push(defAcc);
+      }
+    });
+
+    // Deduplicate accounts so duplicate 6569, 1538, or Cash cards don't show up twice
+    const uniqueAccountsMap = new Map<string, BankAccount>();
+    accounts.forEach((acc) => {
+      const accNum = acc.accountNumber || '';
+      const accName = acc.accountName || '';
+
+      if (acc.id === 'acc_hdfc_main_6569' || accNum.includes('6569') || accName.includes('6569')) {
+        if (!uniqueAccountsMap.has('acc_hdfc_main_6569')) {
+          uniqueAccountsMap.set('acc_hdfc_main_6569', {
+            ...DEFAULT_ACCOUNTS[0],
+            ...acc,
+            id: 'acc_hdfc_main_6569',
+            accountName: 'SRR Ortho Main (6569)',
+          });
+        }
+      } else if (acc.id === 'acc_hdfc_savings_1538' || accNum.includes('1538') || accName.includes('1538')) {
+        if (!uniqueAccountsMap.has('acc_hdfc_savings_1538')) {
+          uniqueAccountsMap.set('acc_hdfc_savings_1538', {
+            ...DEFAULT_ACCOUNTS[1],
+            ...acc,
+            id: 'acc_hdfc_savings_1538',
+            accountName: 'SRR Savings / UPI (1538)',
+          });
+        }
+      } else if (acc.id === 'acc_cash_in_hand' || acc.accountType === 'cash_in_hand' || accName.toLowerCase().includes('cash')) {
+        if (!uniqueAccountsMap.has('acc_cash_in_hand')) {
+          uniqueAccountsMap.set('acc_cash_in_hand', {
+            ...DEFAULT_ACCOUNTS[2],
+            ...acc,
+            id: 'acc_cash_in_hand',
+            accountName: 'Cash In Hand (Petty Cash)',
+          });
+        }
+      } else {
+        if (!uniqueAccountsMap.has(acc.id)) {
+          uniqueAccountsMap.set(acc.id, acc);
+        }
+      }
+    });
+
+    const finalAccounts = Array.from(uniqueAccountsMap.values());
+    localStorage.setItem(LOCAL_STORAGE_ACCOUNTS_KEY, JSON.stringify(finalAccounts));
+    return finalAccounts;
   } catch (error) {
     console.warn('Error fetching bank accounts from Firestore, checking localStorage:', error);
-    const cached = localStorage.getItem(LOCAL_STORAGE_ACCOUNTS_KEY);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {
-        return [];
-      }
-    }
-    return [];
+    return DEFAULT_ACCOUNTS;
   }
 }
 
@@ -268,23 +305,42 @@ export async function fetchBankTransactionsFromFirestore(
 ): Promise<BankTransaction[]> {
   try {
     const transactionsRef = collection(db, BANK_TRANSACTIONS_COLLECTION);
+    const fetchCap = Math.max(maxLimit, 500);
     const q = accountId
-      ? query(transactionsRef, where('accountId', '==', accountId), limit(maxLimit))
-      : query(transactionsRef, limit(maxLimit));
+      ? query(transactionsRef, where('accountId', '==', accountId), limit(fetchCap))
+      : query(transactionsRef, limit(fetchCap));
 
     const querySnapshot = await getDocs(q);
 
     const transactions: BankTransaction[] = [];
     querySnapshot.forEach((docSnap) => {
-      transactions.push(docSnap.data() as BankTransaction);
+      const data = docSnap.data() as BankTransaction;
+      
+      // Ensure accountId resolves to one of the 3 standard accounts
+      if (data.accountSuffix === '1538' || (data.accountId && data.accountId.includes('1538'))) {
+        data.accountId = 'acc_hdfc_savings_1538';
+      } else if (data.accountSuffix === '6569' || (data.accountId && data.accountId.includes('6569'))) {
+        data.accountId = 'acc_hdfc_main_6569';
+      } else if (data.createdSource === 'quick_deposit' || (data.accountId && data.accountId.includes('cash'))) {
+        data.accountId = 'acc_cash_in_hand';
+      } else if (!data.accountId || data.accountId === 'default') {
+        data.accountId = 'acc_hdfc_main_6569';
+      }
+      transactions.push(data);
     });
 
     if (transactions.length === 0 && !accountId) {
       const cached = localStorage.getItem(LOCAL_STORAGE_TRANSACTIONS_KEY);
       if (cached) {
         try {
-          const parsed = JSON.parse(cached);
+          const parsed: BankTransaction[] = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed.forEach((t) => {
+              if (!t.accountId || t.accountId === 'default') {
+                if (t.accountSuffix === '1538') t.accountId = 'acc_hdfc_savings_1538';
+                else t.accountId = 'acc_hdfc_main_6569';
+              }
+            });
             return parsed.slice(0, maxLimit);
           }
         } catch {
@@ -294,10 +350,12 @@ export async function fetchBankTransactionsFromFirestore(
       return [];
     }
 
-    // Sort by date (descending), then createdAt descending
+    // Sort by full timestamp: date + time, then createdAt descending
     transactions.sort((a, b) => {
-      const dateA = new Date(a.date).getTime() || a.createdAt || 0;
-      const dateB = new Date(b.date).getTime() || b.createdAt || 0;
+      const timeAStr = `${a.date || ''}T${a.time || '00:00'}:00`;
+      const timeBStr = `${b.date || ''}T${b.time || '00:00'}:00`;
+      const dateA = new Date(timeAStr).getTime() || a.createdAt || 0;
+      const dateB = new Date(timeBStr).getTime() || b.createdAt || 0;
       return dateB - dateA;
     });
 
@@ -312,6 +370,12 @@ export async function fetchBankTransactionsFromFirestore(
     if (cached) {
       try {
         const parsed: BankTransaction[] = JSON.parse(cached);
+        parsed.forEach((t) => {
+          if (!t.accountId || t.accountId === 'default') {
+            if (t.accountSuffix === '1538') t.accountId = 'acc_hdfc_savings_1538';
+            else t.accountId = 'acc_hdfc_main_6569';
+          }
+        });
         if (accountId) {
           return parsed.filter((t) => t.accountId === accountId).slice(0, maxLimit);
         }
@@ -331,24 +395,36 @@ export async function fetchBankTransactionsFromFirestore(
 export function subscribeToBankTransactions(
   onUpdate: (transactions: BankTransaction[]) => void,
   onError?: (error: any) => void,
-  maxLimit: number = 200
+  maxLimit: number = 500
 ): () => void {
   try {
     const transactionsRef = collection(db, BANK_TRANSACTIONS_COLLECTION);
-    const q = query(transactionsRef, limit(maxLimit));
+    const q = query(transactionsRef, limit(Math.max(maxLimit, 500)));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const transactions: BankTransaction[] = [];
         snapshot.forEach((docSnap) => {
-          transactions.push(docSnap.data() as BankTransaction);
+          const data = docSnap.data() as BankTransaction;
+          if (data.accountSuffix === '1538' || (data.accountId && data.accountId.includes('1538'))) {
+            data.accountId = 'acc_hdfc_savings_1538';
+          } else if (data.accountSuffix === '6569' || (data.accountId && data.accountId.includes('6569'))) {
+            data.accountId = 'acc_hdfc_main_6569';
+          } else if (data.createdSource === 'quick_deposit' || (data.accountId && data.accountId.includes('cash'))) {
+            data.accountId = 'acc_cash_in_hand';
+          } else if (!data.accountId || data.accountId === 'default') {
+            data.accountId = 'acc_hdfc_main_6569';
+          }
+          transactions.push(data);
         });
 
-        // Sort by date (descending), then createdAt descending
+        // Sort by full timestamp: date + time, then createdAt descending
         transactions.sort((a, b) => {
-          const dateA = new Date(a.date).getTime() || a.createdAt || 0;
-          const dateB = new Date(b.date).getTime() || b.createdAt || 0;
+          const timeAStr = `${a.date || ''}T${a.time || '00:00'}:00`;
+          const timeBStr = `${b.date || ''}T${b.time || '00:00'}:00`;
+          const dateA = new Date(timeAStr).getTime() || a.createdAt || 0;
+          const dateB = new Date(timeBStr).getTime() || b.createdAt || 0;
           return dateB - dateA;
         });
 

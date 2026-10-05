@@ -2405,11 +2405,88 @@ const SavedDcs = () => {
                     </div>
                   ) : (
                     <>
-                      {/* DC Tracker Main View: Split Layout when a DC is selected */}
-                      <div className={selectedDc ? "grid grid-cols-1 lg:grid-cols-12 gap-3.5 p-2 sm:p-3 bg-slate-50/40 dark:bg-slate-950/20" : ""}>
-                        {/* Left Side: Compressed DC Table (Actions column hidden when selected) */}
-                        <div className={selectedDc ? "lg:col-span-7 xl:col-span-8 overflow-hidden transition-all duration-200" : "w-full"}>
-                          <div className="border-t-2 border-border/60">
+                      {/* Top Action Banner when a DC is selected */}
+                      {selectedDc && (() => {
+                        const daysPending = getDaysPending(selectedDc);
+                        return (
+                          <div className="sticky top-[80px] z-20 mb-4 mt-2 p-2 px-4 bg-white/95 backdrop-blur-md border border-slate-200/60 text-slate-800 rounded-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 dark:bg-slate-900/95 dark:border-slate-800 dark:text-slate-100">
+                            {/* Left Status Info */}
+                            <div className="flex items-center gap-3 flex-wrap min-w-0">
+                              <Badge className="bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-black px-2.5 py-1 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-100">
+                                {selectedDc.dcNo}
+                              </Badge>
+                              <Badge variant="outline" className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300`}>
+                                {selectedDc.status}
+                              </Badge>
+                              <span className="font-bold text-sm truncate max-w-[200px]" title={selectedDc.hospitalName}>
+                                {selectedDc.hospitalName}
+                              </span>
+                            </div>
+
+                            {/* Right Actions */}
+                            <div className="flex items-center gap-2 flex-wrap shrink-0">
+                              {/* Primary Actions based on status */}
+                              {selectedDc.status === "pending" && (
+                                <>
+                                  <Button size="sm" className="h-8 text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg gap-1.5" onClick={() => openActionDialog("return", selectedDc)}>
+                                    <User className="w-3.5 h-3.5" /> Return
+                                  </Button>
+                                  <Button size="sm" className="h-8 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-lg gap-1.5" onClick={() => openActionDialog("purchase", selectedDc)}>
+                                    <ShoppingBag className="w-3.5 h-3.5" /> Direct Purchase
+                                  </Button>
+                                </>
+                              )}
+                              
+                              {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
+                                <>
+                                  <Button size="sm" className="h-8 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg gap-1.5" onClick={() => handleCreateCashMemoForDc(selectedDc)}>
+                                    <Receipt className="w-3.5 h-3.5" /> Cash Memo
+                                  </Button>
+                                  <Button size="sm" className="h-8 text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white rounded-lg gap-1.5" onClick={() => openActionDialog("invoice", selectedDc)}>
+                                    <FileText className="w-3.5 h-3.5" /> Tax Invoice
+                                  </Button>
+                                </>
+                              )}
+
+                              {selectedDc.invoiceRef && selectedIsTaxInvoice && (
+                                <Button size="sm" className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg gap-1.5" onClick={() => selectedDc.invoiceUrl ? window.open(selectedDc.invoiceUrl, '_blank') : openActionDialog("invoice", selectedDc)}>
+                                  <ExternalLink className="w-3.5 h-3.5" /> GoGSTBill
+                                </Button>
+                              )}
+
+                              {selectedDc.invoiceRef && selectedIsCashMemo && (
+                                <>
+                                  <Button size="sm" className="h-8 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg gap-1.5" onClick={() => { setViewingCashMemoRef(selectedDc.invoiceRef!); setCashMemoModalOpen(true); }}>
+                                    <Receipt className="w-3.5 h-3.5" /> View Memo
+                                  </Button>
+                                  {selectedDc.status === "cash" && (
+                                    <Button size="sm" className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg gap-1.5" onClick={() => openPaymentDialog(selectedDc)}>
+                                      <Wallet className="w-3.5 h-3.5" /> Pay
+                                    </Button>
+                                  )}
+                                </>
+                              )}
+                              
+                              <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block" />
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg" onClick={() => setDcDocumentModalOpen(true)} title="View DC">
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg" onClick={() => setDetailsDialogOpen(true)} title="Track Status">
+                                <Activity className="w-4 h-4" />
+                              </Button>
+                              
+                              {/* Close Button */}
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg ml-1" onClick={() => setSelectedDcId(null)}>
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* DC Tracker Main View: Full Width Layout */}
+                      <div className="w-full">
+                        <div className="border-t-2 border-border/60">
                             {filteredDcs.length === 0 ? (
                               <div className="p-8 sm:p-12 text-center">
                                 <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-muted/20 flex items-center justify-center mx-auto mb-4">
@@ -2813,11 +2890,9 @@ const SavedDcs = () => {
                                       Returned
                                     </th>
                                   )}
-                                  {!selectedDc && (
-                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[60px]">
+                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[60px]">
                                       Actions
                                     </th>
-                                  )}
                                 </tr>
                               </thead>
                               <tbody>
@@ -3068,7 +3143,6 @@ const SavedDcs = () => {
                                           </div>
                                         </td>
                                       )}
-                                      {!selectedDc && (
                                         <td className="p-3 text-center">
                                           <div className="flex items-center justify-center gap-1.5">
                                             {/* Quick Call Icon Action */}
@@ -3388,7 +3462,6 @@ const SavedDcs = () => {
                                           </DropdownMenu>
                                         </div>
                                       </td>
-                                      )}
                                       </tr>
                                     );
                                   })}
@@ -3400,385 +3473,9 @@ const SavedDcs = () => {
                       )}
                     </div>
                   </div>
-
-                  {/* Right Side: Selected DC Action List Panel */}
-                  {selectedDc && (() => {
-                    const daysPending = getDaysPending(selectedDc);
-                    const totalQty = getTotalQty(selectedDc);
-                    const contactSummary = getHospitalContactSummary(selectedDc.hospitalName);
-
-                    return (
-                      <div className="lg:col-span-5 xl:col-span-4">
-                        <div className="lg:sticky lg:top-20 bg-white dark:bg-slate-900 border-2 border-teal-500/80 dark:border-teal-500/60 rounded-2xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-right-3 duration-200">
-                          {/* Top Card Header */}
-                          <div className="p-4 bg-gradient-to-r from-teal-950 via-slate-900 to-slate-950 text-white relative">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0 space-y-1.5">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Badge className="bg-teal-500 text-slate-950 text-xs font-black px-2.5 py-0.5 shadow-sm">
-                                    {selectedDc.dcNo}
-                                  </Badge>
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-[11px] font-black uppercase tracking-wider px-2 py-0.5 ${
-                                      selectedDc.status === "pending"
-                                        ? "border-amber-400/60 bg-amber-500/20 text-amber-200"
-                                        : selectedDc.status === "returned"
-                                        ? "border-teal-400/60 bg-teal-500/20 text-teal-200"
-                                        : selectedDc.status === "cash"
-                                        ? "border-blue-400/60 bg-blue-500/20 text-blue-200"
-                                        : selectedDc.status === "completed"
-                                        ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-200"
-                                        : "border-slate-400/60 bg-slate-500/20 text-slate-200"
-                                    }`}
-                                  >
-                                    ● {selectedDc.status}
-                                  </Badge>
-                                  {daysPending > 0 && (
-                                    <span
-                                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                        daysPending > 7 && selectedDc.status === "pending"
-                                          ? "bg-rose-500/30 text-rose-200 border border-rose-400/50 animate-pulse"
-                                          : "bg-white/10 text-slate-300"
-                                      }`}
-                                    >
-                                      {daysPending}d Pending
-                                    </span>
-                                  )}
-                                </div>
-                                <h3 className="font-extrabold text-base text-slate-100 truncate pt-0.5 leading-snug" title={selectedDc.hospitalName}>
-                                  {selectedDc.hospitalName}
-                                </h3>
-                                <div className="flex items-center gap-3 text-xs text-teal-200/90 pt-0.5 flex-wrap">
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="w-3.5 h-3.5 text-teal-400" />
-                                    {formatDate(getDisplayDate(selectedDc))}
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    <Package className="w-3.5 h-3.5 text-teal-400" />
-                                    {totalQty} Items
-                                  </span>
-                                </div>
-                              </div>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 w-8 p-0 text-slate-300 hover:text-white hover:bg-white/20 rounded-full shrink-0"
-                                onClick={() => setSelectedDcId(null)}
-                                title="Deselect DC / Expand Table"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-
-                          {/* Logistics & Invoice Reference Bar */}
-                          {(selectedDc.deliveredBy || selectedDc.returnedBy || selectedDc.invoiceRef) && (
-                            <div className="px-4 py-2.5 bg-teal-50/70 dark:bg-teal-950/40 border-b border-teal-100 dark:border-teal-900/60 text-xs flex items-center justify-between gap-2 flex-wrap">
-                              {selectedDc.deliveredBy && (
-                                <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                                  <span className="text-[10px] uppercase font-bold text-slate-400">Delivered:</span>
-                                  <span className="font-bold text-teal-900 dark:text-teal-200 flex items-center gap-1">
-                                    {getTransportMode(selectedDc.deliveredBy) && renderTransportIcon(getTransportMode(selectedDc.deliveredBy)?.iconName, "w-3 h-3 text-teal-600")}
-                                    {selectedDc.deliveredBy}
-                                  </span>
-                                </div>
-                              )}
-                              {selectedDc.returnedBy && (
-                                <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                                  <span className="text-[10px] uppercase font-bold text-slate-400">Returned:</span>
-                                  <span className="font-bold text-teal-900 dark:text-teal-200 flex items-center gap-1">
-                                    {getTransportMode(selectedDc.returnedBy) && renderTransportIcon(getTransportMode(selectedDc.returnedBy)?.iconName, "w-3 h-3 text-teal-600")}
-                                    {selectedDc.returnedBy}
-                                  </span>
-                                </div>
-                              )}
-                              {selectedDc.invoiceRef && (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] uppercase font-bold text-slate-400">Invoice:</span>
-                                  <span className="font-extrabold text-purple-700 dark:text-purple-300">
-                                    {selectedDc.invoiceRef}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Action Buttons as a Beautiful, Understandable List */}
-                          <div className="p-4 space-y-4 max-h-[calc(75vh-160px)] overflow-y-auto">
-                            {/* 1. Primary Workflow Action Buttons */}
-                            <div className="space-y-2">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-                                Primary Actions &amp; Status
-                              </span>
-
-                              {selectedDc.status === "pending" && (
-                                <div className="space-y-2">
-                                  <Button
-                                    size="sm"
-                                    className="w-full h-10 text-xs font-extrabold bg-teal-600 hover:bg-teal-700 text-white shadow-sm flex items-center justify-center gap-2 rounded-xl"
-                                    onClick={() => openActionDialog("return", selectedDc)}
-                                  >
-                                    <User className="w-4 h-4" />
-                                    Mark as Returned
-                                  </Button>
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <Button
-                                      size="sm"
-                                      className="h-9 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs flex items-center justify-center gap-1.5 rounded-xl"
-                                      onClick={() => handleCreateCashMemoForDc(selectedDc)}
-                                    >
-                                      <Receipt className="w-3.5 h-3.5" />
-                                      Cash Memo
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      className="h-9 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-2xs flex items-center justify-center gap-1.5 rounded-xl"
-                                      onClick={() => openActionDialog("invoice", selectedDc)}
-                                    >
-                                      <FileText className="w-3.5 h-3.5" />
-                                      Tax Invoice
-                                    </Button>
-                                  </div>
-
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="w-full h-8 text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 flex items-center justify-center gap-1.5 rounded-xl"
-                                    onClick={() => openActionDialog("purchase", selectedDc)}
-                                  >
-                                    <ShoppingBag className="w-3.5 h-3.5 text-amber-600" />
-                                    Purchase / Direct Sale Options
-                                  </Button>
-                                </div>
-                              )}
-
-                              {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
-                                <div className="space-y-2">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <Button
-                                      size="sm"
-                                      className="h-9 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs flex items-center justify-center gap-1.5 rounded-xl"
-                                      onClick={() => handleCreateCashMemoForDc(selectedDc)}
-                                    >
-                                      <Receipt className="w-3.5 h-3.5" />
-                                      Create Cash Memo
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      className="h-9 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-2xs flex items-center justify-center gap-1.5 rounded-xl"
-                                      onClick={() => openActionDialog("invoice", selectedDc)}
-                                    >
-                                      <FileText className="w-3.5 h-3.5" />
-                                      Link Tax Invoice
-                                    </Button>
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="w-full h-8 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-center gap-1.5 rounded-xl"
-                                    onClick={() => setMoveToPendingDialog({ open: true, dc: selectedDc })}
-                                  >
-                                    <Undo2 className="w-3.5 h-3.5" />
-                                    Move Back to Pending
-                                  </Button>
-                                </div>
-                              )}
-
-                              {selectedDc.invoiceRef && selectedIsTaxInvoice && (
-                                <div className="space-y-2">
-                                  {selectedDc.invoiceUrl ? (
-                                    <Button
-                                      size="sm"
-                                      className="w-full h-10 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center justify-center gap-2 rounded-xl"
-                                      onClick={() => window.open(selectedDc.invoiceUrl, '_blank')}
-                                    >
-                                      <ExternalLink className="w-4 h-4" />
-                                      Open GoGSTBill ({selectedDc.invoiceRef})
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      className="w-full h-10 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center justify-center gap-2 rounded-xl"
-                                      onClick={() => openActionDialog("invoice", selectedDc)}
-                                    >
-                                      <Link2 className="w-4 h-4" />
-                                      Enter GoGSTBill URL ({selectedDc.invoiceRef})
-                                    </Button>
-                                  )}
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="w-full h-8 text-xs font-semibold text-purple-700 dark:text-purple-300 border-purple-300 hover:bg-purple-50 flex items-center justify-center gap-1.5 rounded-xl"
-                                    onClick={() => openActionDialog("invoice", selectedDc)}
-                                  >
-                                    <Edit className="w-3.5 h-3.5 text-purple-600" />
-                                    Edit Tax Invoice Details
-                                  </Button>
-                                </div>
-                              )}
-
-                              {selectedDc.invoiceRef && selectedIsCashMemo && (
-                                <div className="space-y-2">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <Button
-                                      size="sm"
-                                      className="h-10 text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center justify-center gap-1.5 rounded-xl"
-                                      onClick={() => {
-                                        setViewingCashMemoRef(selectedDc.invoiceRef!);
-                                        setCashMemoModalOpen(true);
-                                      }}
-                                    >
-                                      <Receipt className="w-4 h-4" />
-                                      View Cash Memo
-                                    </Button>
-                                    {selectedDc.status === "cash" && (
-                                      <Button
-                                        size="sm"
-                                        className="h-10 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center justify-center gap-1.5 rounded-xl"
-                                        onClick={() => openPaymentDialog(selectedDc)}
-                                      >
-                                        <Wallet className="w-4 h-4" />
-                                        Record Payment
-                                      </Button>
-                                    )}
-                                    {selectedDc.status === "completed" && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-10 text-xs font-bold text-slate-700 dark:text-slate-300 border-slate-300 hover:bg-slate-50 flex items-center justify-center gap-1.5 rounded-xl"
-                                        onClick={() => moveBackToReturned(selectedDc)}
-                                      >
-                                        <Undo2 className="w-4 h-4" />
-                                        Back to Returned
-                                      </Button>
-                                    )}
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-8 text-xs font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-300 hover:bg-emerald-50 flex items-center justify-center gap-1 rounded-xl"
-                                      onClick={() => handleShareWhatsApp(selectedDc)}
-                                    >
-                                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                                      WhatsApp
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-8 text-xs font-semibold text-amber-800 dark:text-amber-300 border-amber-300 hover:bg-amber-50 flex items-center justify-center gap-1 rounded-xl"
-                                      onClick={() => openDelinkConfirmDialog(selectedDc)}
-                                    >
-                                      <Undo2 className="w-3.5 h-3.5 text-amber-600" />
-                                      Delink Memo
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-
-                              {selectedDc.status === "completed" && !selectedDc.invoiceRef && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="w-full h-9 text-xs font-bold text-slate-700 dark:text-slate-300 border-slate-300 hover:bg-slate-100 flex items-center justify-center gap-1.5 rounded-xl"
-                                  onClick={() => moveBackToReturned(selectedDc)}
-                                >
-                                  <Undo2 className="w-4 h-4" />
-                                  Move Back to Returned
-                                </Button>
-                              )}
-                            </div>
-
-                            {/* 2. Document & Communication Actions Grid */}
-                            <div className="pt-2.5 border-t border-slate-200 dark:border-slate-800 space-y-2">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-                                Documents &amp; Contacts
-                              </span>
-                              <div className="grid grid-cols-2 gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-9 text-xs font-semibold justify-start text-teal-800 dark:text-teal-200 bg-teal-50/50 hover:bg-teal-100/70 border-teal-200 dark:border-teal-800 gap-1.5 rounded-xl shadow-2xs"
-                                  onClick={() => setDcDocumentModalOpen(true)}
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-teal-600" />
-                                  <span>View DC</span>
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-9 text-xs font-semibold justify-start text-blue-800 dark:text-blue-200 bg-blue-50/50 hover:bg-blue-100/70 border-blue-200 dark:border-blue-800 gap-1.5 rounded-xl shadow-2xs"
-                                  onClick={() => setDetailsDialogOpen(true)}
-                                >
-                                  <Activity className="w-3.5 h-3.5 text-blue-600" />
-                                  <span>Track Status</span>
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-9 text-xs font-semibold justify-start text-slate-800 dark:text-slate-200 bg-slate-50 hover:bg-slate-100 border-slate-200 dark:border-slate-800 gap-1.5 rounded-xl shadow-2xs"
-                                  onClick={() => handlePrint(selectedDc)}
-                                >
-                                  <Printer className="w-3.5 h-3.5 text-slate-600" />
-                                  <span>Print DC</span>
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-9 text-xs font-semibold justify-start text-emerald-800 dark:text-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/70 border-emerald-200 dark:border-emerald-800 gap-1.5 rounded-xl shadow-2xs"
-                                  onClick={() => handleShare(selectedDc)}
-                                >
-                                  <Share2 className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span>Share PDF</span>
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-9 text-xs font-semibold justify-start text-teal-800 dark:text-teal-200 bg-teal-50/50 hover:bg-teal-100/70 border-teal-200 dark:border-teal-800 gap-1.5 rounded-xl shadow-2xs"
-                                  onClick={() => openEditDcModal(selectedDc)}
-                                >
-                                  <Edit className="w-3.5 h-3.5 text-teal-600" />
-                                  <span>Edit Details</span>
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-9 text-xs font-semibold justify-start text-emerald-800 dark:text-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/70 border-emerald-200 dark:border-emerald-800 gap-1.5 rounded-xl shadow-2xs"
-                                  onClick={() => handleOpenHospitalContact(selectedDc.hospitalName, selectedDc, !contactSummary.hasPhone)}
-                                >
-                                  <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span className="truncate">{contactSummary.hasPhone ? `Call (${contactSummary.primaryPhone})` : "Add Phone"}</span>
-                                </Button>
-                              </div>
-                            </div>
-
-                            {/* 3. Delete Action */}
-                            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-end">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 gap-1 px-2.5 rounded-lg"
-                                onClick={() => requestDelete(selectedDc)}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" /> Delete Delivery Challan
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </>
-            )}
-          </CardContent>
+                </>
+              )}
+            </CardContent>
         </Card>
       </div>
     </main>

@@ -647,7 +647,8 @@ export const BankAccountsView: React.FC = () => {
       if (categoryFilter !== 'all' && tx.category !== categoryFilter) return false;
 
       if (dateRangeFilter !== 'all') {
-        const txDate = new Date(tx.date);
+        const [y, m, d] = (tx.date || '').split('-').map(Number);
+        const txDate = y && m && d ? new Date(y, m - 1, d) : new Date(tx.date);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -2052,28 +2053,37 @@ export const BankAccountsView: React.FC = () => {
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Upload statements, record bank transactions, and link credits directly to your Cash Invoices.
+              Live bank transactions ledger and Cash Invoice matching.
             </p>
           </div>
         </div>
 
-        {/* Tab switcher buttons matching Cash Invoice exactly */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        {/* Tab Switcher - Auto-sized Flex Layout to Prevent Text & White Card Overlap */}
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full sm:w-auto">
-            <TabsList className="grid grid-cols-5 w-full sm:w-[620px] h-9 rounded-lg">
-              <TabsTrigger value="ledger" className="text-xs font-semibold gap-1 rounded-md">
+            <TabsList className="flex items-center w-full sm:w-auto min-w-max h-10 rounded-lg p-1 bg-muted/60 border border-border gap-1">
+              <TabsTrigger 
+                value="ledger" 
+                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
+              >
                 <FileText className="w-3.5 h-3.5" /> Ledger ({transactions.length})
               </TabsTrigger>
-              <TabsTrigger value="unlinked" className="text-xs font-semibold gap-1 rounded-md">
-                <Link2 className="w-3.5 h-3.5" /> Unlinked ({overallSummary.unlinkedCreditCount})
+              <TabsTrigger 
+                value="unlinked" 
+                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
+              >
+                <Link2 className="w-3.5 h-3.5" /> Unlinked Cash Transactions ({overallSummary.unlinkedCreditCount})
               </TabsTrigger>
-              <TabsTrigger value="linked" className="text-xs font-semibold gap-1 rounded-md">
+              <TabsTrigger 
+                value="linked" 
+                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
+              >
                 <Receipt className="w-3.5 h-3.5" /> Linked ({linkedCreditTransactions.length})
               </TabsTrigger>
-              <TabsTrigger value="import" className="text-xs font-semibold gap-1 rounded-md">
-                <FileSpreadsheet className="w-3.5 h-3.5" /> Import
-              </TabsTrigger>
-              <TabsTrigger value="accounts" className="text-xs font-semibold gap-1 rounded-md">
+              <TabsTrigger 
+                value="accounts" 
+                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
+              >
                 <Building2 className="w-3.5 h-3.5" /> Accounts ({accounts.length})
               </TabsTrigger>
             </TabsList>
@@ -2081,70 +2091,11 @@ export const BankAccountsView: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Cards Strip matching Cash Invoice layout */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card className="border-border shadow-sm p-4 rounded-xl">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-            Total Treasury Balance
-          </div>
-          <div className="text-xl sm:text-2xl font-black font-display font-mono text-teal-700 dark:text-teal-400 mt-1">
-            ₹{overallSummary.totalNetBalance.toLocaleString("en-IN")}
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">
-            Across {accounts.length} bank account{accounts.length === 1 ? '' : 's'}
-          </div>
-        </Card>
-
-        <Card className="border-border shadow-sm p-4 rounded-xl">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-            Total Credits (Inflow)
-          </div>
-          <div className="text-xl sm:text-2xl font-black font-display font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-            +₹{overallSummary.totalCredits.toLocaleString("en-IN")}
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">
-            {overallSummary.creditCount} deposit entries
-          </div>
-        </Card>
-
-        <Card className="border-border shadow-sm p-4 rounded-xl">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-            Total Debits (Outflow)
-          </div>
-          <div className="text-xl sm:text-2xl font-black font-display font-mono text-rose-600 dark:text-rose-400 mt-1">
-            -₹{overallSummary.totalDebits.toLocaleString("en-IN")}
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">
-            {overallSummary.debitCount} withdrawal entries
-          </div>
-        </Card>
-
-        <Card className="border-border shadow-sm p-4 rounded-xl">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-            Unlinked Credits
-          </div>
-          <div className="text-xl sm:text-2xl font-black font-display font-mono text-amber-600 dark:text-amber-400 mt-1">
-            {overallSummary.unlinkedCreditCount} Deposits
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center justify-between">
-            <span>Needs invoice link</span>
-            {overallSummary.unlinkedCreditCount > 0 && (
-              <button
-                onClick={() => setActiveTab('unlinked')}
-                className="text-[11px] font-bold text-amber-700 hover:underline"
-              >
-                Match &rarr;
-              </button>
-            )}
-          </div>
-        </Card>
-      </div>
-
       {/* ========================================================================= */}
       {/* TAB 1: MAIN TRANSACTIONS LEDGER                                           */}
       {/* ========================================================================= */}
       {activeTab === "ledger" && (
-        <div className="space-y-3.5">
+        <div className="space-y-3">
           {/* Action Toolbar */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
             {/* Search Input */}
@@ -2159,11 +2110,11 @@ export const BankAccountsView: React.FC = () => {
               />
             </div>
 
-            {/* Action Buttons */}
+            {/* Account Selector, Add Account & Actions */}
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-                <SelectTrigger className="h-8 text-xs font-semibold w-auto min-w-[150px] rounded-md">
-                  <SelectValue placeholder="All Accounts" />
+                <SelectTrigger className="h-8 text-xs font-semibold w-auto min-w-[170px] rounded-md">
+                  <SelectValue placeholder="All Bank Accounts" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Bank Accounts</SelectItem>
@@ -2177,110 +2128,29 @@ export const BankAccountsView: React.FC = () => {
 
               <Button
                 size="sm"
+                onClick={handleOpenAddAccount}
+                className="h-8 px-3 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Account
+              </Button>
+
+              <Button
+                size="sm"
                 variant="outline"
                 onClick={() => loadAllData(true)}
-                className="h-8 px-2.5 text-xs text-muted-foreground rounded-md"
+                className="h-8 px-3 text-xs text-muted-foreground rounded-md gap-1"
                 title="Refresh Ledger"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-teal-600' : ''}`} />
-              </Button>
-
-              <Button
-                size="sm"
-                variant={isAutoSyncEnabled ? "default" : "outline"}
-                onClick={() => {
-                  if (!appsScriptUrl.trim()) {
-                    toast.error('Please enter your Google Apps Script Web App URL in the "Import / Gmail" tab first.');
-                    setActiveTab('import');
-                    return;
-                  }
-                  const nextState = !isAutoSyncEnabled;
-                  setIsAutoSyncEnabled(nextState);
-                  localStorage.setItem('srrortho:auto_sync_live', String(nextState));
-                  if (nextState) {
-                    toast.success('⚡ Live Auto-Sync is ON! Watching for new emails every 30s.');
-                    handleSyncFromAppsScript(true);
-                  } else {
-                    toast.info('Live Auto-Sync paused.');
-                  }
-                }}
-                className={`h-8 px-2.5 text-xs font-semibold rounded-md ${
-                  isAutoSyncEnabled
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                    : 'text-teal-700 bg-teal-50/60 border-teal-300 hover:bg-teal-100'
-                }`}
-                title="Automatically polls and displays incoming HDFC alerts in real time"
-              >
-                <Zap className={`w-3.5 h-3.5 mr-1 ${isAutoSyncEnabled ? 'animate-bounce' : 'text-teal-600'}`} />
-                {isAutoSyncEnabled ? 'Live Sync (30s) ON' : 'Live Sync OFF'}
-              </Button>
-
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setActiveTab('import')}
-                className="h-8 px-2.5 text-xs text-muted-foreground rounded-md"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-teal-600" /> Import Sheet
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-teal-600' : ''}`} /> Refresh
               </Button>
 
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleExportCSV}
-                className="h-8 px-2.5 text-xs text-muted-foreground rounded-md"
+                className="h-8 px-3 text-xs text-muted-foreground rounded-md gap-1"
               >
-                <Download className="w-3.5 h-3.5 mr-1" /> Export
-              </Button>
-
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={isAutoAssigning || transactions.length === 0}
-                onClick={handleAutoAssignTransactionsToAccounts}
-                className="h-8 px-2.5 text-xs font-semibold text-teal-700 bg-teal-50/80 border-teal-300 hover:bg-teal-100 rounded-md"
-                title="Auto-attach transactions to matching Bank Accounts based on suffix (1538 / 6569) or account numbers"
-              >
-                <Sparkles className="w-3.5 h-3.5 mr-1 text-teal-600" />
-                {isAutoAssigning ? 'Attaching...' : 'Auto-Attach Accounts'}
-              </Button>
-
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={isClearingAll || transactions.length === 0}
-                onClick={handleClearAllTransactions}
-                className="h-8 px-2.5 text-xs text-rose-600 border-rose-200 hover:bg-rose-50 rounded-md"
-                title="Delete all transactions (Reset ledger)"
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-600" /> Reset Ledger
-              </Button>
-
-              {accounts.length > 1 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleOpenTransferModal}
-                  className="h-8 px-3 text-xs font-semibold text-indigo-700 bg-indigo-50/70 border-indigo-200 hover:bg-indigo-100 rounded-md"
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5 mr-1 text-indigo-600" /> Transfer
-                </Button>
-              )}
-
-              <Button
-                size="sm"
-                onClick={() => handleOpenAddTx('credit')}
-                className="h-8 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add Credit
-              </Button>
-
-              <Button
-                size="sm"
-                onClick={() => handleOpenAddTx('debit')}
-                className="h-8 px-3 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-md shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add Debit
+                <Download className="w-3.5 h-3.5" /> Export CSV
               </Button>
             </div>
           </div>
@@ -2293,7 +2163,7 @@ export const BankAccountsView: React.FC = () => {
                 size="sm"
                 variant={typeFilter === "all" ? "default" : "outline"}
                 onClick={() => setTypeFilter("all")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "all" ? "bg-teal-700 text-white" : ""}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "all" ? "bg-teal-700 text-white hover:bg-teal-800" : ""}`}
               >
                 All ({transactions.length})
               </Button>
@@ -2301,47 +2171,33 @@ export const BankAccountsView: React.FC = () => {
                 size="sm"
                 variant={typeFilter === "unlinked" ? "default" : "outline"}
                 onClick={() => setTypeFilter("unlinked")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "unlinked" ? "bg-amber-600 text-white" : "text-amber-800 hover:bg-amber-50"}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "unlinked" ? "bg-amber-600 text-white hover:bg-amber-700" : "text-amber-800 hover:bg-amber-50"}`}
               >
-                <Link2 className="w-3 h-3 mr-1" /> Unlinked Credits ({overallSummary.unlinkedCreditCount})
-              </Button>
-              <Button
-                size="sm"
-                variant={typeFilter === "cash_memo_income" ? "default" : "outline"}
-                onClick={() => setTypeFilter("cash_memo_income")}
-                className={`h-7 px-2.5 text-xs font-bold rounded-md transition-all ${
-                  typeFilter === "cash_memo_income"
-                    ? "bg-emerald-600 text-white shadow-xs"
-                    : "text-emerald-800 bg-emerald-50/80 border-emerald-300 hover:bg-emerald-100"
-                }`}
-                title="Hide daily expenses, fuel, logistics and tea payouts. Focus exclusively on incoming UPI/Bank deposits for Cash Memos."
-              >
-                <Zap className="w-3 h-3 mr-1 text-amber-300 fill-amber-300" />
-                ⚡ Cash Memo Income Only
+                <Link2 className="w-3 h-3 mr-1" /> Unlinked ({overallSummary.unlinkedCreditCount})
               </Button>
               <Button
                 size="sm"
                 variant={typeFilter === "linked" ? "default" : "outline"}
                 onClick={() => setTypeFilter("linked")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "linked" ? "bg-teal-700 text-white" : "text-teal-800 hover:bg-teal-50"}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "linked" ? "bg-teal-700 text-white hover:bg-teal-800" : "text-teal-800 hover:bg-teal-50"}`}
               >
-                <Receipt className="w-3 h-3 mr-1" /> Linked Invoices
+                <Receipt className="w-3 h-3 mr-1" /> Linked
               </Button>
               <Button
                 size="sm"
                 variant={typeFilter === "credit" ? "default" : "outline"}
                 onClick={() => setTypeFilter("credit")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "credit" ? "bg-emerald-700 text-white" : "text-emerald-700 hover:bg-emerald-50"}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "credit" ? "bg-emerald-700 text-white hover:bg-emerald-800" : "text-emerald-700 hover:bg-emerald-50"}`}
               >
-                <ArrowDownLeft className="w-3 h-3 mr-1" /> All Credits
+                <ArrowDownLeft className="w-3 h-3 mr-1" /> Credits
               </Button>
               <Button
                 size="sm"
                 variant={typeFilter === "debit" ? "default" : "outline"}
                 onClick={() => setTypeFilter("debit")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "debit" ? "bg-rose-700 text-white" : "text-rose-700 hover:bg-rose-50"}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "debit" ? "bg-rose-700 text-white hover:bg-rose-800" : "text-rose-700 hover:bg-rose-50"}`}
               >
-                <ArrowUpRight className="w-3 h-3 mr-1" /> All Debits
+                <ArrowUpRight className="w-3 h-3 mr-1" /> Debits
               </Button>
             </div>
 
@@ -2356,26 +2212,6 @@ export const BankAccountsView: React.FC = () => {
                   <SelectItem value="today">Today</SelectItem>
                   <SelectItem value="week">Past 7 Days</SelectItem>
                   <SelectItem value="month">Past 30 Days</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={String(fetchLimit)}
-                onValueChange={(val) => {
-                  const newLim = parseInt(val, 10);
-                  setFetchLimit(newLim);
-                  loadAllData(false, newLim);
-                }}
-              >
-                <SelectTrigger className="h-7 text-xs w-auto min-w-[120px] rounded-md bg-muted/40 font-medium">
-                  <span className="text-muted-foreground mr-1 text-[11px]">Load:</span>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="50">Latest 50</SelectItem>
-                  <SelectItem value="150">Latest 150 (Fast)</SelectItem>
-                  <SelectItem value="300">Latest 300</SelectItem>
-                  <SelectItem value="1000">All (1000)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2799,107 +2635,6 @@ export const BankAccountsView: React.FC = () => {
               </table>
             </div>
           </Card>
-
-          {/* Secondary Table: Unlinked Bank Statement Credits (if any) */}
-          {unlinkedCreditTransactions.length > 0 && (
-            <div className="pt-4 space-y-3">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
-                <div>
-                  <h3 className="font-display font-bold text-sm text-foreground flex items-center gap-2">
-                    <Link2 className="w-4 h-4 text-teal-700" />
-                    <span>Unlinked Bank Statement Credits ({unlinkedCreditTransactions.length})</span>
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Incoming bank statement deposits that have not yet been linked to an invoice or DC.
-                  </p>
-                </div>
-              </div>
-
-              <Card className="border-border shadow-sm overflow-hidden rounded-xl">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">
-                        <th className="p-3 text-left">Deposit Date</th>
-                        <th className="p-3 text-left">Bank Account</th>
-                        <th className="p-3 text-left">Statement Narration / UTR</th>
-                        <th className="p-3 text-right">Credit Amount</th>
-                        <th className="p-3 text-right">Quick Match Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {unlinkedCreditTransactions.map((tx) => {
-                        const acc = accounts.find((a) => a.id === tx.accountId);
-                        const exactMatches = cashInvoices.filter(
-                          (inv) =>
-                            Math.max(0, Number(inv.grandTotal || 0) - Number(inv.paymentReceived || 0)) === tx.amount ||
-                            Number(inv.grandTotal) === tx.amount
-                        );
-
-                        return (
-                          <tr key={tx.id} className="hover:bg-muted/20">
-                            <td className="p-3 whitespace-nowrap font-bold">
-                              {new Date(tx.date).toLocaleDateString('en-IN', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                              })}
-                            </td>
-
-                            <td className="p-3 whitespace-nowrap">
-                              <Badge variant="outline" className="text-[10px] bg-teal-50 text-teal-800 border-teal-300 rounded-md">
-                                {acc?.accountName}
-                              </Badge>
-                            </td>
-
-                            <td className="p-3 max-w-sm">
-                              <div className="font-medium text-foreground">{tx.description}</div>
-                              {tx.referenceNumber && (
-                                <span className="text-[10px] font-mono text-muted-foreground">Ref: {tx.referenceNumber}</span>
-                              )}
-                              {exactMatches.length > 0 && (
-                                <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
-                                  <Sparkles className="w-3 h-3" />
-                                  <span>Suggested: {exactMatches[0].invNumber} ({exactMatches[0].clientName})</span>
-                                </div>
-                              )}
-                            </td>
-
-                            <td className="p-3 text-right whitespace-nowrap font-mono font-bold text-sm text-emerald-600">
-                              +₹{tx.amount.toLocaleString('en-IN')}
-                            </td>
-
-                            <td className="p-3 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-1.5">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setViewingTxDetails(tx)}
-                                  className="h-7 px-2 text-[11px] text-muted-foreground hover:text-teal-700 hover:bg-teal-50/50 rounded-md"
-                                  title="View Email & Verification Details"
-                                >
-                                  <Eye className="w-3.5 h-3.5 mr-1 text-teal-600" />
-                                  <span>View Email</span>
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleOpenLinkModal(tx)}
-                                  className="h-7 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs"
-                                >
-                                  <Link2 className="w-3.5 h-3.5 mr-1" /> Match &amp; Link Invoice
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </div>
-          )}
         </div>
       )}
 
@@ -4519,9 +4254,9 @@ export const BankAccountsView: React.FC = () => {
           {/* 2. BODY CONTENT (2-COLUMN RESPONSIVE LAYOUT) */}
           {settlingDc && (
             <div className="p-5 max-h-[78vh] overflow-y-auto">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
                 {/* LEFT COLUMN: RECEIVABLE DETAILS & PAYMENT INPUTS */}
-                <div className={`${paymentMethod === "bank_transfer" ? "lg:col-span-5" : "lg:col-span-12 max-w-xl mx-auto w-full"} space-y-4`}>
+                <div className={`${paymentMethod === "bank_transfer" ? "lg:col-span-5" : "lg:col-span-12 max-w-xl mx-auto w-full"} space-y-4 flex flex-col justify-between`}>
                   {/* Financial Receivable Banner */}
                   {Boolean(settlingDc.billedAmount && settlingDc.billedAmount > (settlingDc.cashAmount || 0)) ? (
                     <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5">
@@ -4759,7 +4494,7 @@ export const BankAccountsView: React.FC = () => {
 
                 {/* RIGHT COLUMN: BANK CREDIT LINKING & MATCHING PANEL (When Bank Transfer is active) */}
                 {paymentMethod === "bank_transfer" && (
-                  <div className="lg:col-span-7 bg-slate-50/80 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="lg:col-span-7 bg-slate-50/90 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between h-full space-y-3">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                         <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -4801,13 +4536,13 @@ export const BankAccountsView: React.FC = () => {
                               <span>{acc.bankName || acc.accountName.split('(')[0].trim()}</span>
                               {accSuffix && (
                                 <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
-                                  isSelected ? "bg-black/20 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                  isSelected ? "bg-white/20 text-white font-mono" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                                 }`}>
                                   ({accSuffix})
                                 </span>
                               )}
                               <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                                isSelected ? "bg-black/20 text-white" : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+                                isSelected ? "bg-white/20 text-white font-mono" : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
                               }`}>
                                 {count}
                               </span>
@@ -4828,7 +4563,7 @@ export const BankAccountsView: React.FC = () => {
                           <Landmark className="w-3.5 h-3.5" />
                           <span>All Accounts</span>
                           <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                            selectedBankAccountId === "all" ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            selectedBankAccountId === "all" ? "bg-white/20 text-white font-mono" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
                           }`}>
                             {availableBankCredits.length}
                           </span>
@@ -4836,7 +4571,7 @@ export const BankAccountsView: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800/60 space-y-0 flex-1 min-h-[220px] max-h-[350px] overflow-y-auto">
                       {filteredBankCredits.map((tx) => {
                         const isSelected = selectedCreditTxId === tx.id;
                         const dcAmount = settlingDc.cashAmount || settlingDc.billedAmount || 0;
@@ -4853,49 +4588,50 @@ export const BankAccountsView: React.FC = () => {
                               setSelectedCreditTxId(tx.id);
                               if (tx.amount) setPaymentAmountInput(String(tx.amount));
                             }}
-                            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                            className={`px-3.5 py-2.5 text-xs cursor-pointer transition-colors flex items-center justify-between gap-3 ${
                               isSelected
-                                ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-500/20 shadow-xs"
-                                : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
+                                ? "bg-indigo-50/90 dark:bg-indigo-950/60 border-l-4 border-l-indigo-600 font-medium"
+                                : "hover:bg-slate-50 dark:hover:bg-slate-850"
                             }`}
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2.5">
-                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>
-                                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                                </div>
-                                <div>
-                                  <span className="font-bold text-slate-800 dark:text-slate-100 block">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>
+                                {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="font-bold text-slate-800 dark:text-slate-100 truncate text-[11.5px]">
                                     {tx.description || "Bank Credit Deposit"}
                                   </span>
-                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-mono mt-0.5">
-                                    {tx.date} {tx.time ? `• ${tx.time}` : ""} {tx.referenceNumber ? `• Ref: ${tx.referenceNumber}` : ""}
-                                  </span>
+                                  {isMatch && (
+                                    <span className="text-[9px] px-1.5 py-0.2 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 rounded font-extrabold shrink-0">
+                                      🎯 Match
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                                  <span>{tx.date}</span>
+                                  {tx.time && <span>• {tx.time}</span>}
+                                  {tx.referenceNumber && <span className="truncate">• Ref: {tx.referenceNumber}</span>}
                                 </div>
                               </div>
-                              <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm font-mono block">
-                                    +₹{tx.amount.toLocaleString('en-IN')}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setViewingTxDetails(tx);
-                                    }}
-                                    className="p-1 rounded-md text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-                                    title="View Email & Verification Details"
-                                  >
-                                    <Eye className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                                {isMatch && (
-                                  <Badge className="text-[9px] px-1.5 py-0 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-0 font-bold">
-                                    🎯 Match Candidate
-                                  </Badge>
-                                )}
-                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-black text-emerald-600 dark:text-emerald-400 text-xs font-mono">
+                                +₹{tx.amount.toLocaleString('en-IN')}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setViewingTxDetails(tx);
+                                }}
+                                className="p-1 rounded-md text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                title="View Email & Verification Details"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
                         );
@@ -4904,26 +4640,21 @@ export const BankAccountsView: React.FC = () => {
                       {/* NOT FOUND OPTION AT LAST */}
                       <div
                         onClick={() => setSelectedCreditTxId("not_found")}
-                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                        className={`px-3.5 py-2.5 text-xs cursor-pointer transition-colors flex items-center justify-between gap-2 ${
                           selectedCreditTxId === "not_found"
-                            ? "border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-500/20 shadow-xs"
-                            : "border-slate-200 bg-slate-50 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
+                            ? "bg-amber-50 dark:bg-amber-950/40 border-l-4 border-l-amber-500 font-medium"
+                            : "hover:bg-slate-50 dark:hover:bg-slate-850"
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2.5">
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedCreditTxId === "not_found" ? "border-amber-600 bg-amber-600 text-white" : "border-slate-300"}`}>
-                              {selectedCreditTxId === "not_found" && <Check className="w-3 h-3 stroke-[3]" />}
-                            </div>
-                            <div>
-                              <span className="font-bold text-amber-900 dark:text-amber-300 block flex items-center gap-1">
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                                Not Found in Bank Statement Yet (Link Later)
-                              </span>
-                              <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                                Statement update pending. You can link this later from Bank Treasury.
-                              </span>
-                            </div>
+                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                          <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${selectedCreditTxId === "not_found" ? "border-amber-600 bg-amber-600 text-white" : "border-slate-300"}`}>
+                            {selectedCreditTxId === "not_found" && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                          </div>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="font-bold text-amber-900 dark:text-amber-300 text-[11.5px] truncate">
+                              Not Found in Bank Statement Yet (Link Later)
+                            </span>
                           </div>
                         </div>
                       </div>

@@ -212,6 +212,8 @@ export function parseHdfcEmailAlert(
     text.match(/IMPS[:\/\-\s]*([0-9]{10,18})/i) ||
     text.match(/NEFT[:\/\-\s]*([A-Za-z0-9]{8,22})/i);
 
+  const refDetailsMatch = text.match(/Reference\s*Details\s*:\s*([^\n\r]+(?:\r?\n\s*[^\n\r]+)?)/i);
+
   if (upiRefMatch) {
     refNo = upiRefMatch[1].trim();
   } else if (neftRefMatch) {
@@ -303,25 +305,30 @@ export function parseMultipleHdfcEmailAlerts(
 ): ParsedHdfcEmailResult[] {
   if (!rawText || !rawText.trim()) return [];
 
-  // Split by common email boundaries or double line breaks
+  // Split by common email boundaries or explicit header starts (without splitting mid-sentence on amounts)
   const chunks = rawText
-    .split(/(?=(?:Dear Customer|HDFC Bank:|Alert:|Your A\/c|Your account|INR\s*[0-9]|Rs\.?\s*[0-9]))/gi)
+    .split(/(?=(?:Dear Customer|Greetings from HDFC|HDFC BANK|Alert:|Your A\/c|Your account))\b/gi)
     .map((c) => c.trim())
-    .filter((c) => c.length > 15);
+    .filter((c) => c.length > 20);
 
   const results: ParsedHdfcEmailResult[] = [];
 
   for (const chunk of chunks) {
     const parsed = parseHdfcEmailAlert(chunk, accounts);
     if (parsed) {
-      // Avoid duplicate references in same batch
-      if (!results.some((r) => r.referenceNumber === parsed.referenceNumber && r.amount === parsed.amount)) {
+      // Avoid duplicate references or duplicate amounts/dates in same batch
+      const isDup = results.some(
+        (r) =>
+          (r.referenceNumber && parsed.referenceNumber && r.referenceNumber === parsed.referenceNumber) ||
+          (r.amount === parsed.amount && r.narration === parsed.narration && r.date === parsed.date)
+      );
+      if (!isDup) {
         results.push(parsed);
       }
     }
   }
 
-  // If chunking didn't produce multiple items, try single parse
+  // If chunking didn't produce any items, parse rawText as a single email body
   if (results.length === 0) {
     const single = parseHdfcEmailAlert(rawText, accounts);
     if (single) results.push(single);
