@@ -2199,46 +2199,56 @@ const SavedDcs = () => {
   };
 
   const handleCreateCashMemoForDc = async (dc: SavedDc) => {
-    setIsActionLoading(true);
-    try {
-      const invoices = await fetchCashInvoicesFromFirestore();
-      const alreadyExists = invoices.some(
-        (inv) =>
-          inv.dcNumber &&
-          inv.dcNumber.trim().toLowerCase() ===
-            (dc.dcNo || "").trim().toLowerCase(),
-      );
+    await runActionWithProgress({
+      dcNo: dc.dcNo,
+      title: "Creating Cash Invoice",
+      targetQueueName: "Cash Invoice Editor",
+      initialMessage: "Verifying records & prefilling items into Cash Memo editor...",
+      successMessage: "Opening Cash Invoice Editor... 📄",
+      iconType: "cash",
+      actionFn: async () => {
+        setIsActionLoading(true);
+        try {
+          const invoices = await fetchCashInvoicesFromFirestore();
+          const alreadyExists = invoices.some(
+            (inv) =>
+              inv.dcNumber &&
+              inv.dcNumber.trim().toLowerCase() ===
+                (dc.dcNo || "").trim().toLowerCase(),
+          );
 
-      if (alreadyExists) {
-        toast({
-          title: "Cash Invoice Already Created",
-          description: `A cash memo for DC ${dc.dcNo} has already been created by another user.`,
-          variant: "destructive",
-        });
-        return;
-      }
+          if (alreadyExists) {
+            toast({
+              title: "Cash Invoice Already Created",
+              description: `A cash memo for DC ${dc.dcNo} has already been created by another user.`,
+              variant: "destructive",
+            });
+            return;
+          }
 
-      sessionStorage.setItem("prefill_cash_dc_no", dc.dcNo || "");
-      sessionStorage.setItem("prefill_cash_client_name", dc.hospitalName || "");
-      sessionStorage.setItem("from_dc_tracker", "true");
-      if (dc.status === "pending" || dc.isPurchase) {
-        sessionStorage.setItem("is_purchase_dc", "true");
-      }
-      closeActionDialog();
-      navigate(
-        `/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || "")}&client=${encodeURIComponent(dc.hospitalName || "")}`,
-      );
-    } catch (err) {
-      console.error("Failed to verify if cash invoice exists:", err);
-      toast({
-        title: "Verification Failed",
-        description:
-          "Could not verify if a cash invoice already exists. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsActionLoading(false);
-    }
+          sessionStorage.setItem("prefill_cash_dc_no", dc.dcNo || "");
+          sessionStorage.setItem("prefill_cash_client_name", dc.hospitalName || "");
+          sessionStorage.setItem("from_dc_tracker", "true");
+          if (dc.status === "pending" || dc.isPurchase) {
+            sessionStorage.setItem("is_purchase_dc", "true");
+          }
+          closeActionDialog();
+          navigate(
+            `/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || "")}&client=${encodeURIComponent(dc.hospitalName || "")}`,
+          );
+        } catch (err) {
+          console.error("Failed to verify if cash invoice exists:", err);
+          toast({
+            title: "Verification Failed",
+            description:
+              "Could not verify if a cash invoice already exists. Please try again.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
   };
 
   const handleConfirmCancel = async (dc: SavedDc) => {
@@ -4736,7 +4746,7 @@ const SavedDcs = () => {
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[500px] p-0 border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="w-[94vw] max-w-[94vw] sm:max-w-[500px] max-h-[90vh] flex flex-col p-0 border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0 overflow-hidden"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>
@@ -8009,7 +8019,7 @@ const SavedDcs = () => {
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[500px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="w-[94vw] max-w-[94vw] sm:max-w-[500px] max-h-[90vh] flex flex-col p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Confirm Delete</DialogTitle>
@@ -8184,7 +8194,7 @@ const SavedDcs = () => {
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[500px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="w-[94vw] max-w-[94vw] sm:max-w-[500px] max-h-[90vh] flex flex-col p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Move Back to Delivered</DialogTitle>
@@ -8435,7 +8445,7 @@ const SavedDcs = () => {
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-4xl lg:max-w-5xl w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="w-[94vw] max-w-[94vw] sm:max-w-4xl lg:max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Record Payment Collection</DialogTitle>
@@ -9543,7 +9553,7 @@ const SavedDcs = () => {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0">
+        <DialogContent className="w-[94vw] max-w-[94vw] sm:max-w-md max-h-[90vh] flex flex-col p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0">
           <DialogHeader className="p-5 bg-amber-50/70 dark:bg-amber-950/40 border-b border-amber-200/80 dark:border-amber-900/40">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 flex items-center justify-center text-amber-800 dark:text-amber-200 shrink-0 shadow-none">
@@ -10152,7 +10162,7 @@ const SavedDcs = () => {
       <Dialog open={editDcModalOpen} onOpenChange={setEditDcModalOpen}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[540px] p-0 border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="w-[94vw] max-w-[94vw] sm:max-w-[540px] max-h-[90vh] flex flex-col p-0 border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0 overflow-hidden"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Edit DC Details</DialogTitle>
@@ -10372,7 +10382,7 @@ const SavedDcs = () => {
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[420px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="w-[90vw] max-w-[90vw] sm:max-w-[420px] max-h-[90vh] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>{queueTransitionState.title || "Processing..."}</DialogTitle>
