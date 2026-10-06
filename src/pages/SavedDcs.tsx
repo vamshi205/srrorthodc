@@ -368,12 +368,66 @@ const SavedDcs = () => {
   const [queueTransitionState, setQueueTransitionState] = useState<{
     open: boolean;
     dcNo?: string;
+    title?: string;
     targetQueueName?: string;
     message?: string;
     progress?: number;
+    iconType?: "move" | "save" | "delete" | "return" | "invoice" | "cash" | "cancel";
   }>({ open: false });
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  const runActionWithProgress = async ({
+    dcNo,
+    title = "Processing Action...",
+    targetQueueName,
+    initialMessage,
+    successMessage,
+    iconType = "move",
+    targetQueueKey,
+    actionFn,
+  }: {
+    dcNo?: string;
+    title?: string;
+    targetQueueName?: string;
+    initialMessage: string;
+    successMessage: string;
+    iconType?: "move" | "save" | "delete" | "return" | "invoice" | "cash" | "cancel";
+    targetQueueKey?: SavedDcStatus;
+    actionFn: () => Promise<void>;
+  }) => {
+    setQueueTransitionState({
+      open: true,
+      dcNo,
+      title,
+      targetQueueName,
+      message: initialMessage,
+      progress: 20,
+      iconType,
+    });
+
+    try {
+      await actionFn();
+      setQueueTransitionState((prev) => ({ ...prev, progress: 55 }));
+      await delay(900);
+      setQueueTransitionState((prev) => ({
+        ...prev,
+        message: successMessage,
+        progress: 100,
+      }));
+      await delay(1100);
+
+      if (targetQueueKey) {
+        setActiveQueue(targetQueueKey);
+        setSearchParams({ queue: targetQueueKey });
+      }
+    } catch (err) {
+      setQueueTransitionState({ open: false });
+      throw err;
+    } finally {
+      setQueueTransitionState({ open: false });
+    }
+  };
 
   const runQueueTransition = async (
     dcNo: string,
@@ -382,30 +436,16 @@ const SavedDcs = () => {
     actionFn: () => Promise<void>,
     targetQueueKey?: SavedDcStatus,
   ) => {
-    setQueueTransitionState({
-      open: true,
+    await runActionWithProgress({
       dcNo,
+      title: "Moving Queue...",
       targetQueueName,
-      message,
-      progress: 20,
+      initialMessage: message,
+      successMessage: `Moved to ${targetQueueName} Successfully! ✅`,
+      iconType: "move",
+      targetQueueKey,
+      actionFn,
     });
-
-    try {
-      await actionFn();
-      setQueueTransitionState((prev) => ({ ...prev, progress: 45 }));
-      await delay(1000);
-      setQueueTransitionState((prev) => ({ ...prev, progress: 80 }));
-      await delay(1000);
-      setQueueTransitionState((prev) => ({ ...prev, progress: 100 }));
-      await delay(1000);
-
-      if (targetQueueKey) {
-        setActiveQueue(targetQueueKey);
-        setSearchParams({ queue: targetQueueKey });
-      }
-    } finally {
-      setQueueTransitionState({ open: false });
-    }
   };
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
   const [paymentRemarksInput, setPaymentRemarksInput] = useState("");
@@ -598,48 +638,58 @@ const SavedDcs = () => {
       return;
     }
 
-    setIsSavingDcEdit(true);
-    try {
-      const updates: Partial<SavedDc> = {
-        hospitalName: cleanHospital,
-        doctorName: editDoctorName.trim() || undefined,
-        dcNo: editDcNo.trim(),
-        deliveredBy: editDeliveredBy.trim(),
-        receivedBy: editReceivedBy.trim(),
-        materialType: editMaterialType,
-        remarks: editRemarks.trim() || undefined,
-        savedAt: editDcDate
-          ? new Date(editDcDate).toISOString()
-          : editingDcTarget.savedAt,
-      };
+    setEditDcModalOpen(false);
+    await runActionWithProgress({
+      dcNo: editDcNo.trim(),
+      title: "Saving Delivery Challan",
+      targetQueueName: "DC Updates",
+      initialMessage: "Saving challan items, personnel & hospital details...",
+      successMessage: "Delivery Challan Updated Successfully! ✅",
+      iconType: "save",
+      actionFn: async () => {
+        setIsSavingDcEdit(true);
+        try {
+          const updates: Partial<SavedDc> = {
+            hospitalName: cleanHospital,
+            doctorName: editDoctorName.trim() || undefined,
+            dcNo: editDcNo.trim(),
+            deliveredBy: editDeliveredBy.trim(),
+            receivedBy: editReceivedBy.trim(),
+            materialType: editMaterialType,
+            remarks: editRemarks.trim() || undefined,
+            savedAt: editDcDate
+              ? new Date(editDcDate).toISOString()
+              : editingDcTarget.savedAt,
+          };
 
-      const updated = await updateSavedDc(editingDcTarget.id, updates);
+          const updated = await updateSavedDc(editingDcTarget.id, updates);
 
-      // Update in state
-      setSavedDcs((prev) =>
-        prev.map((d) => (d.id === editingDcTarget.id ? updated : d)),
-      );
+          // Update in state
+          setSavedDcs((prev) =>
+            prev.map((d) => (d.id === editingDcTarget.id ? updated : d)),
+          );
 
-      // Auto ensure hospital is in directory
-      saveCustomer({
-        name: cleanHospital,
-        contactPerson: editDoctorName.trim() || undefined,
-      }).catch(() => {});
+          // Auto ensure hospital is in directory
+          saveCustomer({
+            name: cleanHospital,
+            contactPerson: editDoctorName.trim() || undefined,
+          }).catch(() => {});
 
-      toast({
-        title: "DC Updated Successfully",
-        description: `DC #${updated.dcNo} has been updated to "${cleanHospital}".`,
-      });
-      setEditDcModalOpen(false);
-    } catch (err: any) {
-      toast({
-        title: "Update Failed",
-        description: err.message || "Failed to update DC details.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSavingDcEdit(false);
-    }
+          toast({
+            title: "DC Updated Successfully",
+            description: `DC #${updated.dcNo} has been updated to "${cleanHospital}".`,
+          });
+        } catch (err: any) {
+          toast({
+            title: "Update Failed",
+            description: err.message || "Failed to update DC details.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsSavingDcEdit(false);
+        }
+      },
+    });
   };
 
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
@@ -1650,17 +1700,28 @@ const SavedDcs = () => {
     setDeleteDialog({ open: true, dc });
   };
 
-  const confirmProtectedDelete = () => {
+  const confirmProtectedDelete = async () => {
     const dc = deleteDialog.dc;
     if (!dc) return;
     if (deletePassword.trim() !== "srrortho") {
       toast({ title: "Incorrect password", variant: "destructive" });
       return;
     }
-    handleDelete(dc.id);
     setDeleteDialog({ open: false, dc: null });
     setDeletePassword("");
     setSelectedDcId(null);
+
+    await runActionWithProgress({
+      dcNo: dc.dcNo,
+      title: "Deleting Delivery Challan",
+      targetQueueName: "Trash",
+      initialMessage: "Verifying admin authorization & deleting records...",
+      successMessage: "Delivery Challan Deleted Successfully! 🗑️",
+      iconType: "delete",
+      actionFn: async () => {
+        await handleDelete(dc.id);
+      },
+    });
   };
 
   const handleAdminClick = () => {
@@ -2041,50 +2102,44 @@ const SavedDcs = () => {
       toast({ title: "Invoice number is required" });
       return;
     }
-    setIsActionLoading(true);
-    try {
-      const isFromPending = dc.status === "pending";
-      await transitionSavedDc(dc.id, {
-        toStatus: "completed",
-        action:
-          dc.status === "cash" ? "MOVE_CASH_TO_COMPLETED" : "LINK_INVOICE",
-        // When cash -> completed, clear cash fields (but keep them in history via meta.cleared)
-        clear:
-          dc.status === "cash"
-            ? (["cashAt", "cashAmount", "cashRemarks"] as any)
-            : [],
-        updates: {
-          invoiceRef,
-          invoiceUrl: invoiceUrl || undefined,
-          invoiceRemarks: invoiceRemarksInput.trim() || "",
-          isTaxInvoice: true,
-          ...(isFromPending ? { isPurchase: true } : {}),
-        },
-      });
-      const dcs = await loadSavedDcs();
-      setSavedDcs(dcs);
-      closeActionDialog();
-      if (isFromPending) {
-        setActiveQueue("completed");
-        setSearchParams({ queue: "completed" });
-        toast({
-          title: "Purchase Completed",
-          description: `DC ${dc.dcNo} purchased via GoGSTBill (${invoiceRef}). Moved to Completed.`,
-        });
-      } else {
-        toast({ title: "Invoice linked. Moved to Completed." });
-      }
-    } catch (error) {
-      console.error("Error linking invoice:", error);
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to update DC",
-        variant: "destructive",
-      });
-    } finally {
-      setIsActionLoading(false);
-    }
+
+    await runActionWithProgress({
+      dcNo: dc.dcNo,
+      title: "Linking GoGSTBill Invoice",
+      targetQueueName: "Completed Queue",
+      initialMessage: "Linking tax invoice & updating settlement status...",
+      successMessage: "Invoice Linked & Moved to Completed! 📄",
+      iconType: "invoice",
+      targetQueueKey: "completed",
+      actionFn: async () => {
+        setIsActionLoading(true);
+        try {
+          const isFromPending = dc.status === "pending";
+          await transitionSavedDc(dc.id, {
+            toStatus: "completed",
+            action:
+              dc.status === "cash" ? "MOVE_CASH_TO_COMPLETED" : "LINK_INVOICE",
+            clear:
+              dc.status === "cash"
+                ? (["cashAt", "cashAmount", "cashRemarks"] as any)
+                : [],
+            updates: {
+              invoiceRef,
+              invoiceUrl: invoiceUrl || undefined,
+              invoiceRemarks: invoiceRemarksInput.trim() || "",
+              isTaxInvoice: true,
+              ...(isFromPending ? { isPurchase: true } : {}),
+            },
+          });
+          const dcs = await loadSavedDcs();
+          setSavedDcs(dcs);
+          closeActionDialog();
+          toast({ title: "Invoice linked. Moved to Completed." });
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
   };
 
   const handleConfirmCash = async (dc: SavedDc) => {
@@ -2099,49 +2154,48 @@ const SavedDcs = () => {
       ? Math.round((billed - amount) * 100) / 100
       : undefined;
 
-    setIsActionLoading(true);
-    try {
-      const isFromPending = dc.status === "pending";
-      await transitionSavedDc(dc.id, {
-        toStatus: "cash",
-        action: "MOVE_TO_CASH",
-        updates: {
-          cashAt: new Date().toISOString(),
-          cashAmount: amount,
-          billedAmount: !isNaN(billed) && billed > 0 ? billed : undefined,
-          hospitalMargin: hospitalMargin,
-          cashRemarks:
-            cashRemarksInput.trim() ||
-            (hasHikedBill
-              ? `Hiked Bill: ₹${billed.toLocaleString("en-IN")} | Hospital Cut: ₹${hospitalMargin!.toLocaleString("en-IN")} | Net Cash: ₹${amount.toLocaleString("en-IN")}`
-              : ""),
-          ...(isFromPending ? { isPurchase: true } : {}),
-        },
-      });
-      const dcs = await loadSavedDcs();
-      setSavedDcs(dcs);
-      closeActionDialog();
-      if (isFromPending) {
-        setActiveQueue("cash");
-        setSearchParams({ queue: "cash" });
-      }
-      toast({
-        title: "Moved to Cash queue",
-        description: hasHikedBill
-          ? `Expected cash: ₹${amount.toLocaleString("en-IN")} (Printed Bill: ₹${billed.toLocaleString("en-IN")})`
-          : `Amount: ₹${amount.toLocaleString("en-IN")}`,
-      });
-    } catch (error) {
-      console.error("Error moving to cash:", error);
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to update DC",
-        variant: "destructive",
-      });
-    } finally {
-      setIsActionLoading(false);
-    }
+    await runActionWithProgress({
+      dcNo: dc.dcNo,
+      title: "Moving to Cash Queue",
+      targetQueueName: "Cash Queue",
+      initialMessage: "Setting cash receivable & queueing for collection...",
+      successMessage: "Moved to Cash Queue Successfully! 💰",
+      iconType: "cash",
+      targetQueueKey: "cash",
+      actionFn: async () => {
+        setIsActionLoading(true);
+        try {
+          const isFromPending = dc.status === "pending";
+          await transitionSavedDc(dc.id, {
+            toStatus: "cash",
+            action: "MOVE_TO_CASH",
+            updates: {
+              cashAt: new Date().toISOString(),
+              cashAmount: amount,
+              billedAmount: !isNaN(billed) && billed > 0 ? billed : undefined,
+              hospitalMargin: hospitalMargin,
+              cashRemarks:
+                cashRemarksInput.trim() ||
+                (hasHikedBill
+                  ? `Hiked Bill: ₹${billed.toLocaleString("en-IN")} | Hospital Cut: ₹${hospitalMargin!.toLocaleString("en-IN")} | Net Cash: ₹${amount.toLocaleString("en-IN")}`
+                  : ""),
+              ...(isFromPending ? { isPurchase: true } : {}),
+            },
+          });
+          const dcs = await loadSavedDcs();
+          setSavedDcs(dcs);
+          closeActionDialog();
+          toast({
+            title: "Moved to Cash queue",
+            description: hasHikedBill
+              ? `Expected cash: ₹${amount.toLocaleString("en-IN")} (Printed Bill: ₹${billed.toLocaleString("en-IN")})`
+              : `Amount: ₹${amount.toLocaleString("en-IN")}`,
+          });
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
   };
 
   const handleCreateCashMemoForDc = async (dc: SavedDc) => {
@@ -2194,37 +2248,41 @@ const SavedDcs = () => {
       return;
     }
     const returnedBy = returnedByInput.trim();
-    setIsActionLoading(true);
-    try {
-      await transitionSavedDc(dc.id, {
-        toStatus: "cancelled",
-        action: "CANCEL_CASE",
-        updates: {
-          cancelledAt: new Date().toISOString(),
-          cancelledRemarks: remarks,
-          ...(returnedBy
-            ? {
-                returnedBy,
-                returnedAt: dc.returnedAt || new Date().toISOString(),
-              }
-            : {}),
-        },
-      });
-      const dcs = await loadSavedDcs();
-      setSavedDcs(dcs);
-      closeActionDialog();
-      toast({ title: "Case cancelled successfully" });
-    } catch (error) {
-      console.error("Error cancelling case:", error);
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to cancel case",
-        variant: "destructive",
-      });
-    } finally {
-      setIsActionLoading(false);
-    }
+
+    await runActionWithProgress({
+      dcNo: dc.dcNo,
+      title: "Cancelling Case",
+      targetQueueName: "Cancelled Queue",
+      initialMessage: "Cancelling challan & archiving case records...",
+      successMessage: "Case Cancelled & Archived! ❌",
+      iconType: "cancel",
+      targetQueueKey: "cancelled",
+      actionFn: async () => {
+        setIsActionLoading(true);
+        try {
+          await transitionSavedDc(dc.id, {
+            toStatus: "cancelled",
+            action: "CANCEL_CASE",
+            updates: {
+              cancelledAt: new Date().toISOString(),
+              cancelledRemarks: remarks,
+              ...(returnedBy
+                ? {
+                    returnedBy,
+                    returnedAt: dc.returnedAt || new Date().toISOString(),
+                  }
+                : {}),
+            },
+          });
+          const dcs = await loadSavedDcs();
+          setSavedDcs(dcs);
+          closeActionDialog();
+          toast({ title: "Case cancelled successfully" });
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+    });
   };
 
   const restoreFromCancelled = async (dc: SavedDc) => {
@@ -10305,7 +10363,7 @@ const SavedDcs = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Queue Transition Animated Progress Dialog */}
+      {/* Queue & Action Animated Progress Dialog */}
       <Dialog
         open={queueTransitionState.open}
         onOpenChange={() => {
@@ -10314,37 +10372,61 @@ const SavedDcs = () => {
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[400px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="sm:max-w-[420px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>Moving Queue</DialogTitle>
+            <DialogTitle>{queueTransitionState.title || "Processing..."}</DialogTitle>
             <DialogDescription>
-              Transaction moving to {queueTransitionState.targetQueueName}
+              {queueTransitionState.message}
             </DialogDescription>
           </DialogHeader>
 
           <div className="p-6 text-center space-y-4">
             {/* Animated Icon Tile */}
-            <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0">
-              <RefreshCw className="w-7 h-7 animate-spin text-teal-600 dark:text-teal-400" />
+            <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0">
+              {queueTransitionState.progress === 100 ? (
+                <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-bounce" />
+              ) : queueTransitionState.iconType === "delete" ? (
+                <Trash2 className="w-7 h-7 text-rose-600 dark:text-rose-400 animate-pulse" />
+              ) : queueTransitionState.iconType === "save" ? (
+                <Check className="w-7 h-7 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+              ) : queueTransitionState.iconType === "return" ? (
+                <RotateCcw className="w-7 h-7 text-teal-600 dark:text-teal-400 animate-spin" />
+              ) : queueTransitionState.iconType === "invoice" ? (
+                <FileText className="w-7 h-7 text-purple-600 dark:text-purple-400 animate-pulse" />
+              ) : queueTransitionState.iconType === "cash" ? (
+                <Wallet className="w-7 h-7 text-amber-600 dark:text-amber-400 animate-pulse" />
+              ) : queueTransitionState.iconType === "cancel" ? (
+                <AlertCircle className="w-7 h-7 text-orange-600 dark:text-orange-400 animate-pulse" />
+              ) : (
+                <RefreshCw className="w-7 h-7 text-teal-600 dark:text-teal-400 animate-spin" />
+              )}
             </div>
 
             {/* Title & DC Badge */}
             <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                <span className="font-mono font-bold text-teal-700 dark:text-teal-300">
-                  DC #{queueTransitionState.dcNo}
-                </span>
-                <span>→</span>
-                <span className="font-bold text-slate-900 dark:text-slate-100">
-                  {queueTransitionState.targetQueueName}
-                </span>
-              </div>
+              {queueTransitionState.dcNo && (
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <span className="font-mono font-bold text-teal-700 dark:text-teal-300">
+                    DC #{queueTransitionState.dcNo}
+                  </span>
+                  {queueTransitionState.targetQueueName && (
+                    <>
+                      <span>→</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                        {queueTransitionState.targetQueueName}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight pt-1">
-                Moving Transaction...
+                {queueTransitionState.progress === 100
+                  ? "Action Completed!"
+                  : queueTransitionState.title || "Processing..."}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                {queueTransitionState.message || "Please wait while we update queue records."}
+              <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold leading-relaxed px-2">
+                {queueTransitionState.message}
               </p>
             </div>
 
@@ -10352,8 +10434,12 @@ const SavedDcs = () => {
             <div className="pt-2 px-2">
               <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-700">
                 <div
-                  className="h-full bg-gradient-to-r from-teal-500 via-indigo-500 to-amber-500 rounded-full transition-all duration-700 ease-out"
-                  style={{ width: `${queueTransitionState.progress || 60}%` }}
+                  className={`h-full rounded-full transition-all duration-700 ease-out ${
+                    queueTransitionState.progress === 100
+                      ? "bg-emerald-500"
+                      : "bg-gradient-to-r from-teal-500 via-indigo-500 to-amber-500"
+                  }`}
+                  style={{ width: `${queueTransitionState.progress || 20}%` }}
                 />
               </div>
             </div>
