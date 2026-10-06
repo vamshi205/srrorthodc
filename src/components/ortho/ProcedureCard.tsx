@@ -544,7 +544,7 @@ export function ProcedureCard({
                 <span className="hidden sm:inline">Procedure #{index + 1}</span>
               </Badge>
             )}
-            <h3 className="break-words font-display text-base font-extrabold leading-tight tracking-tight text-slate-900 sm:text-lg sm:truncate">{procedure.name}</h3>
+            <h3 className="break-words font-sans text-base font-extrabold leading-tight tracking-tight text-slate-900 sm:text-lg sm:truncate">{procedure.name}</h3>
             <Badge variant="outline" className="hidden shrink-0 border-teal-300 bg-teal-100/60 text-xs font-semibold text-teal-700 sm:inline-flex">
               {procedure.type}
             </Badge>

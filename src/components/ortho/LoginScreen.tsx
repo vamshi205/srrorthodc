@@ -54,7 +54,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
               className="w-full h-full object-contain"
             />
           </div>
-          <h1 className="font-display text-3xl font-bold text-foreground mb-2">
+          <h1 className="font-sans text-3xl font-bold text-foreground mb-2">
             SRR Ortho Plus
           </h1>
           <p className="text-muted-foreground">
@@ -66,7 +66,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         <div className="glass-card rounded-2xl p-8">
           <div className="flex items-center gap-2 mb-6">
             <Shield className="w-5 h-5 text-primary" />
-            <h2 className="font-display text-xl font-semibold">Sign In</h2>
+            <h2 className="font-sans text-xl font-semibold">Sign In</h2>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">

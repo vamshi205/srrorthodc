@@ -2045,7 +2045,7 @@ export const BankAccountsView: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-bold font-display text-foreground tracking-tight">
+              <h1 className="text-lg sm:text-xl font-bold font-sans text-foreground tracking-tight">
                 Bank Accounts &amp; Treasury
               </h1>
               <Badge variant="outline" className="bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 border-teal-300 text-[11px] font-bold rounded-full">
@@ -2477,7 +2477,7 @@ export const BankAccountsView: React.FC = () => {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-amber-500/10 p-3.5 rounded-xl border border-amber-500/30">
             <div>
-              <h2 className="font-display font-bold text-sm text-amber-950 dark:text-amber-200 flex items-center gap-2">
+              <h2 className="font-sans font-bold text-sm text-amber-950 dark:text-amber-200 flex items-center gap-2">
                 <Receipt className="w-4.5 h-4.5 text-amber-600" />
                 <span>Unlinked Cash Queue Transactions ({cashQueueDcs.length})</span>
               </h2>
@@ -2645,7 +2645,7 @@ export const BankAccountsView: React.FC = () => {
         <div className="space-y-3.5">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3.5 rounded-xl border border-border shadow-sm">
             <div>
-              <h3 className="font-display font-bold text-sm text-foreground flex items-center gap-2">
+              <h3 className="font-sans font-bold text-sm text-foreground flex items-center gap-2">
                 <Receipt className="w-4 h-4 text-teal-700" />
                 <span>Reconciled &amp; Linked Transactions ({linkedCreditTransactions.length})</span>
               </h3>
@@ -3181,7 +3181,7 @@ export const BankAccountsView: React.FC = () => {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
             <div>
-              <h2 className="font-display font-bold text-sm text-foreground">
+              <h2 className="font-sans font-bold text-sm text-foreground">
                 Configured Bank Accounts &amp; Cash Counters ({accounts.length})
               </h2>
               <p className="text-xs text-muted-foreground">
@@ -3263,7 +3263,7 @@ export const BankAccountsView: React.FC = () => {
               <div className="w-12 h-12 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center mx-auto mb-3">
                 <Building2 className="w-6 h-6" />
               </div>
-              <h3 className="font-bold text-base text-foreground font-display">Treasury Is Completely Blank</h3>
+              <h3 className="font-bold text-base text-foreground font-sans">Treasury Is Completely Blank</h3>
               <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1 mb-4">
                 No bank accounts exist in your database. Click below to add your accounts (e.g., <strong>Main Current A/c (6569)</strong>, <strong>Savings A/c (1538)</strong>, or <strong>Petty Cash</strong>) with their opening balances.
               </p>
@@ -3347,7 +3347,7 @@ export const BankAccountsView: React.FC = () => {
                         <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                           Ledger Balance
                         </div>
-                        <div className="text-lg font-black font-display font-mono text-teal-700 dark:text-teal-400 mt-0.5">
+                        <div className="text-lg font-black font-sans font-mono text-teal-700 dark:text-teal-400 mt-0.5">
                           ₹{stats.balance.toLocaleString("en-IN")}
                         </div>
                         {stats.latestAlertBalance !== undefined && (
@@ -3394,7 +3394,7 @@ export const BankAccountsView: React.FC = () => {
       <Dialog open={isLinkModalOpen} onOpenChange={setIsLinkModalOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 font-display text-base text-teal-800 dark:text-teal-300">
+            <DialogTitle className="flex items-center gap-2 font-sans text-base text-teal-800 dark:text-teal-300">
               <Link2 className="w-5 h-5 text-teal-700" />
               <span>Link Bank Credit to Cash Invoice</span>
             </DialogTitle>
@@ -3614,7 +3614,7 @@ export const BankAccountsView: React.FC = () => {
       <Dialog open={isAddAccountOpen} onOpenChange={setIsAddAccountOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 font-display text-base">
+            <DialogTitle className="flex items-center gap-2 font-sans text-base">
               <Landmark className="w-5 h-5 text-teal-700" />
               <span>{editingAccount ? 'Edit Bank Account' : 'Add New Bank Account'}</span>
             </DialogTitle>
@@ -3744,7 +3744,7 @@ export const BankAccountsView: React.FC = () => {
       <Dialog open={isAddTxOpen} onOpenChange={setIsAddTxOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 font-display text-base">
+            <DialogTitle className="flex items-center gap-2 font-sans text-base">
               {txForm.type === 'credit' ? (
                 <div className="flex items-center gap-2 text-emerald-700">
                   <ArrowDownLeft className="w-5 h-5" />
@@ -3915,7 +3915,7 @@ export const BankAccountsView: React.FC = () => {
       <Dialog open={isTransferModalOpen} onOpenChange={setIsTransferModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 font-display text-base text-indigo-900 dark:text-indigo-300">
+            <DialogTitle className="flex items-center gap-2 font-sans text-base text-indigo-900 dark:text-indigo-300">
               <ArrowRightLeft className="w-5 h-5 text-indigo-600" />
               <span>Transfer Between Bank Accounts</span>
             </DialogTitle>
@@ -4008,7 +4008,7 @@ export const BankAccountsView: React.FC = () => {
       <Dialog open={Boolean(previewInvoice)} onOpenChange={(open) => !open && setPreviewInvoice(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between font-display text-base">
+            <DialogTitle className="flex items-center justify-between font-sans text-base">
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-teal-700" />
                 <span>Invoice {previewInvoice?.invNumber}</span>

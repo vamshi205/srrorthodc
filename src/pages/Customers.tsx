@@ -42,6 +42,7 @@ import {
   Hash,
   GitMerge,
   ArrowRight,
+  ArrowLeft,
   ArrowLeftRight,
   AlertTriangle,
   Stethoscope,
@@ -73,7 +74,12 @@ import {
   DuplicateClusterPair,
 } from "@/lib/hospitalDuplicateDetector";
 
-export default function Customers() {
+interface CustomersProps {
+  embedded?: boolean;
+  onBack?: () => void;
+}
+
+export default function Customers({ embedded = false, onBack }: CustomersProps = {}) {
   const navigate = useNavigate();
   const { fetchProcedures, loading } = useProcedures();
 
@@ -699,8 +705,8 @@ export default function Customers() {
   const totalOutstanding = Object.values(invoicesDuesMap).reduce((a, b) => a + b, 0);
 
   return (
-    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
-      <main className="flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
+    <div className={embedded ? "w-full space-y-4" : "min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col"}>
+      {!embedded && (
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}
@@ -715,35 +721,42 @@ export default function Customers() {
           setActiveProcedures={() => {}}
           setCollapsedProcedures={() => {}}
         />
+      )}
 
-        <div className="space-y-4 pt-1 pb-12">
-          {/* Header & KPI Summary matching Standard Secondary Toolbar */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-4 rounded-xl border border-border shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 flex items-center justify-center text-teal-800 dark:text-teal-200 shadow-sm shrink-0">
-                <Building2 className="w-5 h-5 text-teal-700 dark:text-teal-400" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-lg sm:text-xl font-bold font-display text-foreground tracking-tight">
-                    Hospital &amp; Customer Directory
-                  </h1>
-                  <Badge variant="outline" className="bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 border-teal-300 text-[11px] font-bold rounded-full">
-                    Directory
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Maintain complete hospital profiles with OT Numbers, Landlines, Personal Surgeon Numbers, and staff contacts.
-                </p>
-              </div>
+      <div className={embedded ? "space-y-4 pt-1 pb-4" : "flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-4 pb-12"}>
+        {/* Header & KPI Summary */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-4 rounded-xl border border-border shadow-sm">
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <Button variant="ghost" onClick={onBack} className="gap-2 h-9 px-2.5">
+                <ArrowLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Back</span>
+              </Button>
+            )}
+            <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950 border border-emerald-300 dark:border-emerald-700 flex items-center justify-center text-emerald-800 dark:text-emerald-200 shadow-sm shrink-0">
+              <Building2 className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
             </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-bold font-sans text-foreground tracking-tight">
+                  Hospital &amp; Customer Directory
+                </h1>
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 text-[11px] font-bold rounded-full">
+                  Admin Directory
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Maintain complete hospital profiles with OT Numbers, Landlines, Personal Surgeon Numbers, and staff contacts.
+              </p>
+            </div>
+          </div>
 
             <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleScanAndShowAutoDeduplicateModal}
-                className="h-9 text-xs gap-1.5 border-purple-300 text-purple-900 dark:text-purple-300 bg-purple-50/70 hover:bg-purple-100 dark:hover:bg-purple-950 font-bold rounded-md shadow-2xs"
+                className="h-9 text-xs gap-1.5 border-purple-300 text-purple-900 dark:text-purple-300 bg-purple-50 hover:bg-purple-100 dark:hover:bg-purple-950 font-bold rounded-md shadow-2xs"
                 title="Scan entire directory and batch merge all detected duplicate hospitals in 1-click"
               >
                 <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
@@ -776,7 +789,7 @@ export default function Customers() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card className="border-border shadow-sm p-4 rounded-xl">
               <div className="text-[11px] font-bold text-muted-foreground uppercase">Hospitals</div>
-              <div className="text-xl sm:text-2xl font-black font-display font-mono text-foreground mt-1">
+              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-foreground mt-1">
                 {totalHospitals}
               </div>
               <p className="text-[10px] text-muted-foreground mt-0.5">Registered accounts</p>
@@ -784,7 +797,7 @@ export default function Customers() {
 
             <Card className="border-border shadow-sm p-4 rounded-xl">
               <div className="text-[11px] font-bold text-teal-700 dark:text-teal-400 uppercase">OT Direct Lines</div>
-              <div className="text-xl sm:text-2xl font-black font-display font-mono text-teal-700 dark:text-teal-400 mt-1">
+              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-teal-700 dark:text-teal-400 mt-1">
                 {totalOtNumbers}
               </div>
               <p className="text-[10px] text-muted-foreground mt-0.5">Direct OT contacts</p>
@@ -792,7 +805,7 @@ export default function Customers() {
 
             <Card className="border-border shadow-sm p-4 rounded-xl">
               <div className="text-[11px] font-bold text-indigo-700 dark:text-indigo-400 uppercase">Total Contacts</div>
-              <div className="text-xl sm:text-2xl font-black font-display font-mono text-indigo-700 dark:text-indigo-400 mt-1">
+              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-indigo-700 dark:text-indigo-400 mt-1">
                 {totalDirectContacts}
               </div>
               <p className="text-[10px] text-muted-foreground mt-0.5">Doctors, OT &amp; Purchase</p>
@@ -800,7 +813,7 @@ export default function Customers() {
 
             <Card className="border-border shadow-sm p-4 rounded-xl">
               <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase">Unpaid Outstanding</div>
-              <div className="text-xl sm:text-2xl font-black font-display font-mono text-rose-600 dark:text-rose-400 mt-1">
+              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-rose-600 dark:text-rose-400 mt-1">
                 ₹{totalOutstanding.toLocaleString("en-IN")}
               </div>
               <p className="text-[10px] text-muted-foreground mt-0.5">Pending across hospitals</p>
@@ -809,9 +822,9 @@ export default function Customers() {
 
           {/* Outdated or Unmatched DC Names Reconciliation Banner */}
           {unmatchedDcsList.length > 0 && (
-            <div className="p-4 rounded-2xl border-2 border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in-50">
+            <div className="p-4 rounded-2xl border-2 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-950 dark:text-amber-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in-50">
               <div className="flex items-start gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-amber-200 dark:bg-amber-900/60 flex items-center justify-center shrink-0 text-amber-800 dark:text-amber-300">
+                <div className="w-9 h-9 rounded-xl bg-amber-200 dark:bg-amber-900 flex items-center justify-center shrink-0 text-amber-800 dark:text-amber-300">
                   <AlertCircle className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
@@ -959,7 +972,7 @@ export default function Customers() {
                   onClick={() => setViewMode("list")}
                   className={`h-6 px-2.5 text-xs font-bold rounded-md gap-1.5 transition-all ${
                     viewMode === "list"
-                      ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs font-extrabold border border-slate-200/60 dark:border-slate-700"
+                      ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs font-extrabold border border-slate-200 dark:border-slate-700"
                       : "text-muted-foreground hover:text-slate-900 dark:hover:text-slate-100"
                   }`}
                   title="List View (Professional Directory Table)"
@@ -972,7 +985,7 @@ export default function Customers() {
                   onClick={() => setViewMode("grid")}
                   className={`h-6 px-2.5 text-xs font-bold rounded-md gap-1.5 transition-all ${
                     viewMode === "grid"
-                      ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs font-extrabold border border-slate-200/60 dark:border-slate-700"
+                      ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs font-extrabold border border-slate-200 dark:border-slate-700"
                       : "text-muted-foreground hover:text-slate-900 dark:hover:text-slate-100"
                   }`}
                   title="Grid Cards View"
@@ -985,7 +998,7 @@ export default function Customers() {
 
           {/* Hospitals List / Table View */}
           {filteredCustomers.length === 0 ? (
-            <div className="p-12 text-center bg-white/60 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="p-12 text-center bg-white/60 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
               <Building2 className="w-12 h-12 text-muted-foreground/40 mx-auto mb-3" />
               <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
                 No hospitals or customers match your search
@@ -1001,11 +1014,11 @@ export default function Customers() {
             /* ========================================================================= */
             /* Professional Enterprise Table List View (Default)                         */
             /* ========================================================================= */
-            <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 shadow-sm overflow-hidden backdrop-blur-md">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900 shadow-sm overflow-hidden backdrop-blur-md">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-100/90 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 select-none">
+                    <tr className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-[11px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 select-none">
                       <th className="py-3.5 px-3.5 w-12 text-center">#</th>
                       <th className="py-3.5 px-4 min-w-[240px]">Hospital &amp; Location</th>
                       <th className="py-3.5 px-4 min-w-[290px]">Direct Department Lines</th>
@@ -1020,7 +1033,7 @@ export default function Customers() {
                       return (
                         <tr
                           key={`${cust.id || "cust"}_${cust.name}_${idx}`}
-                          className="hover:bg-teal-50/30 dark:hover:bg-slate-800/40 transition-colors group"
+                          className="hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors group"
                         >
                           {/* Row Number */}
                           <td className="py-3.5 px-3.5 text-center text-slate-400 font-mono text-[11px] font-bold">
@@ -1048,7 +1061,7 @@ export default function Customers() {
                               </div>
                             )}
                             {cust.notes && (
-                              <div className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-1 font-medium bg-amber-50 dark:bg-amber-950/30 px-1.5 py-0.5 rounded w-fit">
+                              <div className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-1 font-medium bg-amber-50 dark:bg-amber-950 px-1.5 py-0.5 rounded w-fit">
                                 <Clock className="w-2.5 h-2.5 shrink-0" />
                                 <span>{cust.notes}</span>
                               </div>
@@ -1260,7 +1273,7 @@ export default function Customers() {
                 return (
                   <div
                     key={`${cust.id || "cust"}_${cust.name}_${idx}`}
-                    className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                    className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900 backdrop-blur-xs shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
                   >
                     <div>
                       {/* Top Row: Name & Quick Dues Badge */}
@@ -1290,7 +1303,7 @@ export default function Customers() {
                       </div>
 
                       {/* Phone Numbers Box */}
-                      <div className="mt-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800 space-y-2">
+                      <div className="mt-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 space-y-2">
                         {/* OT Direct Number */}
                         <div className="flex items-center justify-between text-xs">
                           <span className="flex items-center gap-1.5 font-bold text-teal-800 dark:text-teal-300">
@@ -1416,7 +1429,7 @@ export default function Customers() {
 
                       {/* Notes / Timings */}
                       {cust.notes && (
-                        <div className="mt-2 p-1.5 rounded-md bg-amber-50/60 dark:bg-amber-950/20 text-[10.5px] text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                        <div className="mt-2 p-1.5 rounded-md bg-amber-50 dark:bg-amber-950 text-[10.5px] text-amber-800 dark:text-amber-300 flex items-center gap-1">
                           <Clock className="w-3 h-3 text-amber-600 shrink-0" />
                           <span>{cust.notes}</span>
                         </div>
@@ -1556,7 +1569,7 @@ export default function Customers() {
               </div>
 
               {/* Hospital Contacts & Numbers */}
-              <div className="p-3.5 rounded-xl border border-teal-200 dark:border-teal-900/60 bg-teal-50/30 dark:bg-teal-950/20 space-y-3">
+              <div className="p-3.5 rounded-xl border border-teal-200 dark:border-teal-900 bg-teal-50 dark:bg-teal-950 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <h4 className="text-xs font-extrabold text-teal-950 dark:text-teal-200 flex items-center gap-1.5">
@@ -1621,7 +1634,7 @@ export default function Customers() {
 
                 {/* Contacts List Rows */}
                 {formContacts.length === 0 ? (
-                  <div className="p-3 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-white/60 dark:bg-slate-900/60">
+                  <div className="p-3 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-white/60 dark:bg-slate-900">
                     No contacts added yet. Click one of the buttons above to add.
                   </div>
                 ) : (
@@ -1727,7 +1740,7 @@ export default function Customers() {
 
             <div className="space-y-3 pt-2">
               {/* Department Numbers Summary */}
-              <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
+              <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
                 <div>
                   <div className="text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400">OT Desk</div>
                   <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 truncate">
@@ -1838,13 +1851,13 @@ export default function Customers() {
               {/* Step 1 & 2: Primary Profile vs Duplicate Profile */}
               <div className="space-y-3">
                 {/* 1. Primary Hospital (Keep) */}
-                <div className="p-3.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-2">
+                <div className="p-3.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-black uppercase text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                       1. Primary Profile (To Keep &amp; Update)
                     </span>
-                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 dark:bg-emerald-900 px-2 py-0.5 rounded-full">
                       Destination
                     </span>
                   </div>
@@ -1867,7 +1880,7 @@ export default function Customers() {
                     const target = customers.find((c) => c.id === mergeTargetId);
                     if (!target) return null;
                     return (
-                      <div className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900/80 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800/60 space-y-1">
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 space-y-1">
                         <div className="font-bold text-slate-900 dark:text-slate-100 truncate">{target.name}</div>
                         {target.address && <div className="text-muted-foreground truncate">📍 {target.address}</div>}
                         <div className="flex items-center gap-2 flex-wrap pt-0.5 text-[10px]">
@@ -1899,13 +1912,13 @@ export default function Customers() {
                 </div>
 
                 {/* 2. Duplicate Hospital (Merge & Remove) */}
-                <div className="p-3.5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 space-y-2">
+                <div className="p-3.5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-black uppercase text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                       2. Duplicate Profile (To Merge &amp; Delete)
                     </span>
-                    <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 dark:bg-amber-900 px-2 py-0.5 rounded-full">
                       Source
                     </span>
                   </div>
@@ -1928,7 +1941,7 @@ export default function Customers() {
                     const source = customers.find((c) => c.id === mergeSourceId);
                     if (!source) return null;
                     return (
-                      <div className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900/80 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800/60 space-y-1">
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800 space-y-1">
                         <div className="font-bold text-slate-900 dark:text-slate-100 truncate">{source.name}</div>
                         {source.address && <div className="text-muted-foreground truncate">📍 {source.address}</div>}
                         <div className="flex items-center gap-2 flex-wrap pt-0.5 text-[10px]">
@@ -1946,7 +1959,7 @@ export default function Customers() {
               </div>
 
               {/* Merge Options */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
                 <div className="font-bold text-slate-800 dark:text-slate-200 text-[11px] uppercase tracking-wider">
                   Merge Settings:
                 </div>
@@ -1981,7 +1994,7 @@ export default function Customers() {
 
               {/* Summary Impact Callout */}
               {mergeTargetId && mergeSourceId && mergeTargetId !== mergeSourceId && (
-                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-[11.5px] text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-[11.5px] text-amber-900 dark:text-amber-200 flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold">Summary: </span>
@@ -2059,7 +2072,7 @@ export default function Customers() {
               {deleteSummary && (deleteSummary.dcCount > 0 || deleteSummary.invoiceCount > 0) ? (
                 <div className="space-y-3">
                   {/* Warning banner & metrics */}
-                  <div className="p-3.5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 space-y-2.5">
+                  <div className="p-3.5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-900 dark:text-amber-200 space-y-2.5">
                     <div className="font-bold flex items-center justify-between text-xs text-amber-800 dark:text-amber-300">
                       <span className="flex items-center gap-1.5">
                         <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -2071,7 +2084,7 @@ export default function Customers() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-center">
-                      <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/50 shadow-2xs">
+                      <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 shadow-2xs">
                         <div className="text-lg font-black text-amber-800 dark:text-amber-300">
                           {deleteSummary.dcCount}
                         </div>
@@ -2079,7 +2092,7 @@ export default function Customers() {
                           Delivery Challans
                         </div>
                       </div>
-                      <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/50 shadow-2xs">
+                      <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 shadow-2xs">
                         <div className="text-lg font-black text-amber-800 dark:text-amber-300">
                           {deleteSummary.invoiceCount}
                         </div>
@@ -2090,7 +2103,7 @@ export default function Customers() {
                     </div>
 
                     {deleteSummary.totalOutstanding > 0 && (
-                      <div className="text-[11px] font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/40 p-2 rounded-lg border border-red-200 dark:border-red-900/50 flex justify-between items-center">
+                      <div className="text-[11px] font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950 p-2 rounded-lg border border-red-200 dark:border-red-900 flex justify-between items-center">
                         <span>Pending Outstanding Balance:</span>
                         <span className="font-extrabold text-xs">₹{deleteSummary.totalOutstanding.toFixed(0)}</span>
                       </div>
@@ -2098,13 +2111,13 @@ export default function Customers() {
                   </div>
 
                   {/* Recommendation: Merge Customer */}
-                  <div className="p-3.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-2.5">
+                  <div className="p-3.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
                         <GitMerge className="w-4 h-4 text-emerald-600 shrink-0" />
                         Recommended: Merge into Another Profile
                       </span>
-                      <span className="text-[9.5px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 px-2 py-0.5 rounded-full uppercase">
+                      <span className="text-[9.5px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300 px-2 py-0.5 rounded-full uppercase">
                         Safe Option
                       </span>
                     </div>
@@ -2146,7 +2159,7 @@ export default function Customers() {
                   </div>
 
                   {/* Force Delete Option */}
-                  <div className="p-3.5 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/40 dark:bg-red-950/10 space-y-2.5">
+                  <div className="p-3.5 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 space-y-2.5">
                     <div className="text-[11px] text-slate-600 dark:text-slate-400">
                       Or, if you really want to permanently delete this hospital profile without re-linking its records:
                     </div>
@@ -2192,7 +2205,7 @@ export default function Customers() {
                     No active Delivery Challans or Cash Invoices are attached to this hospital. Deletion requires administrator password.
                   </div>
 
-                  <div className="space-y-1 p-3 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/40 dark:bg-red-950/10">
+                  <div className="space-y-1 p-3 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950">
                     <Label className="text-[11px] font-bold text-red-900 dark:text-red-300 flex items-center gap-1.5">
                       <Lock className="w-3.5 h-3.5 text-red-600" />
                       Administrator Password Required
@@ -2254,9 +2267,9 @@ export default function Customers() {
         {/* 1-Click Auto-Deduplicate Directory Modal */}
         <Dialog open={autoDeduplicateModalOpen} onOpenChange={setAutoDeduplicateModalOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden bg-background border-border">
-            <DialogHeader className="p-5 border-b border-border bg-purple-50/50 dark:bg-purple-950/20 shrink-0">
+            <DialogHeader className="p-5 border-b border-border bg-purple-50 dark:bg-purple-950 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/60 flex items-center justify-center text-purple-700 dark:text-purple-300 shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-purple-700 dark:text-purple-300 shrink-0">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
@@ -2272,7 +2285,7 @@ export default function Customers() {
 
             <div className="p-5 space-y-4 overflow-y-auto flex-1">
               {detectedClusters.length === 0 ? (
-                <div className="p-8 text-center space-y-3 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
+                <div className="p-8 text-center space-y-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800">
                   <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
                   <div className="font-bold text-sm text-emerald-950 dark:text-emerald-200">
                     No Duplicate Hospital Profiles Detected!
@@ -2304,15 +2317,18 @@ export default function Customers() {
                     {detectedClusters.map((cluster, idx) => {
                       const isSelected = selectedClusterIndices.has(idx);
                       const isExactMatch = cluster.score >= 0.98;
+                      const cardStyle = isSelected
+                        ? "bg-purple-50 dark:bg-purple-950 border-purple-300 dark:border-purple-800 shadow-xs"
+                        : "bg-card border-border opacity-70 hover:opacity-100";
+                      const badgeStyle = isExactMatch
+                        ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
+                        : "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300";
+
                       return (
                         <div
                           key={idx}
                           onClick={() => handleToggleClusterSelection(idx)}
-                          className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                            isSelected
-                              ? "bg-purple-50/40 dark:bg-purple-950/30 border-purple-300 dark:border-purple-800 shadow-2xs"
-                              : "bg-card border-border opacity-70 hover:opacity-100"
-                          }`}
+                          className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${cardStyle}`}
                         >
                           <div className="flex items-center gap-3 min-w-0 flex-1">
                             <input
@@ -2347,13 +2363,7 @@ export default function Customers() {
                             </div>
                           </div>
 
-                          <Badge
-                            className={`shrink-0 text-[10px] font-bold ${
-                              isExactMatch
-                                ? "bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300"
-                                : "bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300"
-                            }`}
-                          >
+                          <Badge className={`shrink-0 text-[10px] font-bold ${badgeStyle}`}>
                             {Math.round(cluster.score * 100)}% Match
                           </Badge>
                         </div>
@@ -2390,7 +2400,6 @@ export default function Customers() {
             </div>
           </DialogContent>
         </Dialog>
-      </main>
-    </div>
-  );
-}
+      </div>
+    );
+  }

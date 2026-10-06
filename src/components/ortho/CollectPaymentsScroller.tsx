@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { SavedDc } from "@/lib/savedDcStorage";
 import { CashInvoiceData } from "@/services/cashInvoiceFirebaseService";
-import { IndianRupee, ChevronRight, CheckCircle2, ChevronLeft, Wallet, Clock } from "lucide-react";
+import { IndianRupee, ChevronRight, CheckCircle2, ChevronLeft, Wallet, Clock, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getNotificationConfig, NotificationConfig } from "@/lib/notificationConfig";
@@ -20,11 +20,14 @@ interface PendingPaymentItem {
   identifier: string; // DC No or Invoice No
   amount: number;
   daysAging?: number;
+  rawDc?: SavedDc;
 }
 
 export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = ({
   savedDcs,
   cashInvoices = [],
+  onCollectPayment,
+  onViewDc,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [config, setConfig] = useState<NotificationConfig>(getNotificationConfig);
@@ -95,6 +98,7 @@ export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = (
         identifier: dc.dcNo ? `DC #${dc.dcNo}` : (dc.invoiceRef ? `Memo #${dc.invoiceRef}` : "DC"),
         amount: dc.cashAmount || 0,
         daysAging,
+        rawDc: dc,
       });
     });
 
@@ -126,12 +130,19 @@ export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = (
         (dcRefLower && existingCashDcRefs.has(dcRefLower));
 
       if (!isPaid && !isCompletedDc && !isAlreadyInCashDc && balance > 0 && balance >= minAmount) {
+        const matchedDc = savedDcs.find(
+          (d) =>
+            (inv.invNumber && d.invoiceRef?.trim().toLowerCase() === inv.invNumber.trim().toLowerCase()) ||
+            (inv.dcNumber && d.dcNo?.trim().toLowerCase() === inv.dcNumber.trim().toLowerCase())
+        );
+
         items.push({
           id: `inv-${inv.id || inv.invNumber}`,
           type: "invoice",
           partyName: inv.clientName || "Cash Customer",
           identifier: inv.invNumber ? `Inv #${inv.invNumber}` : (inv.dcNumber ? `DC #${inv.dcNumber}` : "Invoice"),
           amount: balance,
+          rawDc: matchedDc,
         });
       }
     });
@@ -174,30 +185,34 @@ export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = (
     );
   }
 
+  const formatCompactCurrency = (amount: number) => {
+    if (amount >= 10000000) {
+      return `₹${(amount / 10000000).toFixed(2).replace(/\.00$/, "")}Cr`;
+    }
+    if (amount >= 100000) {
+      return `₹${(amount / 100000).toFixed(2).replace(/\.00$/, "")}L`;
+    }
+    if (amount >= 1000) {
+      return `₹${(amount / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+    }
+    return `₹${amount.toLocaleString("en-IN")}`;
+  };
+
   return (
-    <div className="flex items-center gap-2 min-w-0 flex-1 max-w-full lg:max-w-2xl xl:max-w-3xl">
-      {/* Summary Badge - Purely Informational */}
-      <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-emerald-500/15 to-teal-500/15 dark:from-amber-500/20 dark:to-teal-500/20 border border-amber-400/40 dark:border-amber-500/30 text-xs shrink-0 shadow-xs">
-        <div className="w-5 h-5 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold">
-          <IndianRupee className="w-3 h-3" />
-        </div>
-        <div className="flex flex-col leading-none">
-          <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
-            Collect Payments
-          </span>
-          <span className="text-xs font-black text-slate-900 dark:text-slate-100">
-            ₹{totalOutstanding.toLocaleString("en-IN")}{" "}
-            <span className="text-[10px] font-normal text-muted-foreground">
-              ({pendingItems.length})
-            </span>
-          </span>
-        </div>
-      </div>
+    <div className="p-1.5 px-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md shadow-2xs flex items-center gap-3 w-full">
+      {/* Left Summary Badge */}
+      <Badge
+        className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-2 shrink-0 cursor-default"
+        title={`Total Pending Collections: ₹${totalOutstanding.toLocaleString("en-IN")} across ${pendingItems.length} items`}
+      >
+        <Wallet className="w-4 h-4 text-emerald-100" />
+        <span>Collect Payments ({pendingItems.length})</span>
+      </Badge>
 
       {/* Scroller Container */}
-      <div className="relative flex-1 min-w-0 overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white/70 dark:bg-slate-900/60 shadow-xs py-1 px-1 flex items-center group">
+      <div className="relative flex-1 min-w-0 overflow-hidden py-0.5 flex items-center group">
         {/* Left Fade */}
-        <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white dark:from-slate-900 to-transparent pointer-events-none z-10" />
+        <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-slate-50 dark:from-slate-900 to-transparent pointer-events-none z-10" />
 
         {/* Scroll Track */}
         <div
@@ -211,36 +226,48 @@ export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = (
             {pendingItems.map((item, idx) => (
               <React.Fragment key={item.id}>
                 <div
-                  className="flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700/80 bg-gradient-to-r from-white to-amber-50/50 dark:from-slate-800 dark:to-amber-950/20 shadow-xs text-left shrink-0 select-none transition-all hover:border-amber-400 hover:shadow-sm"
+                  onClick={() => {
+                    if (item.rawDc && onViewDc) {
+                      onViewDc(item.rawDc, (item.rawDc.status as any) || "cash");
+                    } else if (item.rawDc && onCollectPayment) {
+                      onCollectPayment(item.rawDc);
+                    }
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-slate-900 shadow-2xs text-left shrink-0 select-none transition-all hover:border-emerald-500 hover:shadow-xs cursor-pointer group"
                 >
-                  {/* Party Name & Identifier */}
-                  <div className="max-w-[150px] sm:max-w-[190px] truncate leading-tight">
-                    <span className="font-bold text-[11px] sm:text-xs text-slate-900 dark:text-slate-100 block truncate">
-                      {item.partyName}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground font-mono">
-                      {item.identifier}
-                    </span>
-                  </div>
+                  <Building2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                  
+                  {/* Party Name */}
+                  <span
+                    className="font-extrabold text-xs text-slate-900 dark:text-slate-100 truncate max-w-[170px] group-hover:text-emerald-700 dark:group-hover:text-emerald-400 group-hover:underline"
+                    title={`Click to view Track Status for ${item.partyName}`}
+                  >
+                    {item.partyName}
+                  </span>
+
+                  {/* Identifier */}
+                  <span className="font-mono text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 shrink-0">
+                    {item.identifier}
+                  </span>
 
                   {/* Amount Pill */}
-                  <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-500/15 dark:bg-emerald-500/25 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 font-extrabold text-[11px] sm:text-xs shrink-0">
-                    <span>₹{item.amount.toLocaleString("en-IN")}</span>
-                  </div>
+                  <span className="font-black font-mono text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800 shrink-0">
+                    ₹{item.amount.toLocaleString("en-IN")}
+                  </span>
 
                   {/* Aging or Due Badge */}
                   {item.daysAging !== undefined && item.daysAging > 0 ? (
                     <Badge
                       variant="outline"
-                      className="text-[9px] h-4.5 px-1 py-0 border-amber-300 dark:border-amber-700 bg-amber-100/60 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 shrink-0 font-medium"
+                      className="text-[10px] font-bold border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 text-amber-900 dark:text-amber-200 shrink-0"
                     >
-                      <Clock className="w-2.5 h-2.5 mr-0.5 inline" />
+                      <Clock className="w-3 h-3 mr-1 inline" />
                       {item.daysAging}d
                     </Badge>
                   ) : (
                     <Badge
                       variant="outline"
-                      className="text-[9px] h-4.5 px-1 py-0 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 shrink-0 font-medium"
+                      className="text-[10px] font-bold border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 shrink-0"
                     >
                       Due
                     </Badge>
@@ -248,7 +275,7 @@ export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = (
                 </div>
 
                 {idx < pendingItems.length - 1 && (
-                  <span className="text-amber-500/60 dark:text-amber-400/60 font-bold select-none text-xs px-0.5 shrink-0">
+                  <span className="text-emerald-500/40 dark:text-emerald-400/40 font-bold select-none text-xs px-0.5 shrink-0">
                     ✦
                   </span>
                 )}
@@ -258,28 +285,28 @@ export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = (
         </div>
 
         {/* Right Fade */}
-        <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white dark:from-slate-900 to-transparent pointer-events-none z-10" />
+        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-50 dark:from-slate-900 to-transparent pointer-events-none z-10" />
       </div>
 
-      {/* Manual Arrow Controls (Visible on desktop) */}
-      <div className="hidden xl:flex items-center gap-0.5 shrink-0">
+      {/* Manual Arrow Controls */}
+      <div className="hidden xl:flex items-center gap-1 shrink-0">
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+          className="h-8 w-8 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800"
           onClick={() => handleScroll("left")}
           title="Scroll Left"
         >
-          <ChevronLeft className="w-3.5 h-3.5" />
+          <ChevronLeft className="w-4 h-4" />
         </Button>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+          className="h-8 w-8 rounded-lg text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-800"
           onClick={() => handleScroll("right")}
           title="Scroll Right"
         >
-          <ChevronRight className="w-3.5 h-3.5" />
+          <ChevronRight className="w-4 h-4" />
         </Button>
       </div>
     </div>

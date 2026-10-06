@@ -1046,7 +1046,7 @@ export const NativeCashInvoice: React.FC = () => {
 
             {/* Header Text */}
             <div className="space-y-1.5">
-              <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white tracking-tight">
+              <h3 className="text-lg font-bold font-sans text-slate-900 dark:text-white tracking-tight">
                 {saveProgress < 100 ? "Saving Cash Memo..." : "Cash Memo Saved!"}
               </h3>
               <p className="text-xs sm:text-sm text-muted-foreground font-medium px-2">
@@ -1081,7 +1081,7 @@ export const NativeCashInvoice: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-bold font-display text-foreground tracking-tight">
+              <h1 className="text-lg sm:text-xl font-bold font-sans text-foreground tracking-tight">
                 Cash Invoice &amp; Memos
               </h1>
               <Badge variant="outline" className="bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 border-teal-300 text-[11px] font-bold rounded-full">
@@ -1749,7 +1749,7 @@ export const NativeCashInvoice: React.FC = () => {
               <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 Total Invoices
               </div>
-              <div className="text-xl sm:text-2xl font-black font-display text-foreground mt-1">
+              <div className="text-xl sm:text-2xl font-black font-sans text-foreground mt-1">
                 {kpi.totalInvoices}
               </div>
               <div className="text-[11px] text-muted-foreground mt-0.5">
@@ -1761,7 +1761,7 @@ export const NativeCashInvoice: React.FC = () => {
               <div className="text-[11px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
                 Total Billed
               </div>
-              <div className="text-xl sm:text-2xl font-black font-display font-mono text-teal-700 dark:text-teal-400 mt-1">
+              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-teal-700 dark:text-teal-400 mt-1">
                 ₹{kpi.totalBilled.toLocaleString("en-IN")}
               </div>
               <div className="text-[11px] text-muted-foreground mt-0.5">Gross cash memo value</div>
@@ -1771,7 +1771,7 @@ export const NativeCashInvoice: React.FC = () => {
               <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                 Total Received
               </div>
-              <div className="text-xl sm:text-2xl font-black font-display font-mono text-emerald-600 dark:text-emerald-400 mt-1">
+              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-emerald-600 dark:text-emerald-400 mt-1">
                 ₹{kpi.totalReceived.toLocaleString("en-IN")}
               </div>
               <div className="text-[11px] text-muted-foreground mt-0.5">
@@ -1785,7 +1785,7 @@ export const NativeCashInvoice: React.FC = () => {
               <div className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
                 Outstanding Dues
               </div>
-              <div className="text-xl sm:text-2xl font-black font-display font-mono text-amber-600 dark:text-amber-400 mt-1">
+              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-amber-600 dark:text-amber-400 mt-1">
                 ₹{kpi.outstanding.toLocaleString("en-IN")}
               </div>
               <div className="text-[11px] text-muted-foreground mt-0.5">Pending collection</div>

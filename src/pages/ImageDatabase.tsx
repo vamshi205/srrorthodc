@@ -300,7 +300,7 @@ export default function ImageDatabase() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                    <span>Image Database</span>
+                    <span>Packing</span>
                     {selectedProcedure ? (
                       <Badge variant="secondary" className="text-xs font-semibold bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/20 truncate max-w-[200px] sm:max-w-xs">
                         {selectedProcedure.name}

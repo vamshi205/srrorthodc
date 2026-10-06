@@ -189,7 +189,7 @@ export const SummaryPanel = forwardRef<HTMLDivElement, SummaryPanelProps>(
                   <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-teal-600 text-white shadow-sm">
                     Procedure #{secIdx + 1}
                   </span>
-                  <h3 className="font-display font-bold text-base sm:text-lg text-slate-900 dark:text-slate-100">
+                  <h3 className="font-sans font-bold text-base sm:text-lg text-slate-900 dark:text-slate-100">
                     {section.name}
                   </h3>
                 </div>

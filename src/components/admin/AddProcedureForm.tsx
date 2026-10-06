@@ -704,7 +704,7 @@ export function AddProcedureForm() {
                 <Sparkles className="w-3.5 h-3.5" />
                 Procedure Master Management
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-display text-white">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-sans text-white">
                 Surgical Procedures Catalog
               </h1>
               <p className="text-sm text-slate-300 max-w-2xl">

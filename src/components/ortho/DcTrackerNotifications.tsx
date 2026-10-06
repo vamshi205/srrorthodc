@@ -921,37 +921,10 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
         )}
 
 
-      {/* 3. NOTIFICATION BELL TRIGGER & POPOVER PANEL */}
+      {/* 3. NOTIFICATION POPOVER PANEL (Triggered via TopToolbar icon) */}
       <Popover open={isOpen} onOpenChange={setIsOpen}>
         <PopoverTrigger asChild>
-          <Button
-            size="sm"
-            className={`relative h-9 px-3.5 gap-2 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95 border ${
-              totalActionCount > 0
-                ? "bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold border-amber-300/40 shadow-amber-500/25"
-                : "bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100 dark:hover:bg-teal-900/50 text-teal-800 dark:text-teal-200 border-teal-300/70 dark:border-teal-800 font-bold"
-            }`}
-            title="DC Tracker Reminders & Notifications"
-          >
-            <div className="relative flex items-center justify-center">
-              {totalActionCount > 0 ? (
-                <BellRing className="w-4 h-4 text-amber-100 fill-amber-300/40 animate-pulse" />
-              ) : (
-                <Bell className="w-4 h-4 text-teal-600 dark:text-teal-400 fill-teal-500/20" />
-              )}
-              {totalActionCount > 0 && (
-                <span className="absolute -top-2 -right-2.5 flex h-4 min-w-[18px] px-1 items-center justify-center rounded-full bg-rose-600 text-[10px] font-black text-white shadow-md ring-2 ring-white dark:ring-slate-900 animate-bounce">
-                  {totalActionCount}
-                </span>
-              )}
-            </div>
-            <span className="tracking-tight">Reminders</span>
-            {totalActionCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-md bg-white/20 text-white text-[10px] font-black leading-tight">
-                {totalActionCount}
-              </span>
-            )}
-          </Button>
+          <button type="button" className="hidden" aria-hidden="true" />
         </PopoverTrigger>
 
         <PopoverContent

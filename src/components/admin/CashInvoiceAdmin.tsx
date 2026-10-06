@@ -552,7 +552,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
           <ArrowLeft className="w-4 h-4" /> Back to Choice
         </Button>
         <div>
-          <h1 className="text-xl font-display font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-xl font-sans font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
             Cash Invoice Management
           </h1>
           <p className="text-xs text-muted-foreground">

@@ -98,10 +98,30 @@ export const isDisallowedPersonnel = (rawName?: string): boolean => {
   return false;
 };
 
+export const toTitleCase = (str: string): string => {
+  if (!str) return "";
+  const trimmed = str.trim().replace(/\s+/g, " ");
+  const lower = trimmed.toLowerCase();
+  if (KNOWN_NAME_ALIASES[lower]) {
+    return KNOWN_NAME_ALIASES[lower];
+  }
+  return trimmed
+    .split(" ")
+    .map((word) => {
+      if (!word) return "";
+      if (word.toUpperCase() === "DC" || word.toUpperCase() === "N/A") {
+        return word.toUpperCase();
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+};
+
 /**
  * Normalizes a personnel name:
  * - Trims and collapses multiple whitespace
  * - Checks known alias variations (e.g., Prasanth -> Prashanth)
+ * - Formats in Title Case (e.g., naresh -> Naresh)
  * - Rejects disallowed or ignored non-personnel terms
  */
 export const normalizePersonnelName = (rawName?: string): string => {
@@ -113,7 +133,7 @@ export const normalizePersonnelName = (rawName?: string): string => {
   if (KNOWN_NAME_ALIASES[lower]) {
     return KNOWN_NAME_ALIASES[lower];
   }
-  return trimmed;
+  return toTitleCase(trimmed);
 };
 
 const DEFAULT_PERSONNEL: Personnel[] = [

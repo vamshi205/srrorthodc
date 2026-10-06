@@ -11,6 +11,7 @@ import {
   Edit,
   ExternalLink,
   Eye,
+  FileSpreadsheet,
   FileText,
   Filter,
   Link2,
@@ -25,12 +26,15 @@ import {
   RefreshCw,
   Printer,
   Receipt,
+  CreditCard,
   Search,
   Share2,
   Trash2,
   TrendingUp,
   Undo2,
   User,
+  UserCheck,
+  Truck,
   Wallet,
   Wrench,
   X,
@@ -42,7 +46,6 @@ import {
   Smartphone,
   Building2,
   Stethoscope,
-  UserCheck,
   MapPin,
   Copy,
   Check,
@@ -59,18 +62,45 @@ import {
   ArrowDownLeft,
   ChevronDown,
   ChevronUp,
+  Ban,
 } from "lucide-react";
 import { extractHdfcNarration } from "@/services/gmailConnectorService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { InstrumentImageModal } from "@/components/ortho/InstrumentImageModal";
 import { TopToolbar } from "@/components/ortho/TopToolbar";
-import { getSavedCustomers, saveCustomer, Customer, HospitalContact, normalizeHospitalName } from "@/lib/customerStorage";
+import {
+  getSavedCustomers,
+  saveCustomer,
+  Customer,
+  HospitalContact,
+  normalizeHospitalName,
+} from "@/lib/customerStorage";
 import { HospitalSelect } from "@/components/ortho/HospitalSelect";
 import { DoctorSelect } from "@/components/ortho/DoctorSelect";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,21 +113,55 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useProcedures } from "@/hooks/useProcedures";
-import { deleteSavedDc, loadSavedDcs, SavedDc, SavedDcHistoryEvent, SavedDcStatus, transitionSavedDc, updateSavedDc } from "@/lib/savedDcStorage";
-import { AppLoadingSpinner } from '@/components/ui/LoadingSpinner';
+import {
+  deleteSavedDc,
+  loadSavedDcs,
+  SavedDc,
+  SavedDcHistoryEvent,
+  SavedDcStatus,
+  transitionSavedDc,
+  updateSavedDc,
+} from "@/lib/savedDcStorage";
+import { AppLoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { auth } from "@/firebase";
 import html2pdf from "html2pdf.js";
-import { fetchCashInvoicesFromFirestore, saveCashInvoiceToFirestore, deleteCashInvoiceFromFirestore, type CashInvoiceData } from "@/services/cashInvoiceFirebaseService";
+import {
+  fetchCashInvoicesFromFirestore,
+  saveCashInvoiceToFirestore,
+  deleteCashInvoiceFromFirestore,
+  type CashInvoiceData,
+} from "@/services/cashInvoiceFirebaseService";
 import { CashInvoicePreview } from "@/components/cash-invoice/CashInvoicePreview";
 import { printCashMemo } from "@/lib/cashInvoicePrint";
 import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotifications";
 import { CollectPaymentsScroller } from "@/components/ortho/CollectPaymentsScroller";
-import { PersonnelSelect, TRANSPORT_MODES, getTransportMode, renderTransportIcon } from "@/components/ortho/PersonnelSelect";
-import { normalizePersonnelName, isDisallowedPersonnel, isTransportLogisticsName } from "@/lib/personnelStorage";
-import { fetchBankTransactionsFromFirestore, fetchBankAccountsFromFirestore, linkBankTransactionToCashInvoice, unlinkBankTransactionFromCashInvoice, recordCashPaymentToCashInHand, type BankTransaction, type BankAccount } from "@/services/bankAccountFirebaseService";
+import {
+  PersonnelSelect,
+  TRANSPORT_MODES,
+  getTransportMode,
+  renderTransportIcon,
+} from "@/components/ortho/PersonnelSelect";
+import {
+  normalizePersonnelName,
+  isDisallowedPersonnel,
+  isTransportLogisticsName,
+} from "@/lib/personnelStorage";
+import {
+  fetchBankTransactionsFromFirestore,
+  fetchBankAccountsFromFirestore,
+  linkBankTransactionToCashInvoice,
+  unlinkBankTransactionFromCashInvoice,
+  recordCashPaymentToCashInHand,
+  type BankTransaction,
+  type BankAccount,
+} from "@/services/bankAccountFirebaseService";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -124,12 +188,18 @@ const formatDateTime = (value: string) => {
 const getDaysPending = (dc: SavedDc) => {
   const start = new Date(dc.savedAt);
   const end = dc.returnedAt ? new Date(dc.returnedAt) : new Date();
-  const diff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  const diff = Math.floor(
+    (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
+  );
   return diff;
 };
 
 const getTotalQty = (dc: SavedDc) =>
-  dc.items.reduce((total, item) => total + item.sizes.reduce((sum, size) => sum + size.qty, 0), 0);
+  dc.items.reduce(
+    (total, item) =>
+      total + item.sizes.reduce((sum, size) => sum + size.qty, 0),
+    0,
+  );
 const parseDateInput = (value: string) => {
   if (!value) return undefined;
   const [year, month, day] = value.split("-").map(Number);
@@ -142,28 +212,70 @@ const toDateInputValue = (date: Date) =>
 
 const formatFilterDate = (value: string) => {
   const date = parseDateInput(value);
-  return date ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date) : "Select date";
+  return date
+    ? new Intl.DateTimeFormat("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }).format(date)
+    : "Select date";
 };
 
-const DateFilterPicker = ({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) => {
+const DateFilterPicker = ({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+}) => {
   const [open, setOpen] = useState(false);
   const selectedDate = parseDateInput(value);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" aria-label={`${label}: ${formatFilterDate(value)}`} className="h-8 w-36 justify-start gap-1.5 border-slate-300 bg-white px-2 text-left text-xs font-normal text-slate-700 hover:bg-slate-50 focus-visible:ring-teal-600">
+        <Button
+          type="button"
+          variant="outline"
+          aria-label={`${label}: ${formatFilterDate(value)}`}
+          className="h-8 w-36 justify-start gap-1.5 border-slate-300 bg-white px-2 text-left text-xs font-normal text-slate-700 hover:bg-slate-50 focus-visible:ring-teal-600"
+        >
           <Calendar className="h-3.5 w-3.5 shrink-0 text-teal-700" />
           <span className="truncate">{formatFilterDate(value)}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="bottom" sideOffset={6} collisionPadding={16} className="z-[100] w-auto p-0">
-        <DatePickerCalendar mode="single" selected={selectedDate} onSelect={(date) => {
-          if (!date) return;
-          onChange(toDateInputValue(date));
-          setOpen(false);
-        }} initialFocus />
-        {value && <div className="border-t border-slate-200 p-2 text-right"><Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-rose-600 hover:text-rose-700" onClick={() => onChange("")}>Clear date</Button></div>}
+      <PopoverContent
+        align="start"
+        side="bottom"
+        sideOffset={6}
+        collisionPadding={16}
+        className="z-[100] w-auto p-0"
+      >
+        <DatePickerCalendar
+          mode="single"
+          selected={selectedDate}
+          onSelect={(date) => {
+            if (!date) return;
+            onChange(toDateInputValue(date));
+            setOpen(false);
+          }}
+          initialFocus
+        />
+        {value && (
+          <div className="border-t border-slate-200 p-2 text-right">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-rose-600 hover:text-rose-700"
+              onClick={() => onChange("")}
+            >
+              Clear date
+            </Button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -176,18 +288,20 @@ const SavedDcs = () => {
   const { toast } = useToast();
   const { fetchProcedures, loading: proceduresLoading } = useProcedures();
 
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    return (localStorage.getItem('srrortho:theme') as 'light' | 'dark') || 'dark';
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    return (
+      (localStorage.getItem("srrortho:theme") as "light" | "dark") || "dark"
+    );
   });
 
   const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    const nextTheme = theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
-    localStorage.setItem('srrortho:theme', nextTheme);
-    if (nextTheme === 'dark') {
-      document.documentElement.classList.add('dark');
+    localStorage.setItem("srrortho:theme", nextTheme);
+    if (nextTheme === "dark") {
+      document.documentElement.classList.add("dark");
     } else {
-      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.remove("dark");
     }
   };
   const [savedDcs, setSavedDcs] = useState<SavedDc[]>([]);
@@ -199,8 +313,12 @@ const SavedDcs = () => {
   const [dateTo, setDateTo] = useState("");
   const [quickFilter, setQuickFilter] = useState<string>("all");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
-  const [sortBy, setSortBy] = useState<"date" | "dcNo" | "party" | "items" | "days" | "status">("date");
-  const [activeQueue, setActiveQueue] = useState<SavedDcStatus>(queueParam || "pending");
+  const [sortBy, setSortBy] = useState<
+    "date" | "dcNo" | "party" | "items" | "days" | "status"
+  >("date");
+  const [activeQueue, setActiveQueue] = useState<SavedDcStatus>(
+    queueParam || "pending",
+  );
 
   useEffect(() => {
     if (queueParam && queueParam !== activeQueue) {
@@ -222,43 +340,121 @@ const SavedDcs = () => {
   const [billedAmountInput, setBilledAmountInput] = useState("");
   const [selectedDcId, setSelectedDcId] = useState<string | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [detailsModalTab, setDetailsModalTab] = useState<string>("overview");
   const [dcDocumentModalOpen, setDcDocumentModalOpen] = useState(false);
   const [cashMemoModalOpen, setCashMemoModalOpen] = useState(false);
-  const [viewingCashMemoRef, setViewingCashMemoRef] = useState<string | null>(null);
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
+  const [viewingCashMemoRef, setViewingCashMemoRef] = useState<string | null>(
+    null,
+  );
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    dc: SavedDc | null;
+  }>({ open: false, dc: null });
   const [deletePassword, setDeletePassword] = useState("");
-  const [moveToPendingDialog, setMoveToPendingDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
+  const [moveToPendingDialog, setMoveToPendingDialog] = useState<{
+    open: boolean;
+    dc: SavedDc | null;
+  }>({ open: false, dc: null });
   const [adminPasswordOpen, setAdminPasswordOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
-  const [paymentDialog, setPaymentDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
-  const [delinkConfirmDialog, setDelinkConfirmDialog] = useState<{ open: boolean; dc: SavedDc | null }>({ open: false, dc: null });
+  const [paymentDialog, setPaymentDialog] = useState<{
+    open: boolean;
+    dc: SavedDc | null;
+  }>({ open: false, dc: null });
+  const [delinkConfirmDialog, setDelinkConfirmDialog] = useState<{
+    open: boolean;
+    dc: SavedDc | null;
+  }>({ open: false, dc: null });
+  const [queueTransitionState, setQueueTransitionState] = useState<{
+    open: boolean;
+    dcNo?: string;
+    targetQueueName?: string;
+    message?: string;
+    progress?: number;
+  }>({ open: false });
+
+  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  const runQueueTransition = async (
+    dcNo: string,
+    targetQueueName: string,
+    message: string,
+    actionFn: () => Promise<void>,
+    targetQueueKey?: SavedDcStatus,
+  ) => {
+    setQueueTransitionState({
+      open: true,
+      dcNo,
+      targetQueueName,
+      message,
+      progress: 20,
+    });
+
+    try {
+      await actionFn();
+      setQueueTransitionState((prev) => ({ ...prev, progress: 45 }));
+      await delay(1000);
+      setQueueTransitionState((prev) => ({ ...prev, progress: 80 }));
+      await delay(1000);
+      setQueueTransitionState((prev) => ({ ...prev, progress: 100 }));
+      await delay(1000);
+
+      if (targetQueueKey) {
+        setActiveQueue(targetQueueKey);
+        setSearchParams({ queue: targetQueueKey });
+      }
+    } finally {
+      setQueueTransitionState({ open: false });
+    }
+  };
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
   const [paymentRemarksInput, setPaymentRemarksInput] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank_transfer" | "others">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash" | "bank_transfer" | "others"
+  >("cash");
   const [paymentCollectedBy, setPaymentCollectedBy] = useState("");
-  const [partialSettlementType, setPartialSettlementType] = useState<"pay_more" | "final_settlement">("pay_more");
-  const [finalSettlementReason, setFinalSettlementReason] = useState<"discount" | "doctor_commission" | "hospital_commission">("discount");
+  const [partialSettlementType, setPartialSettlementType] = useState<
+    "pay_more" | "final_settlement"
+  >("pay_more");
+  const [finalSettlementReason, setFinalSettlementReason] = useState<
+    "discount" | "doctor_commission" | "hospital_commission"
+  >("discount");
   const [settlementDoctorName, setSettlementDoctorName] = useState<string>("");
   const [cashInvoices, setCashInvoices] = useState<CashInvoiceData[]>([]);
-  const [linkedBankTx, setLinkedBankTx] = useState<BankTransaction | null>(null);
-  const [availableBankCredits, setAvailableBankCredits] = useState<BankTransaction[]>([]);
-  const [viewingTxDetails, setViewingTxDetails] = useState<BankTransaction | null>(null);
+  const [linkedBankTx, setLinkedBankTx] = useState<BankTransaction | null>(
+    null,
+  );
+  const [availableBankCredits, setAvailableBankCredits] = useState<
+    BankTransaction[]
+  >([]);
+  const [viewingTxDetails, setViewingTxDetails] =
+    useState<BankTransaction | null>(null);
   const [bankAccountsList, setBankAccountsList] = useState<BankAccount[]>([]);
-  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("all");
-  const [selectedCreditTxId, setSelectedCreditTxId] = useState<string>("not_found");
+  const [selectedBankAccountId, setSelectedBankAccountId] =
+    useState<string>("all");
+  const [selectedCreditTxId, setSelectedCreditTxId] =
+    useState<string>("not_found");
   const [isLoadingBankCredits, setIsLoadingBankCredits] = useState(false);
 
   const sortedBankAccounts = useMemo(() => {
     const bankOnly = bankAccountsList.filter((a) => {
-      if (a.accountType === 'cash_in_hand' || a.id === 'acc_cash_in_hand') return false;
-      const name = `${a.bankName || ''} ${a.accountName || ''}`.toLowerCase();
-      if (name.includes('cash in hand') || name.includes('petty cash')) return false;
+      if (a.accountType === "cash_in_hand" || a.id === "acc_cash_in_hand")
+        return false;
+      const name = `${a.bankName || ""} ${a.accountName || ""}`.toLowerCase();
+      if (name.includes("cash in hand") || name.includes("petty cash"))
+        return false;
       return true;
     });
 
     return bankOnly.sort((a, b) => {
-      const aIs1538 = Boolean((a.accountNumber && a.accountNumber.endsWith('1538')) || (a.id && a.id.includes('1538')));
-      const bIs1538 = Boolean((b.accountNumber && b.accountNumber.endsWith('1538')) || (b.id && b.id.includes('1538')));
+      const aIs1538 = Boolean(
+        (a.accountNumber && a.accountNumber.endsWith("1538")) ||
+        (a.id && a.id.includes("1538")),
+      );
+      const bIs1538 = Boolean(
+        (b.accountNumber && b.accountNumber.endsWith("1538")) ||
+        (b.id && b.id.includes("1538")),
+      );
       if (aIs1538 && !bIs1538) return -1;
       if (!aIs1538 && bIs1538) return 1;
       return 0;
@@ -268,23 +464,34 @@ const SavedDcs = () => {
   const filteredBankCredits = useMemo(() => {
     const cashAccIds = new Set(
       bankAccountsList
-        .filter((a) => a.accountType === 'cash_in_hand' || a.id === 'acc_cash_in_hand' || (a.accountName || '').toLowerCase().includes('cash in hand'))
-        .map((a) => a.id)
+        .filter(
+          (a) =>
+            a.accountType === "cash_in_hand" ||
+            a.id === "acc_cash_in_hand" ||
+            (a.accountName || "").toLowerCase().includes("cash in hand"),
+        )
+        .map((a) => a.id),
     );
-    const nonCashCredits = availableBankCredits.filter((tx) => !tx.accountId || !cashAccIds.has(tx.accountId));
+    const nonCashCredits = availableBankCredits.filter(
+      (tx) => !tx.accountId || !cashAccIds.has(tx.accountId),
+    );
 
     if (selectedBankAccountId === "all") return nonCashCredits;
-    return nonCashCredits.filter((tx) => tx.accountId === selectedBankAccountId);
+    return nonCashCredits.filter(
+      (tx) => tx.accountId === selectedBankAccountId,
+    );
   }, [availableBankCredits, selectedBankAccountId, bankAccountsList]);
 
   const activeViewingCashMemo = useMemo(() => {
     if (!viewingCashMemoRef) return null;
     const clean = viewingCashMemoRef.trim().toLowerCase();
-    return cashInvoices.find(
-      (i) =>
-        (i.invNumber && i.invNumber.trim().toLowerCase() === clean) ||
-        (i.dcNumber && i.dcNumber.trim().toLowerCase() === clean)
-    ) || null;
+    return (
+      cashInvoices.find(
+        (i) =>
+          (i.invNumber && i.invNumber.trim().toLowerCase() === clean) ||
+          (i.dcNumber && i.dcNumber.trim().toLowerCase() === clean),
+      ) || null
+    );
   }, [viewingCashMemoRef, cashInvoices]);
 
   useEffect(() => {
@@ -296,7 +503,9 @@ const SavedDcs = () => {
   }, [cashMemoModalOpen, viewingCashMemoRef]);
 
   // Hospital Contacts View Modal State
-  const [customers, setCustomers] = useState<Customer[]>(() => getSavedCustomers());
+  const [customers, setCustomers] = useState<Customer[]>(() =>
+    getSavedCustomers(),
+  );
   const [viewContactModalOpen, setViewContactModalOpen] = useState(false);
   const [selectedHospitalForContact, setSelectedHospitalForContact] = useState<{
     hospitalName: string;
@@ -305,15 +514,23 @@ const SavedDcs = () => {
   } | null>(null);
 
   // Collapsible toggle state for multi-installment part payment history
-  const [isTrackPartPaymentsOpen, setIsTrackPartPaymentsOpen] = useState(false);
-  const [isRecordPartPaymentsOpen, setIsRecordPartPaymentsOpen] = useState(false);
+  const [isTrackPartPaymentsOpen, setIsTrackPartPaymentsOpen] = useState(true);
+  const [isRecordPartPaymentsOpen, setIsRecordPartPaymentsOpen] =
+    useState(true);
+  const [expandedInstallmentIdx, setExpandedInstallmentIdx] = useState<
+    number | null
+  >(null);
 
   useEffect(() => {
     const handleCustUpdate = () => {
       setCustomers(getSavedCustomers());
     };
     window.addEventListener("srrortho:customers_updated", handleCustUpdate);
-    return () => window.removeEventListener("srrortho:customers_updated", handleCustUpdate);
+    return () =>
+      window.removeEventListener(
+        "srrortho:customers_updated",
+        handleCustUpdate,
+      );
   }, []);
 
   // Listen for background updates to Saved DCs
@@ -322,11 +539,17 @@ const SavedDcs = () => {
       if (e?.detail && Array.isArray(e.detail)) {
         setSavedDcs(e.detail);
       } else {
-        loadSavedDcs().then((dcs) => setSavedDcs(dcs)).catch(() => {});
+        loadSavedDcs()
+          .then((dcs) => setSavedDcs(dcs))
+          .catch(() => {});
       }
     };
     window.addEventListener("srrortho:saved_dcs_updated", handleDcsUpdated);
-    return () => window.removeEventListener("srrortho:saved_dcs_updated", handleDcsUpdated);
+    return () =>
+      window.removeEventListener(
+        "srrortho:saved_dcs_updated",
+        handleDcsUpdated,
+      );
   }, []);
 
   // Edit DC Details Modal State
@@ -359,11 +582,19 @@ const SavedDcs = () => {
     if (!editingDcTarget) return;
     const cleanHospital = normalizeHospitalName(editHospitalName);
     if (!cleanHospital) {
-      toast({ title: "Hospital Required", description: "Please enter or select a hospital / customer name.", variant: "destructive" });
+      toast({
+        title: "Hospital Required",
+        description: "Please enter or select a hospital / customer name.",
+        variant: "destructive",
+      });
       return;
     }
     if (!editDcNo.trim()) {
-      toast({ title: "DC Number Required", description: "DC number cannot be empty.", variant: "destructive" });
+      toast({
+        title: "DC Number Required",
+        description: "DC number cannot be empty.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -377,13 +608,17 @@ const SavedDcs = () => {
         receivedBy: editReceivedBy.trim(),
         materialType: editMaterialType,
         remarks: editRemarks.trim() || undefined,
-        savedAt: editDcDate ? new Date(editDcDate).toISOString() : editingDcTarget.savedAt,
+        savedAt: editDcDate
+          ? new Date(editDcDate).toISOString()
+          : editingDcTarget.savedAt,
       };
 
       const updated = await updateSavedDc(editingDcTarget.id, updates);
 
       // Update in state
-      setSavedDcs((prev) => prev.map((d) => (d.id === editingDcTarget.id ? updated : d)));
+      setSavedDcs((prev) =>
+        prev.map((d) => (d.id === editingDcTarget.id ? updated : d)),
+      );
 
       // Auto ensure hospital is in directory
       saveCustomer({
@@ -431,39 +666,62 @@ const SavedDcs = () => {
 
   const getHospitalContactSummary = (hospitalName: string) => {
     const norm = (hospitalName || "").toLowerCase().trim();
-    if (!norm) return { cust: null, hasPhone: false, primaryPhone: "", count: 0 };
-    const cust = customers.find((c) => {
-      const cNorm = c.name.toLowerCase().trim();
-      return cNorm === norm || cNorm.includes(norm) || norm.includes(cNorm);
-    }) || null;
+    if (!norm)
+      return { cust: null, hasPhone: false, primaryPhone: "", count: 0 };
+    const cust =
+      customers.find((c) => {
+        const cNorm = c.name.toLowerCase().trim();
+        return cNorm === norm || cNorm.includes(norm) || norm.includes(cNorm);
+      }) || null;
 
-    if (!cust) return { cust: null, hasPhone: false, primaryPhone: "", count: 0 };
+    if (!cust)
+      return { cust: null, hasPhone: false, primaryPhone: "", count: 0 };
 
-    const validContacts = (cust.contacts || []).filter(c => c.phone && c.phone.trim());
-    const count = validContacts.length + (cust.otNumber ? 1 : 0) + (cust.hospitalNumber ? 1 : 0) + (cust.personalNumber ? 1 : 0);
+    const validContacts = (cust.contacts || []).filter(
+      (c) => c.phone && c.phone.trim(),
+    );
+    const count =
+      validContacts.length +
+      (cust.otNumber ? 1 : 0) +
+      (cust.hospitalNumber ? 1 : 0) +
+      (cust.personalNumber ? 1 : 0);
     const hasPhone = count > 0 || Boolean(cust.mobile || cust.phone);
-    const primaryPhone = cust.otNumber || cust.personalNumber || cust.hospitalNumber || validContacts[0]?.phone || cust.mobile || cust.phone || "";
+    const primaryPhone =
+      cust.otNumber ||
+      cust.personalNumber ||
+      cust.hospitalNumber ||
+      validContacts[0]?.phone ||
+      cust.mobile ||
+      cust.phone ||
+      "";
 
     return { cust, hasPhone, primaryPhone, count };
   };
 
-  const handleOpenHospitalContact = (hospitalName: string, dc?: SavedDc, forceAdd?: boolean) => {
+  const handleOpenHospitalContact = (
+    hospitalName: string,
+    dc?: SavedDc,
+    forceAdd?: boolean,
+  ) => {
     const norm = (hospitalName || "").toLowerCase().trim();
-    let cust = customers.find((c) => c.name.toLowerCase().trim() === norm) || null;
+    let cust =
+      customers.find((c) => c.name.toLowerCase().trim() === norm) || null;
     if (!cust && norm) {
-      cust = customers.find((c) => {
-        const cNorm = c.name.toLowerCase().trim();
-        return cNorm.includes(norm) || norm.includes(cNorm);
-      }) || null;
+      cust =
+        customers.find((c) => {
+          const cNorm = c.name.toLowerCase().trim();
+          return cNorm.includes(norm) || norm.includes(cNorm);
+        }) || null;
     }
 
     const hasAnyContacts = Boolean(
-      (cust?.contacts && cust.contacts.some(c => c.phone && c.phone.trim())) ||
+      (cust?.contacts &&
+        cust.contacts.some((c) => c.phone && c.phone.trim())) ||
       cust?.otNumber ||
       cust?.hospitalNumber ||
       cust?.personalNumber ||
       cust?.mobile ||
-      cust?.phone
+      cust?.phone,
     );
 
     setSelectedHospitalForContact({
@@ -496,27 +754,55 @@ const SavedDcs = () => {
     setIsSavingContact(true);
     try {
       const hospitalName = selectedHospitalForContact.hospitalName;
-      let existingCust = selectedHospitalForContact.customer || customers.find(
-        (c) => c.name.toLowerCase().trim() === hospitalName.toLowerCase().trim()
-      );
+      let existingCust =
+        selectedHospitalForContact.customer ||
+        customers.find(
+          (c) =>
+            c.name.toLowerCase().trim() === hospitalName.toLowerCase().trim(),
+        );
 
-      const existingContacts: HospitalContact[] = existingCust?.contacts ? [...existingCust.contacts] : [];
-      
+      const existingContacts: HospitalContact[] = existingCust?.contacts
+        ? [...existingCust.contacts]
+        : [];
+
       const newContactItem: HospitalContact = {
         id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         role: newContactRole || "Others",
-        name: name || (newContactRole === "OT Person" ? "OT Desk" : newContactRole === "Doctor" ? "Doctor" : newContactRole === "Reception" ? "Reception" : newContactRole),
+        name:
+          name ||
+          (newContactRole === "OT Person"
+            ? "OT Desk"
+            : newContactRole === "Doctor"
+              ? "Doctor"
+              : newContactRole === "Reception"
+                ? "Reception"
+                : newContactRole),
         phone: phone,
       };
 
       existingContacts.push(newContactItem);
 
       // Derive primary compatibility fields
-      const otNum = existingContacts.find(c => c.role === "OT Person" && c.phone)?.phone || existingCust?.otNumber || "";
-      const hospNum = existingContacts.find(c => c.role === "Reception" && c.phone)?.phone || existingCust?.hospitalNumber || "";
-      const persNum = existingContacts.find(c => c.role === "Doctor" && c.phone)?.phone || existingCust?.personalNumber || "";
-      const contactDoc = existingContacts.find(c => c.role === "Doctor")?.name || existingCust?.contactPerson || "";
-      const primaryMobile = persNum || otNum || hospNum || phone || existingCust?.mobile || "";
+      const otNum =
+        existingContacts.find((c) => c.role === "OT Person" && c.phone)
+          ?.phone ||
+        existingCust?.otNumber ||
+        "";
+      const hospNum =
+        existingContacts.find((c) => c.role === "Reception" && c.phone)
+          ?.phone ||
+        existingCust?.hospitalNumber ||
+        "";
+      const persNum =
+        existingContacts.find((c) => c.role === "Doctor" && c.phone)?.phone ||
+        existingCust?.personalNumber ||
+        "";
+      const contactDoc =
+        existingContacts.find((c) => c.role === "Doctor")?.name ||
+        existingCust?.contactPerson ||
+        "";
+      const primaryMobile =
+        persNum || otNum || hospNum || phone || existingCust?.mobile || "";
 
       const updatedCustomer = await saveCustomer({
         id: existingCust?.id,
@@ -533,10 +819,14 @@ const SavedDcs = () => {
 
       const refreshed = getSavedCustomers();
       setCustomers(refreshed);
-      setSelectedHospitalForContact(prev => prev ? {
-        ...prev,
-        customer: updatedCustomer,
-      } : null);
+      setSelectedHospitalForContact((prev) =>
+        prev
+          ? {
+              ...prev,
+              customer: updatedCustomer,
+            }
+          : null,
+      );
 
       setNewContactPhone("");
       setNewContactName("");
@@ -550,7 +840,8 @@ const SavedDcs = () => {
       console.error("Failed to save contact:", err);
       toast({
         title: "Error saving contact",
-        description: err.message || "Failed to save number to customer profile.",
+        description:
+          err.message || "Failed to save number to customer profile.",
         variant: "destructive",
       });
     } finally {
@@ -565,11 +856,14 @@ const SavedDcs = () => {
         const dcs = await loadSavedDcs();
         setSavedDcs(dcs);
       } catch (error) {
-        console.error('Error loading DCs:', error);
+        console.error("Error loading DCs:", error);
         toast({
-          title: 'Error loading DCs',
-          description: error instanceof Error ? error.message : 'Failed to load DCs from Google Sheets',
-          variant: 'destructive'
+          title: "Error loading DCs",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Failed to load DCs from Google Sheets",
+          variant: "destructive",
         });
       } finally {
         setIsLoading(false);
@@ -578,7 +872,7 @@ const SavedDcs = () => {
         const invoices = await fetchCashInvoicesFromFirestore();
         setCashInvoices(invoices);
       } catch (err) {
-        console.warn('Failed to load cash invoices for reminders:', err);
+        console.warn("Failed to load cash invoices for reminders:", err);
       }
     };
     fetchDcs();
@@ -589,16 +883,26 @@ const SavedDcs = () => {
       const { action, payload, requestId } = event.data || {};
       if (!action) return;
 
-      const targetWindow = (event.source as Window) || (document.querySelector('iframe') as HTMLIFrameElement | null)?.contentWindow;
+      const targetWindow =
+        (event.source as Window) ||
+        (document.querySelector("iframe") as HTMLIFrameElement | null)
+          ?.contentWindow;
 
-      if (action === 'FETCH_CASH_INVOICES') {
+      if (action === "FETCH_CASH_INVOICES") {
         const invoices = await fetchCashInvoicesFromFirestore();
-        targetWindow?.postMessage({ action: 'FETCH_CASH_INVOICES_RESPONSE', payload: invoices, requestId }, '*');
+        targetWindow?.postMessage(
+          {
+            action: "FETCH_CASH_INVOICES_RESPONSE",
+            payload: invoices,
+            requestId,
+          },
+          "*",
+        );
       }
     };
 
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
   }, []);
 
   const normalizedDcs = useMemo(
@@ -608,10 +912,15 @@ const SavedDcs = () => {
         if (dc.status === "cash" && dc.invoiceRef) {
           const invClean = dc.invoiceRef.trim().toLowerCase();
           const matchInv = cashInvoices.find(
-            (i) => i.invNumber && i.invNumber.trim().toLowerCase() === invClean
+            (i) => i.invNumber && i.invNumber.trim().toLowerCase() === invClean,
           );
-          if (matchInv && (Number(matchInv.grandTotal) || Number(matchInv.actualReceivable))) {
-            const trueTotal = Number(matchInv.grandTotal || matchInv.actualReceivable);
+          if (
+            matchInv &&
+            (Number(matchInv.grandTotal) || Number(matchInv.actualReceivable))
+          ) {
+            const trueTotal = Number(
+              matchInv.grandTotal || matchInv.actualReceivable,
+            );
             if (trueTotal > 0) {
               effectiveCashAmount = trueTotal;
             }
@@ -633,23 +942,29 @@ const SavedDcs = () => {
   const dcCounts = useMemo(() => {
     return {
       all: normalizedDcs.length,
-      pending: normalizedDcs.filter(d => d.status === "pending").length,
-      returned: normalizedDcs.filter(d => d.status === "returned").length,
-      cash: normalizedDcs.filter(d => d.status === "cash").length,
-      completed: normalizedDcs.filter(d => d.status === "completed").length,
-      cancelled: normalizedDcs.filter(d => d.status === "cancelled").length,
+      pending: normalizedDcs.filter((d) => d.status === "pending").length,
+      returned: normalizedDcs.filter((d) => d.status === "returned").length,
+      cash: normalizedDcs.filter((d) => d.status === "cash").length,
+      completed: normalizedDcs.filter((d) => d.status === "completed").length,
+      cancelled: normalizedDcs.filter((d) => d.status === "cancelled").length,
     };
   }, [normalizedDcs]);
 
   const cashQueueStats = useMemo(() => {
-    const cashDcs = normalizedDcs.filter(d => d.status === "cash");
-    const totalOutstanding = cashDcs.reduce((acc, d) => acc + (d.cashAmount || 0), 0);
+    const cashDcs = normalizedDcs.filter((d) => d.status === "cash");
+    const totalOutstanding = cashDcs.reduce(
+      (acc, d) => acc + (d.cashAmount || 0),
+      0,
+    );
     return { count: cashDcs.length, totalOutstanding };
   }, [normalizedDcs]);
 
   const completedQueueStats = useMemo(() => {
-    const completedDcs = normalizedDcs.filter(d => d.status === "completed");
-    const totalCollected = completedDcs.reduce((acc, d) => acc + (d.cashAmount || 0), 0);
+    const completedDcs = normalizedDcs.filter((d) => d.status === "completed");
+    const totalCollected = completedDcs.reduce(
+      (acc, d) => acc + (d.cashAmount || 0),
+      0,
+    );
     return { count: completedDcs.length, totalCollected };
   }, [normalizedDcs]);
 
@@ -658,7 +973,11 @@ const SavedDcs = () => {
     const counts = new Map<string, number>();
     savedDcs.forEach((d) => {
       const ret = normalizePersonnelName(d.returnedBy);
-      if (ret && !isDisallowedPersonnel(ret) && !isTransportLogisticsName(ret)) {
+      if (
+        ret &&
+        !isDisallowedPersonnel(ret) &&
+        !isTransportLogisticsName(ret)
+      ) {
         counts.set(ret, (counts.get(ret) || 0) + 1);
       }
     });
@@ -668,45 +987,66 @@ const SavedDcs = () => {
       .map(([name, count]) => ({ name, count }));
   }, [savedDcs]);
 
-
-
   const handleShareWhatsApp = (dc: SavedDc) => {
-    const statusText = dc.status === 'completed' ? 'PAID ✅' : 'UNPAID ⏳';
-    const text = `*SRI RAJA RAJESHWARI ORTHO PLUS*\n*Cash Memo Details*\n\n` +
-      `📄 *Memo No:* ${dc.invoiceRef || 'N/A'}\n` +
+    const statusText = dc.status === "completed" ? "PAID ✅" : "UNPAID ⏳";
+    const text =
+      `*SRI RAJA RAJESHWARI ORTHO PLUS*\n*Cash Memo Details*\n\n` +
+      `📄 *Memo No:* ${dc.invoiceRef || "N/A"}\n` +
       `🚚 *DC No:* ${dc.dcNo}\n` +
       `🏥 *Party Name:* ${dc.hospitalName}\n` +
       `💰 *Amount:* ₹${dc.cashAmount || 0}\n` +
       `📌 *Status:* ${statusText}\n\n` +
       `Thank you!`;
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    window.open(url, "_blank");
   };
 
   const getCashMemoAgingDays = (dc: SavedDc) => {
-    const cashEvent = dc.history?.find(h => h.action === 'MOVE_TO_CASH');
-    const cashDate = cashEvent ? new Date(cashEvent.at) : (dc.savedAt ? new Date(dc.savedAt) : new Date());
-    const diff = Math.floor((new Date().getTime() - cashDate.getTime()) / (1000 * 3600 * 24));
+    const cashEvent = dc.history?.find((h) => h.action === "MOVE_TO_CASH");
+    const cashDate = cashEvent
+      ? new Date(cashEvent.at)
+      : dc.savedAt
+        ? new Date(dc.savedAt)
+        : new Date();
+    const diff = Math.floor(
+      (new Date().getTime() - cashDate.getTime()) / (1000 * 3600 * 24),
+    );
     return Math.max(0, diff);
+  };
+
+  const formatCompact = (val: number) => {
+    if (!val) return "0";
+    if (val >= 100000 && val % 1000 === 0) return `${val / 100000}L`;
+    if (val >= 1000 && val % 1000 === 0) return `${val / 1000}k`;
+    return val.toLocaleString("en-IN");
   };
 
   const openPaymentDialog = (dc: SavedDc) => {
     setPaymentDialog({ open: true, dc });
-    
+
     // Check if previously part-paid to calculate remaining balance default
     let prevPaid = dc.paidAmount || 0;
     let origTotal = dc.originalInvoiceTotal || dc.cashAmount || 0;
     if (dc.cashRemarks && dc.cashRemarks.includes("Part Payment Received")) {
-      const match = dc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i);
+      const match = dc.cashRemarks.match(
+        /Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i,
+      );
       if (match) {
         prevPaid = parseFloat(match[1].replace(/,/g, "")) || prevPaid;
         origTotal = parseFloat(match[2].replace(/,/g, "")) || origTotal;
       }
     }
 
-    const remainingDue = (origTotal > prevPaid && prevPaid > 0) ? (origTotal - prevPaid) : origTotal;
+    const remainingDue =
+      origTotal > prevPaid && prevPaid > 0 ? origTotal - prevPaid : origTotal;
 
-    setPaymentAmountInput(remainingDue > 0 ? String(remainingDue) : (dc.cashAmount ? String(dc.cashAmount) : ""));
+    setPaymentAmountInput(
+      remainingDue > 0
+        ? String(remainingDue)
+        : dc.cashAmount
+          ? String(dc.cashAmount)
+          : "",
+    );
     setPaymentRemarksInput("");
     setPaymentMethod(dc.paymentMethod || "cash");
     setPaymentCollectedBy(dc.collectedBy || "");
@@ -716,7 +1056,7 @@ const SavedDcs = () => {
   };
 
   useEffect(() => {
-    if (!paymentDialog.open || paymentMethod !== 'bank_transfer') return;
+    if (!paymentDialog.open || paymentMethod !== "bank_transfer") return;
 
     let isMounted = true;
     const loadUnlinkedCreditsAndAccounts = async () => {
@@ -730,32 +1070,49 @@ const SavedDcs = () => {
         setBankAccountsList(accs);
 
         const unlinked = txs.filter((tx) => {
-          if (tx.type !== 'credit') return false;
+          if (tx.type !== "credit") return false;
           if (tx.linkedInvoiceNumber || tx.linkedInvoiceId) return false;
-          const alreadyUsedByDc = savedDcs.some(d => d.status === 'completed' && d.utrNo && tx.referenceNumber && d.utrNo === tx.referenceNumber);
+          const alreadyUsedByDc = savedDcs.some(
+            (d) =>
+              d.status === "completed" &&
+              d.utrNo &&
+              tx.referenceNumber &&
+              d.utrNo === tx.referenceNumber,
+          );
           if (alreadyUsedByDc) return false;
           return true;
         });
         setAvailableBankCredits(unlinked);
 
         // Check for automatic best candidate match
-        const dcAmount = paymentDialog.dc?.cashAmount || paymentDialog.dc?.billedAmount || 0;
-        const dcHosp = (paymentDialog.dc?.hospitalName || '').toLowerCase().trim();
-        const cleanDcNo = (paymentDialog.dc?.dcNo || '').toLowerCase().trim();
+        const dcAmount =
+          paymentDialog.dc?.cashAmount || paymentDialog.dc?.billedAmount || 0;
+        const dcHosp = (paymentDialog.dc?.hospitalName || "")
+          .toLowerCase()
+          .trim();
+        const cleanDcNo = (paymentDialog.dc?.dcNo || "").toLowerCase().trim();
 
         const bestMatch = unlinked.find((tx) => {
-          const desc = (tx.description || '').toLowerCase();
-          const cust = (tx.linkedCustomerName || tx.linkedHospital || '').toLowerCase();
-          const ref = (tx.referenceNumber || '').toLowerCase();
-          const matchesHosp = dcHosp && (desc.includes(dcHosp) || cust.includes(dcHosp));
+          const desc = (tx.description || "").toLowerCase();
+          const cust = (
+            tx.linkedCustomerName ||
+            tx.linkedHospital ||
+            ""
+          ).toLowerCase();
+          const ref = (tx.referenceNumber || "").toLowerCase();
+          const matchesHosp =
+            dcHosp && (desc.includes(dcHosp) || cust.includes(dcHosp));
           const matchesAmount = Math.abs(tx.amount - dcAmount) < 10;
-          const matchesDcNo = cleanDcNo && (desc.includes(cleanDcNo) || ref.includes(cleanDcNo));
+          const matchesDcNo =
+            cleanDcNo && (desc.includes(cleanDcNo) || ref.includes(cleanDcNo));
           return (matchesHosp && matchesAmount) || matchesDcNo;
         });
 
         // Find default HDFC 1538 account if present
         const target1538Acc = accs.find(
-          (a) => (a.accountNumber && a.accountNumber.endsWith('1538')) || (a.id && a.id.includes('1538'))
+          (a) =>
+            (a.accountNumber && a.accountNumber.endsWith("1538")) ||
+            (a.id && a.id.includes("1538")),
         );
         const defaultAccId = target1538Acc ? target1538Acc.id : "all";
 
@@ -772,14 +1129,19 @@ const SavedDcs = () => {
           setSelectedBankAccountId(defaultAccId);
         }
       } catch (err) {
-        console.error("Error fetching unlinked bank credits for payment modal:", err);
+        console.error(
+          "Error fetching unlinked bank credits for payment modal:",
+          err,
+        );
       } finally {
         if (isMounted) setIsLoadingBankCredits(false);
       }
     };
 
     loadUnlinkedCreditsAndAccounts();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [paymentDialog.open, paymentMethod, paymentDialog.dc, savedDcs]);
 
   const handleQuickRecordPayment = async () => {
@@ -788,67 +1150,82 @@ const SavedDcs = () => {
 
     let currentInstallment = parseFloat(paymentAmountInput) || 0;
     let prevPaid = dc.paidAmount || 0;
-    let originalInvoiceTotal = dc.originalInvoiceTotal || dc.cashAmount || (dc.billedAmount ? dc.billedAmount - (dc.hospitalMargin || 0) : currentInstallment);
+    let originalInvoiceTotal =
+      dc.originalInvoiceTotal ||
+      dc.cashAmount ||
+      (dc.billedAmount
+        ? dc.billedAmount - (dc.hospitalMargin || 0)
+        : currentInstallment);
 
     if (dc.cashRemarks && dc.cashRemarks.includes("Part Payment Received")) {
-      const match = dc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i);
+      const match = dc.cashRemarks.match(
+        /Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i,
+      );
       if (match) {
         prevPaid = parseFloat(match[1].replace(/,/g, "")) || prevPaid;
-        originalInvoiceTotal = parseFloat(match[2].replace(/,/g, "")) || originalInvoiceTotal;
+        originalInvoiceTotal =
+          parseFloat(match[2].replace(/,/g, "")) || originalInvoiceTotal;
       }
     }
 
     // Cumulative paid amount across installments
     const paidAmount = prevPaid + currentInstallment;
-    const isPartialPayment = paidAmount > 0 && paidAmount < originalInvoiceTotal;
-    const isFullPayment = paidAmount >= originalInvoiceTotal && originalInvoiceTotal > 0;
+    const isPartialPayment =
+      paidAmount > 0 && paidAmount < originalInvoiceTotal;
+    const isFullPayment =
+      paidAmount >= originalInvoiceTotal && originalInvoiceTotal > 0;
 
     // Decision rule based on user choice for part payment:
     // Option 1: "User will pay more" -> stay in cash queue so more payments can be recorded
     // Option 2: "Final settlement" or full payment -> move to completed queue
-    const nextStatus: SavedDcStatus = (isPartialPayment && partialSettlementType === "pay_more")
-      ? "cash"
-      : "completed";
+    const nextStatus: SavedDcStatus =
+      isPartialPayment && partialSettlementType === "pay_more"
+        ? "cash"
+        : "completed";
 
     if (paymentMethod === "cash" && !paymentCollectedBy.trim()) {
       toast({
         title: "Collector Name Required",
         description: "Please specify who collected the cash payment.",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
 
-    const matchedBankTx = paymentMethod === "bank_transfer" && selectedCreditTxId !== "not_found"
-      ? availableBankCredits.find((t) => t.id === selectedCreditTxId)
-      : null;
+    const matchedBankTx =
+      paymentMethod === "bank_transfer" && selectedCreditTxId !== "not_found"
+        ? availableBankCredits.find((t) => t.id === selectedCreditTxId)
+        : null;
 
     const hasHiked = dc.billedAmount && dc.billedAmount > paidAmount;
-    const margin = hasHiked ? Math.round((dc.billedAmount! - paidAmount) * 100) / 100 : dc.hospitalMargin;
+    const margin = hasHiked
+      ? Math.round((dc.billedAmount! - paidAmount) * 100) / 100
+      : dc.hospitalMargin;
     const methodLabel = paymentMethod === "cash" ? "Cash" : "Bank Transfer";
-    const collectedInfo = paymentMethod === "cash" && paymentCollectedBy.trim()
-      ? ` • Collected by ${paymentCollectedBy.trim()}`
-      : matchedBankTx?.referenceNumber
-      ? ` • Linked to Ref: ${matchedBankTx.referenceNumber}`
-      : "";
+    const collectedInfo =
+      paymentMethod === "cash" && paymentCollectedBy.trim()
+        ? ` • Collected by ${paymentCollectedBy.trim()}`
+        : matchedBankTx?.referenceNumber
+          ? ` • Linked to Ref: ${matchedBankTx.referenceNumber}`
+          : "";
 
     let settlementReasonText = "";
     if (isPartialPayment && partialSettlementType === "final_settlement") {
       if (finalSettlementReason === "discount") {
-        settlementReasonText = ` • Reason: Discount given (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString('en-IN')})`;
+        settlementReasonText = ` • Reason: Discount given (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString("en-IN")})`;
       } else if (finalSettlementReason === "hospital_commission") {
-        settlementReasonText = ` • Reason: Hospital Cut / Commission (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString('en-IN')})`;
+        settlementReasonText = ` • Reason: Hospital Cut / Commission (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString("en-IN")})`;
       } else if (finalSettlementReason === "doctor_commission") {
         const drName = settlementDoctorName.trim() || dc.doctorName || "N/A";
-        settlementReasonText = ` • Reason: Doctor Commission for Dr. ${drName} (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString('en-IN')})`;
+        settlementReasonText = ` • Reason: Doctor Commission for Dr. ${drName} (Shortfall: ₹${(originalInvoiceTotal - paidAmount).toLocaleString("en-IN")})`;
       }
     }
 
     const statusRemarkText = isPartialPayment
       ? partialSettlementType === "final_settlement"
-        ? `Part Payment Final Settled: ₹${paidAmount.toLocaleString('en-IN')} of ₹${originalInvoiceTotal.toLocaleString('en-IN')}${settlementReasonText} via ${methodLabel}${collectedInfo}`
-        : `Part Payment Received: ₹${paidAmount.toLocaleString('en-IN')} of ₹${originalInvoiceTotal.toLocaleString('en-IN')} (Balance Due: ₹${(originalInvoiceTotal - paidAmount).toLocaleString('en-IN')}) via ${methodLabel}${collectedInfo}`
-      : `Paid ₹${paidAmount.toLocaleString('en-IN')} via ${methodLabel}${collectedInfo}`;
+        ? `Part Payment Final Settled: ₹${paidAmount.toLocaleString("en-IN")} of ₹${originalInvoiceTotal.toLocaleString("en-IN")}${settlementReasonText} via ${methodLabel}${collectedInfo}`
+        : `Part Payment Received: ₹${paidAmount.toLocaleString("en-IN")} of ₹${originalInvoiceTotal.toLocaleString("en-IN")} (Balance Due: ₹${(originalInvoiceTotal - paidAmount).toLocaleString("en-IN")}) via ${methodLabel}${collectedInfo}`
+      : `Paid ₹${paidAmount.toLocaleString("en-IN")} via ${methodLabel}${collectedInfo}`;
 
     const finalRemarks = paymentRemarksInput.trim()
       ? `${paymentRemarksInput.trim()} (${statusRemarkText})`
@@ -856,7 +1233,7 @@ const SavedDcs = () => {
 
     setIsActionLoading(true);
     try {
-      setLoadingDcIds(prev => new Set(prev).add(dc.id));
+      setLoadingDcIds((prev) => new Set(prev).add(dc.id));
 
       const bankAccountId = matchedBankTx?.accountId;
       const bankName = matchedBankTx?.description || "Bank Account";
@@ -867,15 +1244,22 @@ const SavedDcs = () => {
         at: new Date().toISOString(),
         amount: currentInstallment,
         paymentMethod,
-        collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+        collectedBy:
+          paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
         utrNo: matchedBankTx?.referenceNumber || matchedBankTx?.id,
         remarks: paymentRemarksInput.trim() || undefined,
       };
-      const updatedPartPayments = [...existingPartPayments, newInstallmentEntry];
+      const updatedPartPayments = [
+        ...existingPartPayments,
+        newInstallmentEntry,
+      ];
 
       await transitionSavedDc(dc.id, {
         toStatus: nextStatus,
-        action: nextStatus === "completed" ? "MOVE_CASH_TO_COMPLETED" : "MOVE_TO_CASH",
+        action:
+          nextStatus === "completed"
+            ? "MOVE_CASH_TO_COMPLETED"
+            : "MOVE_TO_CASH",
         updates: {
           cashAmount: originalInvoiceTotal,
           paidAmount,
@@ -883,15 +1267,18 @@ const SavedDcs = () => {
           isPartialPayment,
           hospitalMargin: margin,
           paymentMethod,
-          collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+          collectedBy:
+            paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
           paidAt: new Date().toISOString(),
           cashRemarks: finalRemarks,
           partPayments: updatedPartPayments,
-          ...(matchedBankTx ? {
-            bankAccountId,
-            bankName,
-            utrNo,
-          } : {})
+          ...(matchedBankTx
+            ? {
+                bankAccountId,
+                bankName,
+                utrNo,
+              }
+            : {}),
         },
         meta: {
           paidAt: new Date().toISOString(),
@@ -899,13 +1286,14 @@ const SavedDcs = () => {
           originalInvoiceTotal,
           isPartialPayment,
           paymentMethod,
-          collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+          collectedBy:
+            paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
           billedAmount: dc.billedAmount,
           hospitalMargin: margin,
           partPayments: updatedPartPayments,
           remarks: finalRemarks,
-          ...(matchedBankTx ? { bankAccountId, utrNo } : {})
-        }
+          ...(matchedBankTx ? { bankAccountId, utrNo } : {}),
+        },
       });
 
       // Link to Bank Transaction if matched
@@ -916,19 +1304,31 @@ const SavedDcs = () => {
             dcNumber: dc.dcNo,
             clientName: dc.hospitalName,
             grandTotal: paidAmount,
-            status: 'Paid',
+            status: "Paid",
             paymentReceived: paidAmount,
             savedAt: Date.now(),
           };
-          await linkBankTransactionToCashInvoice(matchedBankTx.id, mockInvoice, true);
+          await linkBankTransactionToCashInvoice(
+            matchedBankTx.id,
+            mockInvoice,
+            true,
+          );
         } catch (e) {
           console.error("Failed to link bank transaction on DC pay modal:", e);
         }
       } else if (paymentMethod === "cash") {
         try {
-          await recordCashPaymentToCashInHand(dc, paidAmount, paymentCollectedBy, finalRemarks);
+          await recordCashPaymentToCashInHand(
+            dc,
+            paidAmount,
+            paymentCollectedBy,
+            finalRemarks,
+          );
         } catch (e) {
-          console.error("Failed to record cash transaction in Cash In Hand account:", e);
+          console.error(
+            "Failed to record cash transaction in Cash In Hand account:",
+            e,
+          );
         }
       }
 
@@ -936,37 +1336,50 @@ const SavedDcs = () => {
       if (dc.invoiceRef || dc.dcNo) {
         try {
           const invoices = await fetchCashInvoicesFromFirestore();
-          const match = invoices.find(inv => 
-            (dc.invoiceRef && inv.invNumber === dc.invoiceRef) ||
-            (dc.dcNo && inv.dcNumber === dc.dcNo)
+          const match = invoices.find(
+            (inv) =>
+              (dc.invoiceRef && inv.invNumber === dc.invoiceRef) ||
+              (dc.dcNo && inv.dcNumber === dc.dcNo),
           );
           if (match) {
             match.paymentReceived = paidAmount;
-            match.status = 'Paid';
+            match.status = "Paid";
             await saveCashInvoiceToFirestore(match);
           }
         } catch (e) {
-          console.error("Failed to sync payment status to Firestore cash invoice:", e);
+          console.error(
+            "Failed to sync payment status to Firestore cash invoice:",
+            e,
+          );
         }
       }
 
-      setSavedDcs(prev => prev.map(d => d.id === dc.id ? { 
-        ...d, 
-        status: "completed", 
-        cashAmount: paidAmount,
-        paymentMethod,
-        collectedBy: paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
-        paidAt: new Date().toISOString(),
-        cashRemarks: finalRemarks,
-        ...(matchedBankTx ? { bankAccountId, bankName, utrNo } : {})
-      } : d));
+      setSavedDcs((prev) =>
+        prev.map((d) =>
+          d.id === dc.id
+            ? {
+                ...d,
+                status: "completed",
+                cashAmount: paidAmount,
+                paymentMethod,
+                collectedBy:
+                  paymentMethod === "cash"
+                    ? paymentCollectedBy.trim()
+                    : undefined,
+                paidAt: new Date().toISOString(),
+                cashRemarks: finalRemarks,
+                ...(matchedBankTx ? { bankAccountId, bankName, utrNo } : {}),
+              }
+            : d,
+        ),
+      );
 
       setSelectedDcId(null);
       setActiveQueue("completed");
       setSearchParams({ queue: "completed" });
-      
-      const successDesc = matchedBankTx 
-        ? `DC #${dc.dcNo} linked to Bank Credit (Ref: ${utrNo}) & moved to Completed!` 
+
+      const successDesc = matchedBankTx
+        ? `DC #${dc.dcNo} linked to Bank Credit (Ref: ${utrNo}) & moved to Completed!`
         : `DC #${dc.dcNo} marked as Bank Transfer (Link later from Bank Accounts) & moved to Completed!`;
 
       toast({ title: "Payment Recorded", description: successDesc });
@@ -977,10 +1390,15 @@ const SavedDcs = () => {
       setPaymentMethod("cash");
       setSelectedCreditTxId("not_found");
     } catch (err) {
-      toast({ title: "Payment Failed", description: err instanceof Error ? err.message : "Failed to record payment.", variant: "destructive" });
+      toast({
+        title: "Payment Failed",
+        description:
+          err instanceof Error ? err.message : "Failed to record payment.",
+        variant: "destructive",
+      });
     } finally {
       setIsActionLoading(false);
-      setLoadingDcIds(prev => {
+      setLoadingDcIds((prev) => {
         const next = new Set(prev);
         next.delete(dc.id);
         return next;
@@ -1005,7 +1423,9 @@ const SavedDcs = () => {
       case "month":
         return dcs.filter((dc) => new Date(dc.savedAt) >= monthAgo);
       case "overdue":
-        return dcs.filter((dc) => dc.status === "pending" && getDaysPending(dc) > 7);
+        return dcs.filter(
+          (dc) => dc.status === "pending" && getDaysPending(dc) > 7,
+        );
       default:
         return dcs;
     }
@@ -1018,7 +1438,13 @@ const SavedDcs = () => {
           acc[dc.status] += 1;
           return acc;
         },
-        { pending: 0, returned: 0, completed: 0, cash: 0, cancelled: 0 } as Record<SavedDcStatus, number>,
+        {
+          pending: 0,
+          returned: 0,
+          completed: 0,
+          cash: 0,
+          cancelled: 0,
+        } as Record<SavedDcStatus, number>,
       ),
     [normalizedDcs],
   );
@@ -1038,13 +1464,25 @@ const SavedDcs = () => {
       try {
         const txs = await fetchBankTransactionsFromFirestore(undefined, 250);
         const dcNoClean = selectedDc.dcNo.toLowerCase().trim();
-        const invRefClean = (selectedDc.invoiceRef || '').toLowerCase().trim();
+        const invRefClean = (selectedDc.invoiceRef || "").toLowerCase().trim();
 
         const match = txs.find((tx) => {
-          const linkedInv = (tx.linkedInvoiceNumber || tx.linkedInvoiceId || '').toLowerCase().trim();
+          const linkedInv = (tx.linkedInvoiceNumber || tx.linkedInvoiceId || "")
+            .toLowerCase()
+            .trim();
           if (!linkedInv) return false;
-          if (linkedInv === `dc #${dcNoClean}` || linkedInv === `dc#${dcNoClean}` || linkedInv === dcNoClean) return true;
-          if (invRefClean && (linkedInv === invRefClean || linkedInv === invRefClean.replace(/\//g, '_'))) return true;
+          if (
+            linkedInv === `dc #${dcNoClean}` ||
+            linkedInv === `dc#${dcNoClean}` ||
+            linkedInv === dcNoClean
+          )
+            return true;
+          if (
+            invRefClean &&
+            (linkedInv === invRefClean ||
+              linkedInv === invRefClean.replace(/\//g, "_"))
+          )
+            return true;
           return false;
         });
 
@@ -1061,7 +1499,7 @@ const SavedDcs = () => {
     if (!selectedDc?.invoiceRef) return false;
     return Boolean(
       selectedDc.isTaxInvoice ||
-      (!selectedDc.cashAmount && !selectedDc.invoiceRef.startsWith("SRR-"))
+      (!selectedDc.cashAmount && !selectedDc.invoiceRef.startsWith("SRR-")),
     );
   }, [selectedDc]);
 
@@ -1079,12 +1517,13 @@ const SavedDcs = () => {
     const filtered = normalizedDcs.filter((dc) => dc.status === activeQueue);
     const quickFiltered = applyQuickFilter(filtered);
     const byParty = term
-      ? quickFiltered.filter((dc) =>
-        dc.hospitalName.toLowerCase().includes(term) ||
-        dc.dcNo.toLowerCase().includes(term) ||
-        (dc.deliveredBy && dc.deliveredBy.toLowerCase().includes(term)) ||
-        (dc.receivedBy && dc.receivedBy.toLowerCase().includes(term))
-      )
+      ? quickFiltered.filter(
+          (dc) =>
+            dc.hospitalName.toLowerCase().includes(term) ||
+            dc.dcNo.toLowerCase().includes(term) ||
+            (dc.deliveredBy && dc.deliveredBy.toLowerCase().includes(term)) ||
+            (dc.receivedBy && dc.receivedBy.toLowerCase().includes(term)),
+        )
       : quickFiltered;
     const fromDate = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
     const toDate = dateTo ? new Date(`${dateTo}T23:59:59`) : null;
@@ -1137,19 +1576,30 @@ const SavedDcs = () => {
         }
       }
     });
-  }, [activeQueue, dateFrom, dateTo, filterText, normalizedDcs, sortBy, sortOrder, quickFilter]);
+  }, [
+    activeQueue,
+    dateFrom,
+    dateTo,
+    filterText,
+    normalizedDcs,
+    sortBy,
+    sortOrder,
+    quickFilter,
+  ]);
 
   // Dashboard metrics
   const dashboardMetrics = useMemo(() => {
     const totalDcs = normalizedDcs.length;
     const pendingDcs = statusCounts.pending;
     const returnedAwaiting = normalizedDcs.filter(
-      (dc) => dc.status === "returned" && !dc.invoiceRef
+      (dc) => dc.status === "returned" && !dc.invoiceRef,
     ).length;
     const unpaidCash = statusCounts.cash;
-    const avgTurnaround = normalizedDcs
-      .filter((dc) => dc.status !== "pending" && dc.status !== "cancelled")
-      .reduce((sum, dc) => sum + getDaysPending(dc), 0) / (totalDcs - pendingDcs - statusCounts.cancelled || 1);
+    const avgTurnaround =
+      normalizedDcs
+        .filter((dc) => dc.status !== "pending" && dc.status !== "cancelled")
+        .reduce((sum, dc) => sum + getDaysPending(dc), 0) /
+      (totalDcs - pendingDcs - statusCounts.cancelled || 1);
     return {
       totalDcs,
       pendingDcs,
@@ -1157,24 +1607,30 @@ const SavedDcs = () => {
       unpaidCash,
       avgTurnaround: Math.round(avgTurnaround),
     };
-  }, [normalizedDcs, statusCounts.pending, statusCounts.cash, statusCounts.cancelled]);
+  }, [
+    normalizedDcs,
+    statusCounts.pending,
+    statusCounts.cash,
+    statusCounts.cancelled,
+  ]);
 
   const handleDelete = async (id: string) => {
-    setLoadingDcIds(prev => new Set(prev).add(id));
+    setLoadingDcIds((prev) => new Set(prev).add(id));
     try {
       await deleteSavedDc(id);
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
       toast({ title: "DC deleted" });
     } catch (error) {
-      console.error('Error deleting DC:', error);
+      console.error("Error deleting DC:", error);
       toast({
         title: "Error deleting DC",
-        description: error instanceof Error ? error.message : 'Failed to delete DC',
-        variant: 'destructive'
+        description:
+          error instanceof Error ? error.message : "Failed to delete DC",
+        variant: "destructive",
       });
     } finally {
-      setLoadingDcIds(prev => {
+      setLoadingDcIds((prev) => {
         const newSet = new Set(prev);
         newSet.delete(id);
         return newSet;
@@ -1223,7 +1679,7 @@ const SavedDcs = () => {
 
   const handleLogout = async () => {
     localStorage.removeItem("srrortho:auth");
-    localStorage.removeItem('srrortho:procedures_cache');
+    localStorage.removeItem("srrortho:procedures_cache");
     try {
       await auth.signOut();
     } catch (error) {
@@ -1233,22 +1689,38 @@ const SavedDcs = () => {
 
   const handleExportCSV = () => {
     if (filteredDcs.length === 0) {
-      toast({ title: "Export Empty", description: "No records to export in current queue view.", variant: "destructive" });
+      toast({
+        title: "Export Empty",
+        description: "No records to export in current queue view.",
+        variant: "destructive",
+      });
       return;
     }
-    const headers = ["Date", "DC No", "Invoice/Memo No", "Party Name", "Items Count", "Days Pending", "Delivered By", "Received By", "Returned By", "Status", "Cash Amount (INR)"];
+    const headers = [
+      "Date",
+      "DC No",
+      "Invoice/Memo No",
+      "Party Name",
+      "Items Count",
+      "Days Pending",
+      "Delivered By",
+      "Received By",
+      "Returned By",
+      "Status",
+      "Cash Amount (INR)",
+    ];
     const rows = filteredDcs.map((dc) => [
       formatDate(getDisplayDate(dc)),
-      `"${dc.dcNo || ''}"`,
-      `"${dc.invoiceRef || ''}"`,
-      `"${(dc.hospitalName || '').replace(/"/g, '""')}"`,
+      `"${dc.dcNo || ""}"`,
+      `"${dc.invoiceRef || ""}"`,
+      `"${(dc.hospitalName || "").replace(/"/g, '""')}"`,
       getTotalQty(dc).toString(),
       getDaysPending(dc).toString(),
-      `"${dc.deliveredBy || ''}"`,
-      `"${dc.receivedBy || ''}"`,
-      `"${dc.returnedBy || ''}"`,
+      `"${dc.deliveredBy || ""}"`,
+      `"${dc.receivedBy || ""}"`,
+      `"${dc.returnedBy || ""}"`,
       dc.status.toUpperCase(),
-      dc.cashAmount || 0
+      dc.cashAmount || 0,
     ]);
     const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -1316,7 +1788,9 @@ const SavedDcs = () => {
   const handleShare = async (dc: SavedDc) => {
     try {
       const blob = await createPdfBlob(dc);
-      const file = new File([blob], `DC-${dc.dcNo}.pdf`, { type: "application/pdf" });
+      const file = new File([blob], `DC-${dc.dcNo}.pdf`, {
+        type: "application/pdf",
+      });
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: `DC ${dc.dcNo}` });
         return;
@@ -1352,12 +1826,17 @@ const SavedDcs = () => {
       .map(([procName, items]) => {
         const itemRows = items
           .map((item, idx) => {
-            const totalQty = item.sizes.reduce((sum, size) => sum + size.qty, 0);
+            const totalQty = item.sizes.reduce(
+              (sum, size) => sum + size.qty,
+              0,
+            );
             const sizes = item.sizes
               .filter((size) => size.size)
               .map((size) => `${size.size} (Qty: ${size.qty})`)
               .join(", ");
-            const desc = sizes ? `<div style="font-size: 9.5px; color: #555; margin-top: 2px;">${sizes}</div>` : "";
+            const desc = sizes
+              ? `<div style="font-size: 9.5px; color: #555; margin-top: 2px;">${sizes}</div>`
+              : "";
             return `<tr>
               <td style="text-align: center; border: 1px solid #000; padding: 5px;">${idx + 1}</td>
               <td style="border: 1px solid #000; padding: 5px;"><strong>${item.name}</strong>${desc}</td>
@@ -1433,23 +1912,31 @@ const SavedDcs = () => {
   };
 
   const getStatusBadgeClass = (status: SavedDcStatus) => {
-    if (status === "pending") return "bg-rose-100 text-rose-800 border-rose-300 font-bold";
-    if (status === "returned") return "bg-teal-100 text-teal-800 border-teal-300 font-bold";
-    if (status === "completed") return "bg-teal-100 text-teal-900 border-teal-400 font-bold";
-    if (status === "cash") return "bg-blue-100 text-blue-800 border-blue-300 font-bold";
-    if (status === "cancelled") return "bg-slate-100 text-slate-700 border-slate-300 font-bold";
-    return "bg-slate-100 text-slate-700 border-slate-200";
+    if (status === "pending")
+      return "bg-rose-100 text-rose-800 border-rose-300 font-bold";
+    if (status === "returned")
+      return "bg-teal-100 text-teal-800 border-teal-300 font-bold";
+    if (status === "completed")
+      return "bg-teal-100 text-teal-900 border-teal-400 font-bold";
+    if (status === "cash")
+      return "bg-blue-100 text-blue-800 border-blue-300 font-bold";
+    if (status === "cancelled")
+      return "bg-rose-50 text-rose-800 border-rose-200 font-bold";
+    return "bg-teal-50 text-teal-800 border-teal-300 font-bold";
   };
 
   const getStatusIcon = (status: SavedDcStatus) => {
-    if (status === "pending") return <AlertCircle className="h-3.5 w-3.5" />;
+    if (status === "pending") return <Truck className="h-3.5 w-3.5 text-teal-600" />;
     if (status === "returned") return <Undo2 className="h-3.5 w-3.5" />;
     if (status === "cash") return <Wallet className="h-3.5 w-3.5" />;
-    if (status === "cancelled") return <X className="h-3.5 w-3.5" />;
+    if (status === "cancelled") return <Ban className="h-3.5 w-3.5 text-rose-600" />;
     return <CheckCircle2 className="h-3.5 w-3.5" />;
   };
 
-  const openActionDialog = (type: "return" | "invoice" | "cash" | "cancel" | "purchase", dc: SavedDc) => {
+  const openActionDialog = (
+    type: "return" | "invoice" | "cash" | "cancel" | "purchase",
+    dc: SavedDc,
+  ) => {
     // Close details modal so we don't see it behind the action dialog
     setDetailsDialogOpen(false);
     setActionDialog({ type, dc });
@@ -1483,38 +1970,68 @@ const SavedDcs = () => {
       toast({ title: "Returned By is required" });
       return;
     }
-    setIsActionLoading(true);
-    try {
-      await transitionSavedDc(dc.id, {
-        toStatus: "returned",
-        action: "MARK_RETURNED",
-        updates: {
+
+    const hasPaymentInfo = Boolean(
+      dc.status === "completed" ||
+      dc.status === "cash" ||
+      dc.invoiceRef ||
+      dc.cashAmount ||
+      dc.paidAt ||
+      dc.paymentMethod ||
+      dc.utrNo ||
+      dc.isPurchase
+    );
+
+    if (hasPaymentInfo) {
+      try {
+        await executeDelinkPayment(dc, "returned", {
           returnedBy,
           returnedAt: new Date().toISOString(),
           returnedRemarks: returnedRemarksInput.trim() || "",
-        },
-        meta: {
-          returnedBy,
-          returnedAt: new Date().toISOString(),
-          returnedRemarks: returnedRemarksInput.trim() || "",
-        }
-      });
-      const dcs = await loadSavedDcs();
-      setSavedDcs(dcs);
-      closeActionDialog();
-      setActiveQueue("returned");
-      setSearchParams({ queue: "returned" });
-      toast({ title: "DC marked as returned" });
-    } catch (error) {
-      console.error('Error marking DC as returned:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to update DC',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsActionLoading(false);
+        });
+        closeActionDialog();
+      } catch (error) {
+        console.error("Error marking DC as returned:", error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to update DC",
+          variant: "destructive",
+        });
+      }
+      return;
     }
+
+    await runQueueTransition(
+      dc.dcNo,
+      "Returned Queue",
+      "Marking challan as returned...",
+      async () => {
+        setIsActionLoading(true);
+        try {
+          await transitionSavedDc(dc.id, {
+            toStatus: "returned",
+            action: "MARK_RETURNED",
+            updates: {
+              returnedBy,
+              returnedAt: new Date().toISOString(),
+              returnedRemarks: returnedRemarksInput.trim() || "",
+            },
+            meta: {
+              returnedBy,
+              returnedAt: new Date().toISOString(),
+              returnedRemarks: returnedRemarksInput.trim() || "",
+            },
+          });
+          const dcs = await loadSavedDcs();
+          setSavedDcs(dcs);
+          closeActionDialog();
+          toast({ title: "DC marked as returned" });
+        } finally {
+          setIsActionLoading(false);
+        }
+      },
+      "returned"
+    );
   };
 
   const handleConfirmInvoice = async (dc: SavedDc) => {
@@ -1529,9 +2046,13 @@ const SavedDcs = () => {
       const isFromPending = dc.status === "pending";
       await transitionSavedDc(dc.id, {
         toStatus: "completed",
-        action: dc.status === "cash" ? "MOVE_CASH_TO_COMPLETED" : "LINK_INVOICE",
+        action:
+          dc.status === "cash" ? "MOVE_CASH_TO_COMPLETED" : "LINK_INVOICE",
         // When cash -> completed, clear cash fields (but keep them in history via meta.cleared)
-        clear: dc.status === "cash" ? (["cashAt", "cashAmount", "cashRemarks"] as any) : [],
+        clear:
+          dc.status === "cash"
+            ? (["cashAt", "cashAmount", "cashRemarks"] as any)
+            : [],
         updates: {
           invoiceRef,
           invoiceUrl: invoiceUrl || undefined,
@@ -1554,11 +2075,12 @@ const SavedDcs = () => {
         toast({ title: "Invoice linked. Moved to Completed." });
       }
     } catch (error) {
-      console.error('Error linking invoice:', error);
+      console.error("Error linking invoice:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to update DC',
-        variant: 'destructive'
+        description:
+          error instanceof Error ? error.message : "Failed to update DC",
+        variant: "destructive",
       });
     } finally {
       setIsActionLoading(false);
@@ -1573,7 +2095,9 @@ const SavedDcs = () => {
     }
     const billed = parseFloat(billedAmountInput);
     const hasHikedBill = !isNaN(billed) && billed > amount;
-    const hospitalMargin = hasHikedBill ? Math.round((billed - amount) * 100) / 100 : undefined;
+    const hospitalMargin = hasHikedBill
+      ? Math.round((billed - amount) * 100) / 100
+      : undefined;
 
     setIsActionLoading(true);
     try {
@@ -1586,7 +2110,11 @@ const SavedDcs = () => {
           cashAmount: amount,
           billedAmount: !isNaN(billed) && billed > 0 ? billed : undefined,
           hospitalMargin: hospitalMargin,
-          cashRemarks: cashRemarksInput.trim() || (hasHikedBill ? `Hiked Bill: ₹${billed.toLocaleString('en-IN')} | Hospital Cut: ₹${hospitalMargin!.toLocaleString('en-IN')} | Net Cash: ₹${amount.toLocaleString('en-IN')}` : ""),
+          cashRemarks:
+            cashRemarksInput.trim() ||
+            (hasHikedBill
+              ? `Hiked Bill: ₹${billed.toLocaleString("en-IN")} | Hospital Cut: ₹${hospitalMargin!.toLocaleString("en-IN")} | Net Cash: ₹${amount.toLocaleString("en-IN")}`
+              : ""),
           ...(isFromPending ? { isPurchase: true } : {}),
         },
       });
@@ -1600,15 +2128,16 @@ const SavedDcs = () => {
       toast({
         title: "Moved to Cash queue",
         description: hasHikedBill
-          ? `Expected cash: ₹${amount.toLocaleString('en-IN')} (Printed Bill: ₹${billed.toLocaleString('en-IN')})`
-          : `Amount: ₹${amount.toLocaleString('en-IN')}`,
+          ? `Expected cash: ₹${amount.toLocaleString("en-IN")} (Printed Bill: ₹${billed.toLocaleString("en-IN")})`
+          : `Amount: ₹${amount.toLocaleString("en-IN")}`,
       });
     } catch (error) {
-      console.error('Error moving to cash:', error);
+      console.error("Error moving to cash:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to update DC',
-        variant: 'destructive'
+        description:
+          error instanceof Error ? error.message : "Failed to update DC",
+        variant: "destructive",
       });
     } finally {
       setIsActionLoading(false);
@@ -1620,32 +2149,38 @@ const SavedDcs = () => {
     try {
       const invoices = await fetchCashInvoicesFromFirestore();
       const alreadyExists = invoices.some(
-        (inv) => inv.dcNumber && inv.dcNumber.trim().toLowerCase() === (dc.dcNo || '').trim().toLowerCase()
+        (inv) =>
+          inv.dcNumber &&
+          inv.dcNumber.trim().toLowerCase() ===
+            (dc.dcNo || "").trim().toLowerCase(),
       );
 
       if (alreadyExists) {
         toast({
           title: "Cash Invoice Already Created",
           description: `A cash memo for DC ${dc.dcNo} has already been created by another user.`,
-          variant: "destructive"
+          variant: "destructive",
         });
         return;
       }
 
-      sessionStorage.setItem('prefill_cash_dc_no', dc.dcNo || '');
-      sessionStorage.setItem('prefill_cash_client_name', dc.hospitalName || '');
-      sessionStorage.setItem('from_dc_tracker', 'true');
-      if (dc.status === 'pending' || dc.isPurchase) {
-        sessionStorage.setItem('is_purchase_dc', 'true');
+      sessionStorage.setItem("prefill_cash_dc_no", dc.dcNo || "");
+      sessionStorage.setItem("prefill_cash_client_name", dc.hospitalName || "");
+      sessionStorage.setItem("from_dc_tracker", "true");
+      if (dc.status === "pending" || dc.isPurchase) {
+        sessionStorage.setItem("is_purchase_dc", "true");
       }
       closeActionDialog();
-      navigate(`/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || '')}&client=${encodeURIComponent(dc.hospitalName || '')}`);
+      navigate(
+        `/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || "")}&client=${encodeURIComponent(dc.hospitalName || "")}`,
+      );
     } catch (err) {
       console.error("Failed to verify if cash invoice exists:", err);
       toast({
         title: "Verification Failed",
-        description: "Could not verify if a cash invoice already exists. Please try again.",
-        variant: "destructive"
+        description:
+          "Could not verify if a cash invoice already exists. Please try again.",
+        variant: "destructive",
       });
     } finally {
       setIsActionLoading(false);
@@ -1667,10 +2202,12 @@ const SavedDcs = () => {
         updates: {
           cancelledAt: new Date().toISOString(),
           cancelledRemarks: remarks,
-          ...(returnedBy ? {
-            returnedBy,
-            returnedAt: dc.returnedAt || new Date().toISOString(),
-          } : {}),
+          ...(returnedBy
+            ? {
+                returnedBy,
+                returnedAt: dc.returnedAt || new Date().toISOString(),
+              }
+            : {}),
         },
       });
       const dcs = await loadSavedDcs();
@@ -1678,11 +2215,12 @@ const SavedDcs = () => {
       closeActionDialog();
       toast({ title: "Case cancelled successfully" });
     } catch (error) {
-      console.error('Error cancelling case:', error);
+      console.error("Error cancelling case:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to cancel case',
-        variant: 'destructive'
+        description:
+          error instanceof Error ? error.message : "Failed to cancel case",
+        variant: "destructive",
       });
     } finally {
       setIsActionLoading(false);
@@ -1690,7 +2228,7 @@ const SavedDcs = () => {
   };
 
   const restoreFromCancelled = async (dc: SavedDc) => {
-    setLoadingDcIds(prev => new Set(prev).add(dc.id));
+    setLoadingDcIds((prev) => new Set(prev).add(dc.id));
     try {
       await transitionSavedDc(dc.id, {
         toStatus: "pending",
@@ -1701,14 +2239,15 @@ const SavedDcs = () => {
       setSavedDcs(dcs);
       toast({ title: "Case restored to pending" });
     } catch (error) {
-      console.error('Error restoring case:', error);
+      console.error("Error restoring case:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to restore case',
-        variant: 'destructive'
+        description:
+          error instanceof Error ? error.message : "Failed to restore case",
+        variant: "destructive",
       });
     } finally {
-      setLoadingDcIds(prev => {
+      setLoadingDcIds((prev) => {
         const newSet = new Set(prev);
         newSet.delete(dc.id);
         return newSet;
@@ -1717,7 +2256,23 @@ const SavedDcs = () => {
   };
 
   const moveBackToReturned = async (dc: SavedDc) => {
-    setLoadingDcIds(prev => new Set(prev).add(dc.id));
+    const hasPaymentInfo = Boolean(
+      dc.status === "completed" ||
+      dc.status === "cash" ||
+      dc.invoiceRef ||
+      dc.cashAmount ||
+      dc.paidAt ||
+      dc.paymentMethod ||
+      dc.utrNo ||
+      dc.isPurchase
+    );
+
+    if (hasPaymentInfo) {
+      openDelinkConfirmDialog(dc);
+      return;
+    }
+
+    setLoadingDcIds((prev) => new Set(prev).add(dc.id));
     try {
       await transitionSavedDc(dc.id, {
         toStatus: "returned",
@@ -1728,14 +2283,15 @@ const SavedDcs = () => {
       setSavedDcs(dcs);
       toast({ title: "Moved back to Returned" });
     } catch (error) {
-      console.error('Error moving to returned:', error);
+      console.error("Error moving to returned:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to update DC',
-        variant: 'destructive'
+        description:
+          error instanceof Error ? error.message : "Failed to update DC",
+        variant: "destructive",
       });
     } finally {
-      setLoadingDcIds(prev => {
+      setLoadingDcIds((prev) => {
         const newSet = new Set(prev);
         newSet.delete(dc.id);
         return newSet;
@@ -1743,183 +2299,264 @@ const SavedDcs = () => {
     }
   };
 
-    const openDelinkConfirmDialog = (dc: SavedDc) => {
+  const openDelinkConfirmDialog = (dc: SavedDc) => {
     setPaymentDialog({ open: false, dc: null });
     setDelinkConfirmDialog({ open: true, dc });
   };
 
-  const executeDelinkPayment = async (dc: SavedDc, targetStatus: "cash" | "returned") => {
-    setLoadingDcIds(prev => new Set(prev).add(dc.id));
-    setIsActionLoading(true);
-    try {
-      // 1. Unlink bank credit transaction in Bank Accounts / Treasury
-      try {
-        const txs = await fetchBankTransactionsFromFirestore(undefined, 300);
-        const dcNoClean = (dc.dcNo || "").toLowerCase().trim();
-        const invRefClean = (dc.invoiceRef || "").toLowerCase().trim();
-        const utrClean = (dc.utrNo || "").toLowerCase().trim();
-
-        const matchingTxs = txs.filter((t) => {
-          const linkedInv = (t.linkedInvoiceNumber || t.linkedInvoiceId || "").toLowerCase().trim();
-          const refNo = (t.referenceNumber || "").toLowerCase().trim();
-          if (utrClean && refNo === utrClean) return true;
-          if (linkedInv && (linkedInv === invRefClean || linkedInv === "dc #" + dcNoClean || linkedInv === dcNoClean)) return true;
-          return false;
-        });
-
-        for (const tx of matchingTxs) {
-          await unlinkBankTransactionFromCashInvoice(tx.id, false);
-        }
-      } catch (err) {
-        console.warn('Could not unlink bank transaction during delink:', err);
-      }
-
-      // 2. Unlink & Reset Cash Invoice payment status if linked
-      if (dc.invoiceRef) {
+  const executeDelinkPayment = async (
+    dc: SavedDc,
+    targetStatus: "cash" | "returned",
+    extraUpdates?: Partial<SavedDc>,
+  ) => {
+    const targetQueueName = targetStatus === "returned" ? "Returned Queue" : "Cash Queue";
+    await runQueueTransition(
+      dc.dcNo,
+      targetQueueName,
+      `Delinking payment records & moving to ${targetQueueName}...`,
+      async () => {
+        setLoadingDcIds((prev) => new Set(prev).add(dc.id));
+        setIsActionLoading(true);
         try {
-          const invs = await fetchCashInvoicesFromFirestore();
-          const invRefClean = dc.invoiceRef.trim().toLowerCase();
-          const matchingInv = invs.find(
-            (i) => i.invNumber && i.invNumber.trim().toLowerCase() === invRefClean
-          );
+          // 1. Unlink bank credit transaction in Bank Accounts / Treasury
+          try {
+            const txs = await fetchBankTransactionsFromFirestore(undefined, 300);
+            const dcNoClean = (dc.dcNo || "").toLowerCase().trim();
+            const invRefClean = (dc.invoiceRef || "").toLowerCase().trim();
+            const utrClean = (dc.utrNo || "").toLowerCase().trim();
 
-          if (matchingInv) {
-            if (targetStatus === "returned") {
-              await deleteCashInvoiceFromFirestore(matchingInv.invNumber);
-            } else {
-              const resetInv: CashInvoiceData = {
-                ...matchingInv,
-                paymentReceived: 0,
-                status: "pending",
-                paymentMode: undefined,
-                paymentAt: undefined,
-                paymentNote: undefined,
-                lastBankPaymentRef: undefined,
-                lastBankPaymentDate: undefined,
-                lastBankPaymentAccountId: undefined,
-                savedAt: Date.now(),
-              };
-              await saveCashInvoiceToFirestore(resetInv);
+            const matchingTxs = txs.filter((t) => {
+              const linkedInv = (t.linkedInvoiceNumber || t.linkedInvoiceId || "")
+                .toLowerCase()
+                .trim();
+              const refNo = (t.referenceNumber || "").toLowerCase().trim();
+              if (utrClean && refNo === utrClean) return true;
+              if (
+                linkedInv &&
+                (linkedInv === invRefClean ||
+                  linkedInv === "dc #" + dcNoClean ||
+                  linkedInv === dcNoClean)
+              )
+                return true;
+              return false;
+            });
+
+            for (const tx of matchingTxs) {
+              await unlinkBankTransactionFromCashInvoice(tx.id, false);
+            }
+          } catch (err) {
+            console.warn("Could not unlink bank transaction during delink:", err);
+          }
+
+          // 2. Unlink & Reset Cash Invoice payment status if linked
+          if (dc.invoiceRef) {
+            try {
+              const invs = await fetchCashInvoicesFromFirestore();
+              const invRefClean = dc.invoiceRef.trim().toLowerCase();
+              const matchingInv = invs.find(
+                (i) =>
+                  i.invNumber && i.invNumber.trim().toLowerCase() === invRefClean,
+              );
+
+              if (matchingInv) {
+                if (targetStatus === "returned") {
+                  await deleteCashInvoiceFromFirestore(matchingInv.invNumber);
+                } else {
+                  const resetInv: CashInvoiceData = {
+                    ...matchingInv,
+                    paymentReceived: 0,
+                    status: "pending",
+                    paymentMode: undefined,
+                    paymentAt: undefined,
+                    paymentNote: undefined,
+                    lastBankPaymentRef: undefined,
+                    lastBankPaymentDate: undefined,
+                    lastBankPaymentAccountId: undefined,
+                    savedAt: Date.now(),
+                  };
+                  await saveCashInvoiceToFirestore(resetInv);
+                }
+              }
+            } catch (invErr) {
+              console.warn(
+                "Could not reset cash invoice payment state during delink:",
+                invErr,
+              );
             }
           }
-        } catch (invErr) {
-          console.warn("Could not reset cash invoice payment state during delink:", invErr);
-        }
-      }
 
-      // 3. Determine original Cash Invoice / DC amount before delinking
-      let originalCashAmount = dc.cashAmount || 0;
-      if (dc.invoiceRef) {
-        try {
-          const invs = await fetchCashInvoicesFromFirestore();
-          const match = invs.find(i => i.invNumber && i.invNumber.trim().toLowerCase() === dc.invoiceRef?.trim().toLowerCase());
-          if (match && (Number(match.grandTotal) || Number(match.actualReceivable))) {
-            originalCashAmount = Number(match.grandTotal || match.actualReceivable);
+          // 3. Determine original Cash Invoice / DC amount before delinking
+          let originalCashAmount = dc.cashAmount || 0;
+          if (dc.invoiceRef) {
+            try {
+              const invs = await fetchCashInvoicesFromFirestore();
+              const match = invs.find(
+                (i) =>
+                  i.invNumber &&
+                  i.invNumber.trim().toLowerCase() ===
+                    dc.invoiceRef?.trim().toLowerCase(),
+              );
+              if (
+                match &&
+                (Number(match.grandTotal) || Number(match.actualReceivable))
+              ) {
+                originalCashAmount = Number(
+                  match.grandTotal || match.actualReceivable,
+                );
+              }
+            } catch {}
           }
-        } catch {}
-      }
-      if (!originalCashAmount && dc.billedAmount) {
-        originalCashAmount = dc.billedAmount - (dc.hospitalMargin || 0);
-      }
+          if (!originalCashAmount && dc.billedAmount) {
+            originalCashAmount = dc.billedAmount - (dc.hospitalMargin || 0);
+          }
 
-      // 4. Clear payment metadata fields
-      const clearFields: Array<keyof SavedDc> = [
-        "paidAt",
-        "paymentMethod",
-        "utrNo",
-        "bankName",
-        "accountNumber",
-        "collectedBy",
-        "cashAt",
-        "cashRemarks",
-        "paidAmount",
-        "originalInvoiceTotal",
-        "isPartialPayment",
-        "partPayments",
-      ];
+          // 4. Clear payment metadata fields
+          const clearFields: Array<keyof SavedDc> = [
+            "paidAt",
+            "paymentMethod",
+            "utrNo",
+            "bankName",
+            "accountNumber",
+            "collectedBy",
+            "cashAt",
+            "cashRemarks",
+            "paidAmount",
+            "originalInvoiceTotal",
+            "isPartialPayment",
+            "partPayments",
+          ];
 
-      if (targetStatus === "returned") {
-        clearFields.push("invoiceRef", "invoiceRemarks", "invoiceUrl", "isTaxInvoice", "cashAmount", "billedAmount", "hospitalMargin");
-      }
+          if (targetStatus === "returned") {
+            clearFields.push(
+              "invoiceRef",
+              "invoiceRemarks",
+              "invoiceUrl",
+              "isTaxInvoice",
+              "cashAmount",
+              "billedAmount",
+              "hospitalMargin",
+              "isPurchase",
+            );
+          }
 
-      await transitionSavedDc(dc.id, {
-        toStatus: targetStatus,
-        action: targetStatus === "returned" ? "DELINK_PAYMENT_MOVE_TO_RETURNED" : "DELINK_PAYMENT_MOVE_TO_CASH",
-        clear: clearFields,
-        updates: {
-          paidAmount: 0,
-          isPartialPayment: false,
-          partPayments: [],
-          ...(targetStatus === "cash" ? { 
-            cashAmount: originalCashAmount > 0 ? originalCashAmount : (dc.originalInvoiceTotal || dc.cashAmount),
-            cashRemarks: "Payment delinked & reset like new. Awaiting fresh collection." 
-          } : {}),
-        },
-        meta: {
-          note: `Payment delinked by user. Reset all part payments like new. Moved to ${targetStatus === 'returned' ? 'Returned Queue' : 'Cash Queue'}.`,
-          previousPaidAmount: dc.paidAmount,
-          previousPartPayments: dc.partPayments,
-          previousPaidAt: dc.paidAt,
-          previousUtrNo: dc.utrNo,
-          previousPaymentMethod: dc.paymentMethod,
+          await transitionSavedDc(dc.id, {
+            toStatus: targetStatus,
+            action:
+              targetStatus === "returned"
+                ? "DELINK_PAYMENT_MOVE_TO_RETURNED"
+                : "DELINK_PAYMENT_MOVE_TO_CASH",
+            clear: clearFields,
+            updates: {
+              paidAmount: 0,
+              isPartialPayment: false,
+              partPayments: [],
+              ...(targetStatus === "cash"
+                ? {
+                    cashAmount:
+                      originalCashAmount > 0
+                        ? originalCashAmount
+                        : dc.originalInvoiceTotal || dc.cashAmount,
+                    cashRemarks:
+                      "Payment delinked & reset like new. Awaiting fresh collection.",
+                  }
+                : {}),
+              ...extraUpdates,
+            },
+            meta: {
+              note: `Payment delinked by user. Reset all part payments like new. Moved to ${targetStatus === "returned" ? "Returned Queue" : "Cash Queue"}.`,
+              previousPaidAmount: dc.paidAmount,
+              previousPartPayments: dc.partPayments,
+              previousPaidAt: dc.paidAt,
+              previousUtrNo: dc.utrNo,
+              previousPaymentMethod: dc.paymentMethod,
+            },
+          });
+
+          // 5. Refresh local states instantly
+          setLinkedBankTx(null);
+          const [refreshedDcs, refreshedInvs] = await Promise.all([
+            loadSavedDcs(),
+            fetchCashInvoicesFromFirestore(),
+          ]);
+          setSavedDcs(refreshedDcs);
+          setCashInvoices(refreshedInvs);
+          setDelinkConfirmDialog({ open: false, dc: null });
+
+          toast({
+            title: "⚡ Payment Delinked & Reset",
+            description: `DC #${dc.dcNo} payment & part payments reset like new! Moved to ${targetQueueName}.`,
+          });
+        } catch (error) {
+          console.error("Error delinking payment:", error);
+          toast({
+            title: "Error Delinking Payment",
+            description:
+              error instanceof Error ? error.message : "Failed to update DC",
+            variant: "destructive",
+          });
+        } finally {
+          setIsActionLoading(false);
+          setLoadingDcIds((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(dc.id);
+            return newSet;
+          });
         }
-      });
-
-      // 4. Refresh local states instantly
-      setLinkedBankTx(null);
-      const [refreshedDcs, refreshedInvs] = await Promise.all([
-        loadSavedDcs(),
-        fetchCashInvoicesFromFirestore()
-      ]);
-      setSavedDcs(refreshedDcs);
-      setCashInvoices(refreshedInvs);
-      setDelinkConfirmDialog({ open: false, dc: null });
-
-      toast({
-        title: "⚡ Payment Delinked & Reset",
-        description: `DC #${dc.dcNo} payment & part payments reset like new! Moved to ${targetStatus === 'returned' ? 'Returned Queue' : 'Cash Queue'}.`,
-      });
-    } catch (error) {
-      console.error('Error delinking payment:', error);
-      toast({
-        title: "Error Delinking Payment",
-        description: error instanceof Error ? error.message : 'Failed to update DC',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsActionLoading(false);
-      setLoadingDcIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(dc.id);
-        return newSet;
-      });
-    }
+      },
+      targetStatus
+    );
   };
 
-  const handleDeletePartPaymentInstallment = async (dc: SavedDc, indexToDelete: number) => {
+  const handleDeletePartPaymentInstallment = async (
+    dc: SavedDc,
+    indexToDelete: number,
+  ) => {
     const existingPartPayments = dc.partPayments || [];
-    if (indexToDelete < 0 || indexToDelete >= existingPartPayments.length) return;
+    if (indexToDelete < 0 || indexToDelete >= existingPartPayments.length)
+      return;
 
     const deletedItem = existingPartPayments[indexToDelete];
-    const confirmText = `Are you sure you want to delete Installment #${indexToDelete + 1} (+₹${deletedItem.amount.toLocaleString('en-IN')})?`;
+    const confirmText = `Are you sure you want to delete Installment #${indexToDelete + 1} (+₹${deletedItem.amount.toLocaleString("en-IN")})?`;
     if (!window.confirm(confirmText)) return;
 
-    setLoadingDcIds(prev => new Set(prev).add(dc.id));
+    setLoadingDcIds((prev) => new Set(prev).add(dc.id));
     setIsActionLoading(true);
     try {
-      const updatedPartPayments = existingPartPayments.filter((_, idx) => idx !== indexToDelete);
-      const newPaidAmount = updatedPartPayments.reduce((sum, item) => sum + (item.amount || 0), 0);
-      const originalInvoiceTotal = dc.originalInvoiceTotal || dc.cashAmount || (dc.billedAmount ? dc.billedAmount - (dc.hospitalMargin || 0) : newPaidAmount);
+      const updatedPartPayments = existingPartPayments.filter(
+        (_, idx) => idx !== indexToDelete,
+      );
+      const newPaidAmount = updatedPartPayments.reduce(
+        (sum, item) => sum + (item.amount || 0),
+        0,
+      );
+      const originalInvoiceTotal =
+        dc.originalInvoiceTotal ||
+        dc.cashAmount ||
+        (dc.billedAmount
+          ? dc.billedAmount - (dc.hospitalMargin || 0)
+          : newPaidAmount);
 
-      const isStillPartial = newPaidAmount > 0 && newPaidAmount < originalInvoiceTotal;
-      const nextStatus: SavedDcStatus = isStillPartial ? "cash" : (newPaidAmount >= originalInvoiceTotal && originalInvoiceTotal > 0 ? "completed" : "cash");
+      const isStillPartial =
+        newPaidAmount > 0 && newPaidAmount < originalInvoiceTotal;
+      const nextStatus: SavedDcStatus = isStillPartial
+        ? "cash"
+        : newPaidAmount >= originalInvoiceTotal && originalInvoiceTotal > 0
+          ? "completed"
+          : "cash";
 
-      const methodLabel = updatedPartPayments.length > 0 ? (updatedPartPayments[updatedPartPayments.length - 1].paymentMethod === "cash" ? "Cash" : "Bank Transfer") : "Cash";
-      const newCashRemarks = updatedPartPayments.length === 0 || newPaidAmount === 0
-        ? "Part payment installment deleted. Awaiting re-collection."
-        : isStillPartial
-        ? `Part Payment Received: ₹${newPaidAmount.toLocaleString('en-IN')} of ₹${originalInvoiceTotal.toLocaleString('en-IN')} (Balance Due: ₹${(originalInvoiceTotal - newPaidAmount).toLocaleString('en-IN')}) via ${methodLabel}`
-        : `Paid ₹${newPaidAmount.toLocaleString('en-IN')} via ${methodLabel}`;
+      const methodLabel =
+        updatedPartPayments.length > 0
+          ? updatedPartPayments[updatedPartPayments.length - 1]
+              .paymentMethod === "cash"
+            ? "Cash"
+            : "Bank Transfer"
+          : "Cash";
+      const newCashRemarks =
+        updatedPartPayments.length === 0 || newPaidAmount === 0
+          ? "Part payment installment deleted. Awaiting re-collection."
+          : isStillPartial
+            ? `Part Payment Received: ₹${newPaidAmount.toLocaleString("en-IN")} of ₹${originalInvoiceTotal.toLocaleString("en-IN")} (Balance Due: ₹${(originalInvoiceTotal - newPaidAmount).toLocaleString("en-IN")}) via ${methodLabel}`
+            : `Paid ₹${newPaidAmount.toLocaleString("en-IN")} via ${methodLabel}`;
 
       await transitionSavedDc(dc.id, {
         toStatus: nextStatus,
@@ -1931,37 +2568,42 @@ const SavedDcs = () => {
           cashRemarks: newCashRemarks,
         },
         meta: {
-          note: `Deleted installment #${indexToDelete + 1} (₹${deletedItem.amount.toLocaleString('en-IN')}).`,
+          note: `Deleted installment #${indexToDelete + 1} (₹${deletedItem.amount.toLocaleString("en-IN")}).`,
           deletedInstallment: deletedItem,
           deletedIndex: indexToDelete,
           remainingPartPaymentsCount: updatedPartPayments.length,
           newPaidAmount,
           originalInvoiceTotal,
-        }
+        },
       });
 
       const refreshedDcs = await loadSavedDcs();
       setSavedDcs(refreshedDcs);
 
-      const updatedDcObj = refreshedDcs.find(d => d.id === dc.id);
-      if (updatedDcObj && paymentDialog.open && paymentDialog.dc?.id === dc.id) {
+      const updatedDcObj = refreshedDcs.find((d) => d.id === dc.id);
+      if (
+        updatedDcObj &&
+        paymentDialog.open &&
+        paymentDialog.dc?.id === dc.id
+      ) {
         setPaymentDialog({ open: true, dc: updatedDcObj });
       }
 
       toast({
         title: "🗑️ Installment Deleted",
-        description: `Installment #${indexToDelete + 1} (₹${deletedItem.amount.toLocaleString('en-IN')}) removed. Paid total is now ₹${newPaidAmount.toLocaleString('en-IN')}.`,
+        description: `Installment #${indexToDelete + 1} (₹${deletedItem.amount.toLocaleString("en-IN")}) removed. Paid total is now ₹${newPaidAmount.toLocaleString("en-IN")}.`,
       });
     } catch (error) {
-      console.error('Error deleting part payment installment:', error);
+      console.error("Error deleting part payment installment:", error);
       toast({
         title: "Error Deleting Installment",
-        description: error instanceof Error ? error.message : 'Failed to update DC',
-        variant: 'destructive'
+        description:
+          error instanceof Error ? error.message : "Failed to update DC",
+        variant: "destructive",
       });
     } finally {
       setIsActionLoading(false);
-      setLoadingDcIds(prev => {
+      setLoadingDcIds((prev) => {
         const newSet = new Set(prev);
         newSet.delete(dc.id);
         return newSet;
@@ -1970,40 +2612,49 @@ const SavedDcs = () => {
   };
 
   const cancelReturnToPending = async (dc: SavedDc) => {
-    setLoadingDcIds(prev => new Set(prev).add(dc.id));
-    try {
-      await transitionSavedDc(dc.id, {
-        toStatus: "pending",
-        action: "MOVE_BACK_TO_PENDING",
-        clear: ["returnedBy", "returnedAt", "returnedRemarks"],
-        meta: {
-          previousReturnedBy: dc.returnedBy,
-          previousReturnedAt: dc.returnedAt,
+    await runQueueTransition(
+      dc.dcNo,
+      "Delivered Queue",
+      "Clearing returned status & moving back to Delivered...",
+      async () => {
+        setLoadingDcIds((prev) => new Set(prev).add(dc.id));
+        try {
+          await transitionSavedDc(dc.id, {
+            toStatus: "pending",
+            action: "MOVE_BACK_TO_PENDING",
+            clear: ["returnedBy", "returnedAt", "returnedRemarks"],
+            meta: {
+              previousReturnedBy: dc.returnedBy,
+              previousReturnedAt: dc.returnedAt,
+            },
+          });
+          const dcs = await loadSavedDcs();
+          setSavedDcs(dcs);
+          toast({ title: "Moved back to Delivered" });
+        } catch (error) {
+          console.error("Error moving to pending:", error);
+          toast({
+            title: "Error",
+            description:
+              error instanceof Error ? error.message : "Failed to update DC",
+            variant: "destructive",
+          });
+        } finally {
+          setLoadingDcIds((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(dc.id);
+            return newSet;
+          });
         }
-      });
-      const dcs = await loadSavedDcs();
-      setSavedDcs(dcs);
-      toast({ title: "Moved back to Pending" });
-    } catch (error) {
-      console.error('Error moving to pending:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to update DC',
-        variant: 'destructive'
-      });
-    } finally {
-      setLoadingDcIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(dc.id);
-        return newSet;
-      });
-    }
+      },
+      "pending"
+    );
   };
 
   const SortableHeader = ({
     children,
     sortKey,
-    className = ""
+    className = "",
   }: {
     children: React.ReactNode;
     sortKey: "date" | "dcNo" | "party" | "items" | "days" | "status";
@@ -2021,7 +2672,9 @@ const SavedDcs = () => {
       className={`flex items-center gap-1 hover:bg-slate-200 px-2 py-1 rounded transition-colors ${className}`}
     >
       {children}
-      <ArrowUpDown className={`h-3 w-3 ${sortBy === sortKey ? 'text-slate-700' : 'text-slate-400'}`} />
+      <ArrowUpDown
+        className={`h-3 w-3 ${sortBy === sortKey ? "text-slate-700" : "text-slate-400"}`}
+      />
       {sortBy === sortKey && (
         <span className="text-xs font-bold text-slate-700">
           {sortOrder === "desc" ? "↓" : "↑"}
@@ -2031,1131 +2684,1490 @@ const SavedDcs = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden flex flex-col">
       {/* Main Content */}
       <main className="flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
-          {/* Top toolbar */}
-          <TopToolbar
-            theme={theme}
-            toggleTheme={toggleTheme}
-            fetchProcedures={fetchProcedures}
-            loading={proceduresLoading}
-            handlePrint={() => {}}
-            navigate={navigate}
-            handleLogout={handleLogout}
-            setDcMode={(mode) => navigate(`/?mode=${mode}`)}
-            setInitialFilterType={() => {}}
-            setShowProcedureSelector={() => {}}
-            setActiveProcedures={() => {}}
-            setCollapsedProcedures={() => {}}
+        {/* Top toolbar */}
+        <TopToolbar
+          theme={theme}
+          toggleTheme={toggleTheme}
+          fetchProcedures={fetchProcedures}
+          loading={proceduresLoading}
+          handlePrint={() => {}}
+          navigate={navigate}
+          handleLogout={handleLogout}
+          setDcMode={(mode) => navigate(`/?mode=${mode}`)}
+          setInitialFilterType={() => {}}
+          setShowProcedureSelector={() => {}}
+          setActiveProcedures={() => {}}
+          setCollapsedProcedures={() => {}}
+        />
+
+        {/* DC Tracker Header: Collect Payments Scroller */}
+        <div className="mb-4">
+          <CollectPaymentsScroller
+            savedDcs={savedDcs}
+            cashInvoices={cashInvoices}
+            onCollectPayment={openPaymentDialog}
+            onViewDc={(dc, queue) => {
+              setActiveQueue(queue);
+              setSearchParams({ queue });
+              setSelectedDcId(dc.id);
+              setDetailsDialogOpen(true);
+            }}
           />
+          <DcTrackerNotifications
+            savedDcs={savedDcs}
+            cashInvoices={cashInvoices}
+            onCollectPayment={openPaymentDialog}
+            onRecordReturn={(dc) => openActionDialog("return", dc)}
+            onViewDc={(dc, queue) => {
+              setActiveQueue(queue);
+              setSearchParams({ queue });
+              setSelectedDcId(dc.id);
+              setDetailsDialogOpen(true);
+            }}
+          />
+        </div>
 
-          {/* DC Tracker Operations & Reminders Toolbar matching Standard Secondary Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-card border border-border shadow-sm">
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 flex items-center justify-center text-teal-800 dark:text-teal-200 shadow-sm shrink-0">
-                <List className="w-5 h-5 text-teal-700 dark:text-teal-400" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-lg sm:text-xl font-bold font-display text-foreground tracking-tight">
-                    DC Operations &amp; Inventory Tracker
-                  </h1>
-                  <Badge variant="outline" className="bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 border-teal-300 text-[11px] font-bold rounded-full">
-                    Live Status
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">
-                  Automated cutoff alerts, collection follow-ups &amp; cash invoices
-                </p>
-              </div>
-            </div>
+        <div className="space-y-4">
 
-            {/* Live Collect Payments Scroller */}
-            <CollectPaymentsScroller
-              savedDcs={savedDcs}
-              cashInvoices={cashInvoices}
-              onCollectPayment={openPaymentDialog}
-              onViewDc={(dc, queue) => {
-                setActiveQueue(queue);
-                setSearchParams({ queue });
-                setSelectedDcId(dc.id);
-                setDetailsDialogOpen(true);
-              }}
-            />
-
-            <div className="flex items-center gap-2 shrink-0">
-              <DcTrackerNotifications
-                savedDcs={savedDcs}
-                cashInvoices={cashInvoices}
-                onCollectPayment={openPaymentDialog}
-                onRecordReturn={(dc) => openActionDialog("return", dc)}
-                onViewDc={(dc, queue) => {
-                  setActiveQueue(queue);
-                  setSearchParams({ queue });
-                  setSelectedDcId(dc.id);
-                  setDetailsDialogOpen(true);
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-8">
-            {/* Dashboard Metrics */}
+          <Card className="bg-card text-card-foreground shadow-none border rounded-xl">
             {(isLoading || savedDcs.length > 0) && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-                <Card className="glass-card border border-border/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md hover:shadow-lg transition-all duration-300 shadow-md rounded-2xl">
-                  <CardContent className="p-3 sm:p-5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Pending DCs</p>
-                        <p className="text-xl sm:text-3xl font-extrabold text-rose-600">
-                          {isLoading && savedDcs.length === 0 ? (
-                            <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded" />
-                          ) : (
-                            dashboardMetrics.pendingDcs
-                          )}
-                        </p>
-                      </div>
-                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center flex-shrink-0">
-                        <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-rose-600" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="glass-card border border-border/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md hover:shadow-lg transition-all duration-300 shadow-md rounded-2xl">
-                  <CardContent className="p-3 sm:p-5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Awaiting Invoice</p>
-                        <p className="text-xl sm:text-3xl font-extrabold text-amber-600">
-                          {isLoading && savedDcs.length === 0 ? (
-                            <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded" />
-                          ) : (
-                            dashboardMetrics.returnedAwaiting
-                          )}
-                        </p>
-                      </div>
-                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">
-                        <Receipt className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="glass-card border border-border/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md hover:shadow-lg transition-all duration-300 shadow-md rounded-2xl">
-                  <CardContent className="p-3 sm:p-5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Unpaid Cash Memos</p>
-                        <p className="text-xl sm:text-3xl font-extrabold text-blue-700">
-                          {isLoading && savedDcs.length === 0 ? (
-                            <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded" />
-                          ) : (
-                            dashboardMetrics.unpaidCash
-                          )}
-                        </p>
-                      </div>
-                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
-                        <Wallet className="w-4 h-4 sm:w-5 sm:h-5 text-blue-700" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="glass-card border border-border/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md hover:shadow-lg transition-all duration-300 shadow-md rounded-2xl">
-                  <CardContent className="p-3 sm:p-5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Avg. Turnaround</p>
-                        <p className="text-xl sm:text-3xl font-extrabold text-teal-800">
-                          {isLoading && savedDcs.length === 0 ? (
-                            <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded" />
-                          ) : (
-                            `${dashboardMetrics.avgTurnaround}d`
-                          )}
-                        </p>
-                      </div>
-                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center flex-shrink-0">
-                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-teal-800" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            <Card className="glass-card border border-border/60 bg-white/75 dark:bg-slate-900/75 backdrop-blur-md rounded-2xl shadow-xl">
-              {(isLoading || savedDcs.length > 0) && (
-                <CardHeader className="p-3 sm:p-4 space-y-3 sm:space-y-4">
-                  {/* Modern Advanced Control Toolbar */}
-                  <div className="space-y-4">
-                      {/* Top Bar: Search, Quick Filters & Export */}
-                      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900/60 p-3 sm:p-4 rounded-xl border border-slate-200/80">
-                        {/* Search Input */}
-                        <div className="relative flex-1 min-w-[240px]">
-                          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                          <Input
-                            id="dc-tracker-search-input"
-                            name="dc_tracker_search_query"
-                            type="search"
-                            autoComplete="off"
-                            autoCorrect="off"
-                            autoCapitalize="off"
-                            spellCheck={false}
-                            data-lpignore="true"
-                            data-1p-ignore="true"
-                            data-bwignore="true"
-                            data-form-type="other"
-                            aria-autocomplete="none"
-                            value={filterText}
-                            onChange={(e) => setFilterText(e.target.value)}
-                            placeholder="Search Party, DC No, or Personnel..."
-                            className="pl-9 h-9 text-xs sm:text-sm border-slate-300 bg-white focus:border-teal-600 focus:ring-teal-600 rounded-lg"
-                          />
-                          {filterText && (
-                            <button
-                              onClick={() => setFilterText("")}
-                              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Quick Time Pills */}
-                        <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-800 p-1 rounded-lg">
-                          {["all", "today", "week", "month", ...(activeQueue === "pending" ? ["overdue"] : [])].map((filter) => (
-                            <button
-                              key={filter}
-                              onClick={() => setQuickFilter(filter)}
-                              className={`px-3 py-1 text-xs font-bold rounded-md transition-all capitalize ${
-                                quickFilter === filter
-                                  ? filter === 'overdue'
-                                    ? 'bg-rose-600 text-white shadow-xs'
-                                    : 'bg-teal-700 text-white shadow-xs'
-                                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-300'
-                              }`}
-                            >
-                              {filter}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Export CSV Button */}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleExportCSV}
-                          className="h-9 px-3 text-xs font-bold border-slate-300 bg-white hover:bg-teal-50 hover:text-teal-800 text-slate-700 gap-1.5 shrink-0"
+              <CardHeader className="p-3 sm:p-4 space-y-3 sm:space-y-4">
+                {/* Row 1: Search Bar (Expanded), Quick Time Pills, Date Filter Icon & Export CSV Icon */}
+                <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2.5 bg-slate-50 dark:bg-slate-900/60 p-2.5 sm:p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
+                  {/* Prominent Full-Width Search Input till filter controls */}
+                  <div className="relative flex-1 min-w-[240px]">
+                    <Input
+                      id="dc-tracker-search-input"
+                      type="search"
+                      value={filterText}
+                      onChange={(e) => setFilterText(e.target.value)}
+                      placeholder="Search Party, DC No, Personnel..."
+                      className="pl-3.5 pr-10 h-9 text-xs sm:text-sm border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 focus-visible:ring-teal-600 rounded-lg shadow-2xs w-full"
+                    />
+                    <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 z-10">
+                      {filterText && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterText("")}
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                          title="Clear search"
                         >
-                          <Download className="h-3.5 w-3.5 text-teal-700" /> Export CSV
-                        </Button>
-                      </div>
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <Search className="h-4 w-4 text-slate-400 shrink-0 pointer-events-none" />
+                    </div>
+                  </div>
 
-                      {/* Date Filter & Active Badges Row */}
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="order-2 ml-auto flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                            <Calendar className="h-3.5 w-3.5 text-teal-700" /> Date:
-                          </span>
-                          <DateFilterPicker label="From date" value={dateFrom} onChange={setDateFrom} />
-                          <span className="text-slate-400 text-xs font-bold">to</span>
-                          <DateFilterPicker label="To date" value={dateTo} onChange={setDateTo} />
-                        </div>
-
-                        {(filterText || dateFrom || dateTo || quickFilter !== "all") && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setFilterText("");
-                              setDateFrom("");
-                              setDateTo("");
-                              setQuickFilter("all");
-                            }}
-                            className="order-1 h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                          >
-                            Reset Filters
-                          </Button>
-                        )}
-                      </div>
+                  {/* Right Tools Group: Quick Time Pills, Date Filter Icon, Reset & Export CSV Icon */}
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+                    {/* Quick Time Pills (All, Today, Week, Month) */}
+                    <div className="flex items-center gap-1 bg-white dark:bg-slate-950 p-1 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      {["all", "today", "week", "month"].map((filter) => (
+                        <button
+                          key={filter}
+                          onClick={() => setQuickFilter(filter)}
+                          className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all capitalize ${
+                            quickFilter === filter
+                              ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-2xs"
+                              : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                          }`}
+                        >
+                          {filter}
+                        </button>
+                      ))}
                     </div>
 
-                  {/* Queue Tabs */}
-                  <Tabs value={activeQueue} onValueChange={(value) => {
+                    {/* Date Range Filter Icon Button (Popover inside Icon) */}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          className={`h-8 w-8 relative border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 shadow-2xs ${
+                            dateFrom || dateTo
+                              ? "border-teal-500 ring-2 ring-teal-500/20 text-teal-700"
+                              : "text-slate-700 dark:text-slate-300"
+                          }`}
+                          title={dateFrom || dateTo ? `Date Filter: ${dateFrom || "Any"} to ${dateTo || "Any"}` : "Filter by Date Range"}
+                        >
+                          <Calendar className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                          {(dateFrom || dateTo) && (
+                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-teal-600 rounded-full ring-2 ring-white dark:ring-slate-950" />
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="p-3.5 w-72 space-y-3 z-50 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-950">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-teal-600" /> Date Range Filter
+                          </span>
+                          {(dateFrom || dateTo) && (
+                            <button
+                              onClick={() => {
+                                setDateFrom("");
+                                setDateTo("");
+                              }}
+                              className="text-[11px] font-bold text-rose-600 hover:underline"
+                            >
+                              Clear Date
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-2.5">
+                          <div>
+                            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block mb-1">From Date</label>
+                            <DateFilterPicker label="From date" value={dateFrom} onChange={setDateFrom} />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block mb-1">To Date</label>
+                            <DateFilterPicker label="To date" value={dateTo} onChange={setDateTo} />
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+
+                    {/* Reset Filters button if active */}
+                    {(filterText || dateFrom || dateTo || quickFilter !== "all") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setFilterText("");
+                          setDateFrom("");
+                          setDateTo("");
+                          setQuickFilter("all");
+                        }}
+                        className="h-7 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700 shrink-0"
+                      >
+                        Reset Filters
+                      </Button>
+                    )}
+
+                    {/* Export CSV Icon Button */}
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={handleExportCSV}
+                      className="h-8 w-8 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0 shadow-2xs"
+                      title="Export CSV"
+                    >
+                      <Download className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Row 2: Dedicated Status Queue Tabs (High-contrast active pills) */}
+                <Tabs
+                  value={activeQueue}
+                  onValueChange={(value) => {
                     setActiveQueue(value as SavedDcStatus);
                     setSearchParams({ queue: value });
                     setSelectedDcId(null);
-                  }}>
-                    <TabsList className="grid h-auto min-h-[52px] grid-cols-5 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1.5">
-                      <TabsTrigger
-                        value="pending"
-                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-rose-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
-                      >
-                        <AlertCircle className="h-4 w-4 shrink-0" />
-                        <span className="hidden sm:inline">Pending</span>
-                        {statusCounts.pending > 0 && (
-                          <Badge
-                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-rose-700 text-white font-extrabold"
-                          >
-                            {statusCounts.pending > 99 ? '99+' : statusCounts.pending}
-                          </Badge>
-                        )}
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="returned"
-                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-teal-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
-                      >
-                        <User className="h-4 w-4 shrink-0" />
-                        <span className="hidden sm:inline">Returned</span>
-                        {statusCounts.returned > 0 && (
-                          <Badge
-                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-teal-700 text-white font-extrabold"
-                          >
-                            {statusCounts.returned > 99 ? '99+' : statusCounts.returned}
-                          </Badge>
-                        )}
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="completed"
-                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-teal-700 data-[state=active]:text-white font-bold transition-all shadow-2xs"
-                      >
-                        <Receipt className="h-4 w-4 shrink-0" />
-                        <span className="hidden sm:inline">Completed</span>
-                        {statusCounts.completed > 0 && (
-                          <Badge
-                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-teal-800 text-white font-extrabold"
-                          >
-                            {statusCounts.completed > 99 ? '99+' : statusCounts.completed}
-                          </Badge>
-                        )}
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="cash"
-                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
-                      >
-                        <Wallet className="h-4 w-4 shrink-0" />
-                        <span className="hidden sm:inline">Cash</span>
-                        {statusCounts.cash > 0 && (
-                          <Badge
-                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-blue-700 text-white font-extrabold"
-                          >
-                            {statusCounts.cash > 99 ? '99+' : statusCounts.cash}
-                          </Badge>
-                        )}
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="cancelled"
-                        className="relative flex h-10 w-full items-center justify-center gap-1.5 rounded-lg px-2 text-xs leading-none sm:text-sm data-[state=active]:bg-slate-600 data-[state=active]:text-white font-bold transition-all shadow-2xs"
-                      >
-                        <X className="h-4 w-4 shrink-0" />
-                        <span className="hidden sm:inline">Cancelled</span>
-                        {statusCounts.cancelled > 0 && (
-                          <Badge
-                            className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1 bg-slate-700 text-white font-extrabold"
-                          >
-                            {statusCounts.cancelled > 99 ? '99+' : statusCounts.cancelled}
-                          </Badge>
-                        )}
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                </CardHeader>
-              )}
+                  }}
+                  className="w-full"
+                >
+                  <TabsList className="grid h-11 grid-cols-5 gap-1 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900 p-1 shadow-2xs">
+                    {/* Delivered Tab */}
+                    <TabsTrigger
+                      value="pending"
+                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-teal-800 dark:data-[state=active]:text-teal-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-teal-200/80 dark:data-[state=active]:border-teal-900/40"
+                    >
+                      <Truck className="h-4 w-4 shrink-0 text-teal-600 dark:text-teal-400" />
+                      <span className="hidden sm:inline">Delivered</span>
+                      {statusCounts.pending > 0 && (
+                        <Badge
+                          className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                            activeQueue === "pending"
+                              ? "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border border-teal-200 dark:border-teal-800"
+                              : "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          }`}
+                        >
+                          {statusCounts.pending > 99 ? "99+" : statusCounts.pending}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
 
-                  {activeQueue === "cash" && (
-                    <div className="mx-3 sm:mx-4 mt-1 mb-3 p-4 rounded-xl border border-blue-200 bg-blue-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-blue-100 text-blue-700 rounded-lg">
-                          <Wallet className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-900">Cash Queue Financial Summary</h4>
-                          <p className="text-xs text-slate-500 font-medium">Unpaid & partial cash memo balances awaiting collection</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-6">
-                        <div>
-                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Total Memos</span>
-                          <span className="text-lg font-black text-slate-900">{cashQueueStats.count} Pending</span>
-                        </div>
-                        <div className="h-8 w-px bg-slate-200" />
-                        <div>
-                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Total Outstanding</span>
-                          <span className="text-lg font-black text-blue-700">₹{cashQueueStats.totalOutstanding.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                    {/* Returned Tab */}
+                    <TabsTrigger
+                      value="returned"
+                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-teal-800 dark:data-[state=active]:text-teal-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-teal-200/80 dark:data-[state=active]:border-teal-900/40"
+                    >
+                      <RotateCcw className="h-4 w-4 shrink-0 text-teal-600 dark:text-teal-400" />
+                      <span className="hidden sm:inline">Returned</span>
+                      {statusCounts.returned > 0 && (
+                        <Badge
+                          className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                            activeQueue === "returned"
+                              ? "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border border-teal-200 dark:border-teal-800"
+                              : "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          }`}
+                        >
+                          {statusCounts.returned > 99 ? "99+" : statusCounts.returned}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
 
-                <CardContent className="p-0">
-                  {isLoading && savedDcs.length === 0 ? (
-                    <div className="py-20 flex justify-center items-center">
-                      <AppLoadingSpinner message="Loading DCs..." subtext="Fetching Delivery Challans from database" />
-                    </div>
-                  ) : savedDcs.length === 0 ? (
-                    <div className="p-8 sm:p-12 text-center border-t border-slate-200">
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-muted/20 flex items-center justify-center mx-auto mb-4">
-                        <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
-                      </div>
-                      <h3 className="text-base sm:text-lg font-semibold mb-2">No DCs Tracked Yet</h3>
-                      <p className="text-sm text-muted-foreground mb-4">Save a DC from the generator to start tracking.</p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Top Action Banner when a DC is selected */}
-                      {selectedDc && (() => {
-                        const daysPending = getDaysPending(selectedDc);
-                        return (
-                          <div className="sticky top-[80px] z-20 mb-4 mt-2 p-2 px-4 bg-white/95 backdrop-blur-md border border-slate-200/60 text-slate-800 rounded-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 dark:bg-slate-900/95 dark:border-slate-800 dark:text-slate-100">
-                            {/* Left Status Info */}
-                            <div className="flex items-center gap-3 flex-wrap min-w-0">
-                              <Badge className="bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-black px-2.5 py-1 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-100">
-                                {selectedDc.dcNo}
+                    {/* Completed Tab */}
+                    <TabsTrigger
+                      value="completed"
+                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-800 dark:data-[state=active]:text-emerald-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-emerald-200/80 dark:data-[state=active]:border-emerald-900/40"
+                    >
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span className="hidden sm:inline">Completed</span>
+                      {statusCounts.completed > 0 && (
+                        <Badge
+                          className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                            activeQueue === "completed"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                              : "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          }`}
+                        >
+                          {statusCounts.completed > 99 ? "99+" : statusCounts.completed}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+
+                    {/* Cash Tab */}
+                    <TabsTrigger
+                      value="cash"
+                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-amber-800 dark:data-[state=active]:text-amber-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-amber-200/80 dark:data-[state=active]:border-amber-900/40"
+                    >
+                      <Wallet className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <span className="hidden sm:inline">Cash</span>
+                      {statusCounts.cash > 0 && (
+                        <Badge
+                          className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                            activeQueue === "cash"
+                              ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                              : "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          }`}
+                        >
+                          {statusCounts.cash > 99 ? "99+" : statusCounts.cash}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+
+                    {/* Cancelled Tab */}
+                    <TabsTrigger
+                      value="cancelled"
+                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-rose-800 dark:data-[state=active]:text-rose-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-rose-200/80 dark:data-[state=active]:border-rose-900/40"
+                    >
+                      <Ban className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                      <span className="hidden sm:inline">Cancelled</span>
+                      {statusCounts.cancelled > 0 && (
+                        <Badge
+                          className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                            activeQueue === "cancelled"
+                              ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+                              : "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          }`}
+                        >
+                          {statusCounts.cancelled > 99 ? "99+" : statusCounts.cancelled}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </CardHeader>
+            )}
+
+            <CardContent className="p-0">
+              {isLoading && savedDcs.length === 0 ? (
+                <div className="py-20 flex justify-center items-center">
+                  <AppLoadingSpinner
+                    message="Loading DCs..."
+                    subtext="Fetching Delivery Challans from database"
+                  />
+                </div>
+              ) : savedDcs.length === 0 ? (
+                <div className="p-8 sm:p-12 text-center border-t border-slate-200">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-muted/20 flex items-center justify-center mx-auto mb-4">
+                    <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-base sm:text-lg font-semibold mb-2">
+                    No DCs Tracked Yet
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Save a DC from the generator to start tracking.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Top Action Banner when a DC is selected */}
+                  {selectedDc &&
+                    (() => {
+                      const daysPending = getDaysPending(selectedDc);
+                      const hasPartPayments = Boolean(
+                        selectedDc.partPayments &&
+                          selectedDc.partPayments.length > 0,
+                      );
+
+                      // Consistent Sticky Row Theme Configuration
+                      const getStatusCardTheme = () => {
+                        return "border-2 border-slate-300 dark:border-slate-700 shadow-md bg-background dark:bg-slate-900/95";
+                      };
+
+                      const getStatusBadgeStyle = () => {
+                        switch (selectedDc.status) {
+                          case "pending":
+                            return "bg-teal-100 text-teal-900 border-teal-300 dark:bg-teal-950 dark:text-teal-200";
+                          case "returned":
+                            return "bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-950 dark:text-purple-200";
+                          case "cash":
+                            return "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 font-extrabold";
+                          case "completed":
+                            return "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 font-extrabold";
+                          case "cancelled":
+                            return "bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950 dark:text-rose-200";
+                          default:
+                            return "bg-slate-100 text-slate-900 border-slate-300";
+                        }
+                      };
+
+                      return (
+                        <div
+                          className={`sticky top-[80px] z-20 mb-4 mt-2 p-2 px-4 text-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 dark:text-slate-100 ${getStatusCardTheme()}`}
+                        >
+                          {/* Left Status Info */}
+                          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                            <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-black px-2.5 py-1 shadow-2xs">
+                              DC #{selectedDc.dcNo}
+                            </Badge>
+                            {/* Status Icon Only */}
+                            {(() => {
+                              switch (selectedDc.status) {
+                                case "pending":
+                                  return (
+                                    <div
+                                      className="h-7 w-7 rounded-lg bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300 border border-teal-300 dark:border-teal-800 flex items-center justify-center shrink-0 shadow-2xs"
+                                      title="Delivered Queue"
+                                    >
+                                      <Truck className="w-4 h-4" />
+                                    </div>
+                                  );
+                                case "returned":
+                                  return (
+                                    <div
+                                      className="h-7 w-7 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center justify-center shrink-0 shadow-2xs"
+                                      title="Returned Queue"
+                                    >
+                                      <RotateCcw className="w-4 h-4" />
+                                    </div>
+                                  );
+                                case "cash":
+                                  return (
+                                    <div
+                                      className="h-7 w-7 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center justify-center shrink-0 shadow-2xs"
+                                      title="Awaiting Payment (Cash Queue)"
+                                    >
+                                      <Wallet className="w-4 h-4" />
+                                    </div>
+                                  );
+                                case "completed":
+                                  return (
+                                    <div
+                                      className="h-7 w-7 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center shrink-0 shadow-2xs"
+                                      title="Paid / Completed"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4" />
+                                    </div>
+                                  );
+                                case "cancelled":
+                                  return (
+                                    <div
+                                      className="h-7 w-7 rounded-lg bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800 flex items-center justify-center shrink-0 shadow-2xs"
+                                      title="Cancelled"
+                                    >
+                                      <Ban className="w-4 h-4" />
+                                    </div>
+                                  );
+                                default:
+                                  return (
+                                    <div
+                                      className="h-7 w-7 rounded-lg bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 flex items-center justify-center shrink-0 shadow-2xs"
+                                      title={selectedDc.status}
+                                    >
+                                      <FileText className="w-4 h-4" />
+                                    </div>
+                                  );
+                              }
+                            })()}
+                            <span
+                              className="font-bold text-sm truncate max-w-[220px]"
+                              title={selectedDc.hospitalName}
+                            >
+                              {selectedDc.hospitalName}
+                            </span>
+                            {/* Hide memo number in cash queue */}
+                            {selectedDc.invoiceRef && selectedDc.status !== "cash" && (
+                              <Badge className="bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 font-mono text-[10px] px-1.5 py-0.5 border border-slate-300 dark:border-slate-700">
+                                #{selectedDc.invoiceRef}
                               </Badge>
-                              <Badge variant="outline" className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-300`}>
-                                {selectedDc.status}
-                              </Badge>
-                              <span className="font-bold text-sm truncate max-w-[200px]" title={selectedDc.hospitalName}>
-                                {selectedDc.hospitalName}
-                              </span>
-                            </div>
-
-                            {/* Right Actions */}
-                            <div className="flex items-center gap-2 flex-wrap shrink-0">
-                              {/* Primary Actions based on status */}
-                              {selectedDc.status === "pending" && (
-                                <>
-                                  <Button size="sm" className="h-8 text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-lg gap-1.5" onClick={() => openActionDialog("return", selectedDc)}>
-                                    <User className="w-3.5 h-3.5" /> Return
-                                  </Button>
-                                  <Button size="sm" className="h-8 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-lg gap-1.5" onClick={() => openActionDialog("purchase", selectedDc)}>
-                                    <ShoppingBag className="w-3.5 h-3.5" /> Direct Purchase
-                                  </Button>
-                                </>
-                              )}
-                              
-                              {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
-                                <>
-                                  <Button size="sm" className="h-8 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg gap-1.5" onClick={() => handleCreateCashMemoForDc(selectedDc)}>
-                                    <Receipt className="w-3.5 h-3.5" /> Cash Memo
-                                  </Button>
-                                  <Button size="sm" className="h-8 text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white rounded-lg gap-1.5" onClick={() => openActionDialog("invoice", selectedDc)}>
-                                    <FileText className="w-3.5 h-3.5" /> Tax Invoice
-                                  </Button>
-                                </>
-                              )}
-
-                              {selectedDc.invoiceRef && selectedIsTaxInvoice && (
-                                <Button size="sm" className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg gap-1.5" onClick={() => selectedDc.invoiceUrl ? window.open(selectedDc.invoiceUrl, '_blank') : openActionDialog("invoice", selectedDc)}>
-                                  <ExternalLink className="w-3.5 h-3.5" /> GoGSTBill
-                                </Button>
-                              )}
-
-                              {selectedDc.invoiceRef && selectedIsCashMemo && (
-                                <>
-                                  <Button size="sm" className="h-8 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg gap-1.5" onClick={() => { setViewingCashMemoRef(selectedDc.invoiceRef!); setCashMemoModalOpen(true); }}>
-                                    <Receipt className="w-3.5 h-3.5" /> View Memo
-                                  </Button>
-                                  {selectedDc.status === "cash" && (
-                                    <Button size="sm" className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg gap-1.5" onClick={() => openPaymentDialog(selectedDc)}>
-                                      <Wallet className="w-3.5 h-3.5" /> Pay
-                                    </Button>
-                                  )}
-                                </>
-                              )}
-                              
-                              <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block" />
-                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg" onClick={() => setDcDocumentModalOpen(true)} title="View DC">
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg" onClick={() => setDetailsDialogOpen(true)} title="Track Status">
-                                <Activity className="w-4 h-4" />
-                              </Button>
-                              
-                              {/* Close Button */}
-                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg ml-1" onClick={() => setSelectedDcId(null)}>
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            )}
                           </div>
-                        );
-                      })()}
 
-                      {/* DC Tracker Main View: Full Width Layout */}
-                      <div className="w-full">
-                        <div className="border-t-2 border-border/60">
-                            {filteredDcs.length === 0 ? (
-                              <div className="p-8 sm:p-12 text-center">
-                                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-muted/20 flex items-center justify-center mx-auto mb-4">
-                                  <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
-                                </div>
-                                <h3 className="text-base sm:text-lg font-semibold mb-2">No DCs found</h3>
-                                <p className="text-sm text-muted-foreground mb-4">No delivery challans match your current filters.</p>
-                                {(filterText || dateFrom || dateTo || quickFilter !== "all") && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      setFilterText("");
-                                      setDateFrom("");
-                                      setDateTo("");
-                                      setQuickFilter("all");
-                                    }}
-                                  >
-                                    Clear all filters
-                                  </Button>
-                                )}
-                              </div>
-                            ) : (
-                      <>
-                        {/* Mobile Card View */}
-                        <div className="md:hidden divide-y divide-slate-200">
-                          {filteredDcs.map((dc) => {
-                            const daysPending = getDaysPending(dc);
-                            const totalQty = getTotalQty(dc);
-                            const isSelected = selectedDcId === dc.id;
-                            return (
-                              <div
-                                key={dc.id}
-                                onMouseMove={(e) => {
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  e.currentTarget.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
-                                  e.currentTarget.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+                          {/* Right Actions */}
+                          <div className="flex items-center gap-2 flex-wrap shrink-0">
+                            {/* Part payment info button */}
+                            {hasPartPayments && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                onClick={() => {
+                                  setDetailsModalTab("payment");
+                                  setIsTrackPartPaymentsOpen(true);
+                                  setDetailsDialogOpen(true);
                                 }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.setProperty('--mouse-x', '-999px');
-                                  e.currentTarget.style.setProperty('--mouse-y', '-999px');
-                                }}
-                                style={{
-                                  backgroundImage: isSelected
-                                    ? undefined
-                                    : 'radial-gradient(350px circle at var(--mouse-x, -999px) var(--mouse-y, -999px), rgba(13, 148, 136, 0.14), transparent 70%)',
-                                }}
-                                className={`group p-3 transition-all duration-200 cursor-pointer hover:shadow-md hover:-translate-y-0.5 ${isSelected
-                                  ? 'bg-blue-50 border-l-4 border-l-blue-500 shadow-xs'
-                                  : 'bg-white border-l-4 border-l-transparent hover:border-l-teal-500 hover:bg-slate-50/80'
-                                  }`}
-                                onClick={() => setSelectedDcId(dc.id)}
                               >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
+                                <Banknote className="w-3.5 h-3.5" /> Payment Info ({selectedDc.partPayments!.length})
+                              </Button>
+                            )}
+
+                            {/* Status Specific Primary Action Buttons */}
+                            {selectedDc.status === "pending" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  className="h-8 text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                  onClick={() =>
+                                    openActionDialog("return", selectedDc)
+                                  }
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" /> Return
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-8 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                  onClick={() =>
+                                    openActionDialog("purchase", selectedDc)
+                                  }
+                                >
+                                  <ShoppingBag className="w-3.5 h-3.5" /> Direct Purchase
+                                </Button>
+                              </>
+                            )}
+
+                            {selectedDc.status === "returned" && (
+                              <>
+                                {!selectedDc.invoiceRef && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      className="h-8 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                      onClick={() =>
+                                        handleCreateCashMemoForDc(selectedDc)
+                                      }
+                                    >
+                                      <Receipt className="w-3.5 h-3.5" /> Cash Memo
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                      onClick={() =>
+                                        openActionDialog("invoice", selectedDc)
+                                      }
+                                    >
+                                      <FileText className="w-3.5 h-3.5" /> Tax Invoice
+                                    </Button>
+                                  </>
+                                )}
+                              </>
+                            )}
+
+                            {/* Memo viewing button if invoiceRef exists */}
+                            {selectedDc.invoiceRef && selectedIsCashMemo && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                onClick={() => {
+                                  setViewingCashMemoRef(selectedDc.invoiceRef!);
+                                  setCashMemoModalOpen(true);
+                                }}
+                              >
+                                <Receipt className="w-3.5 h-3.5" /> View Memo
+                              </Button>
+                            )}
+
+                            {/* Cash Queue specific Record Payment button */}
+                            {selectedDc.status === "cash" && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                onClick={() => openPaymentDialog(selectedDc)}
+                              >
+                                <Wallet className="w-3.5 h-3.5" /> Pay
+                              </Button>
+                            )}
+
+                            {selectedDc.invoiceRef && selectedIsTaxInvoice && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                onClick={() =>
+                                  selectedDc.invoiceUrl
+                                    ? window.open(
+                                        selectedDc.invoiceUrl,
+                                        "_blank",
+                                      )
+                                    : openActionDialog("invoice", selectedDc)
+                                }
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" /> GoGSTBill
+                              </Button>
+                            )}
+
+                            {/* Completed Status Payment Details shortcut */}
+                            {selectedDc.status === "completed" && !hasPartPayments && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                onClick={() => {
+                                  setDetailsModalTab("payment");
+                                  setDetailsDialogOpen(true);
+                                }}
+                              >
+                                <Banknote className="w-3.5 h-3.5" /> Payment Info
+                              </Button>
+                            )}
+
+                            <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block" />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-teal-700 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/80 dark:text-teal-300 border border-teal-200 dark:border-teal-800 rounded-lg shadow-2xs"
+                              onClick={() => setDcDocumentModalOpen(true)}
+                              title="View DC Document"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg shadow-2xs"
+                              onClick={() => {
+                                setDetailsModalTab("overview");
+                                setDetailsDialogOpen(true);
+                              }}
+                              title="Track Status & History"
+                            >
+                              <Activity className="w-4 h-4" />
+                            </Button>
+
+                            {/* Close Button */}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-200 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg ml-1"
+                              onClick={() => setSelectedDcId(null)}
+                              title="Deselect"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                  {/* DC Tracker Main View: Full Width Layout */}
+                  <div className="w-full">
+                    <div className="border-t-2 border-border">
+                      {filteredDcs.length === 0 ? (
+                        <div className="p-8 sm:p-12 text-center">
+                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-muted/20 flex items-center justify-center mx-auto mb-4">
+                            <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
+                          </div>
+                          <h3 className="text-base sm:text-lg font-semibold mb-2">
+                            No DCs found
+                          </h3>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            No delivery challans match your current filters.
+                          </p>
+                          {(filterText ||
+                            dateFrom ||
+                            dateTo ||
+                            quickFilter !== "all") && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setFilterText("");
+                                setDateFrom("");
+                                setDateTo("");
+                                setQuickFilter("all");
+                              }}
+                            >
+                              Clear all filters
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Mobile Card View */}
+                          <div className="md:hidden divide-y divide-slate-200">
+                            {filteredDcs.map((dc) => {
+                              const daysPending = getDaysPending(dc);
+                              const totalQty = getTotalQty(dc);
+                              const isSelected = selectedDcId === dc.id;
+                              return (
+                                <div
+                                  key={dc.id}
+                                  className={`group p-3 transition-colors duration-150 cursor-pointer ${
+                                    isSelected
+                                      ? "bg-teal-500/10 border-l-4 border-l-teal-600 font-semibold"
+                                      : "bg-white border-l-4 border-l-transparent hover:border-l-teal-500 hover:bg-slate-50 dark:bg-slate-950 dark:hover:bg-slate-900"
+                                  }`}
+                                  onClick={() => setSelectedDcId(dc.id)}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedDcId(dc.id);
+                                            setDetailsDialogOpen(true);
+                                          }}
+                                          className="font-semibold text-blue-700 hover:underline text-sm"
+                                        >
+                                          {dc.dcNo}
+                                        </button>
+                                        <Badge
+                                          className={`${getStatusBadgeClass(dc.status)} flex items-center gap-1 text-[10px] font-medium border px-1.5 py-0.5`}
+                                        >
+                                          {getStatusIcon(dc.status)}
+                                          {dc.status.charAt(0).toUpperCase() +
+                                            dc.status.slice(1)}
+                                        </Badge>
+                                      </div>
+                                      <div className="mt-1">
+                                        <div className="text-sm font-semibold text-slate-900 break-words whitespace-normal">
+                                          {dc.hospitalName}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
+                                        <span className="flex items-center gap-1">
+                                          <Calendar className="h-3 w-3" />
+                                          {formatDate(getDisplayDate(dc))}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                          <Package className="h-3 w-3" />
+                                          {totalQty} items
+                                        </span>
+                                        <span
+                                          className={`flex items-center gap-1 ${daysPending > 7 && dc.status === "pending" ? "text-red-600 font-medium" : ""}`}
+                                        >
+                                          {daysPending}d
+                                          {daysPending > 7 &&
+                                            dc.status === "pending" && (
+                                              <AlertCircle className="h-3 w-3" />
+                                            )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      {/* Quick Call Icon Action */}
+                                      {(() => {
+                                        const contactSummary =
+                                          getHospitalContactSummary(
+                                            dc.hospitalName,
+                                          );
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleOpenHospitalContact(
+                                                dc.hospitalName,
+                                                dc,
+                                                !contactSummary.hasPhone,
+                                              );
+                                            }}
+                                            className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-none border ${
+                                              contactSummary.hasPhone
+                                                ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                                                : "bg-slate-50 border-slate-200 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200"
+                                            }`}
+                                            title={
+                                              contactSummary.hasPhone
+                                                ? `Call / Contacts: ${contactSummary.primaryPhone}`
+                                                : `Add phone number for ${dc.hospitalName}`
+                                            }
+                                          >
+                                            <Phone className="w-3.5 h-3.5" />
+                                          </button>
+                                        );
+                                      })()}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedDcId(dc.id);
+                                          setDcDocumentModalOpen(true);
+                                        }}
+                                        className="w-8 h-8 flex items-center justify-center bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 transition-all shadow-none"
+                                        title="View Delivery Challan (Document Preview)"
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </button>
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setSelectedDcId(dc.id);
                                           setDetailsDialogOpen(true);
                                         }}
-                                        className="font-semibold text-blue-700 hover:underline text-sm"
+                                        className="w-8 h-8 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-full text-blue-700 hover:bg-blue-100 transition-all shadow-none"
+                                        title="Track Status & History"
                                       >
-                                        {dc.dcNo}
+                                        <Activity className="w-4 h-4" />
                                       </button>
-                                      <Badge className={`${getStatusBadgeClass(dc.status)} flex items-center gap-1 text-[10px] font-medium border px-1.5 py-0.5`}>
-                                        {getStatusIcon(dc.status)}
-                                        {dc.status.charAt(0).toUpperCase() + dc.status.slice(1)}
-                                      </Badge>
-                                    </div>
-                                    <div className="mt-1">
-                                      <div className="text-sm font-semibold text-slate-900 break-words whitespace-normal">
-                                        {dc.hospitalName}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
-                                      <span className="flex items-center gap-1">
-                                        <Calendar className="h-3 w-3" />
-                                        {formatDate(getDisplayDate(dc))}
-                                      </span>
-                                      <span className="flex items-center gap-1">
-                                        <Package className="h-3 w-3" />
-                                        {totalQty} items
-                                      </span>
-                                      <span className={`flex items-center gap-1 ${daysPending > 7 && dc.status === 'pending' ? 'text-red-600 font-medium' : ''}`}>
-                                        {daysPending}d
-                                        {daysPending > 7 && dc.status === 'pending' && (
-                                          <AlertCircle className="h-3 w-3" />
-                                        )}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    {/* Quick Call Icon Action */}
-                                    {(() => {
-                                      const contactSummary = getHospitalContactSummary(dc.hospitalName);
-                                      return (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleOpenHospitalContact(dc.hospitalName, dc, !contactSummary.hasPhone);
-                                          }}
-                                          className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-xs border ${
-                                            contactSummary.hasPhone
-                                              ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
-                                              : "bg-slate-50 border-slate-200 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200"
-                                          }`}
-                                          title={
-                                            contactSummary.hasPhone
-                                              ? `Call / Contacts: ${contactSummary.primaryPhone}`
-                                              : `Add phone number for ${dc.hospitalName}`
-                                          }
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handlePrint(dc);
+                                        }}
+                                        className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 transition-all shadow-none"
+                                        title="Print DC"
+                                      >
+                                        <Printer className="w-4 h-4" />
+                                      </button>
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-8 w-8 p-0"
+                                            onClick={(e) => e.stopPropagation()}
+                                            disabled={loadingDcIds.has(dc.id)}
+                                          >
+                                            {loadingDcIds.has(dc.id) ? (
+                                              <RefreshCw className="h-4 w-4 text-slate-600 animate-spin" />
+                                            ) : (
+                                              <Edit className="h-4 w-4 text-slate-600" />
+                                            )}
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent
+                                          align="end"
+                                          className="w-52"
                                         >
-                                          <Phone className="w-3.5 h-3.5" />
-                                        </button>
-                                      );
-                                    })()}
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedDcId(dc.id);
-                                        setDcDocumentModalOpen(true);
-                                      }}
-                                      className="w-8 h-8 flex items-center justify-center bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 transition-all shadow-xs"
-                                      title="View Delivery Challan (Document Preview)"
-                                    >
-                                      <Eye className="w-4 h-4" />
-                                    </button>
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedDcId(dc.id);
-                                        setDetailsDialogOpen(true);
-                                      }}
-                                      className="w-8 h-8 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-full text-blue-700 hover:bg-blue-100 transition-all shadow-xs"
-                                      title="Track Status & History"
-                                    >
-                                      <Activity className="w-4 h-4" />
-                                    </button>
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handlePrint(dc);
-                                      }}
-                                      className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 transition-all shadow-xs"
-                                      title="Print DC"
-                                    >
-                                      <Printer className="w-4 h-4" />
-                                    </button>
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-8 w-8 p-0"
-                                          onClick={(e) => e.stopPropagation()}
-                                          disabled={loadingDcIds.has(dc.id)}
-                                        >
-                                          {loadingDcIds.has(dc.id) ? (
-                                            <RefreshCw className="h-4 w-4 text-slate-600 animate-spin" />
-                                          ) : (
-                                            <Edit className="h-4 w-4 text-slate-600" />
-                                          )}
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end" className="w-52">
-                                        <DropdownMenuItem
-                                          onClick={() => {
-                                            const cs = getHospitalContactSummary(dc.hospitalName);
-                                            handleOpenHospitalContact(dc.hospitalName, dc, !cs.hasPhone);
-                                          }}
-                                          className="gap-2 font-medium text-emerald-800 dark:text-emerald-300"
-                                        >
-                                          <Phone className="h-4 w-4 text-emerald-600" />
-                                          {getHospitalContactSummary(dc.hospitalName).hasPhone
-                                            ? `Call (${getHospitalContactSummary(dc.hospitalName).primaryPhone})`
-                                            : "Add Phone Number"}
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={() => openEditDcModal(dc)}
-                                          className="gap-2 font-bold text-teal-800 dark:text-teal-300 bg-teal-50/60 hover:bg-teal-100 cursor-pointer"
-                                        >
-                                          <Edit className="h-4 w-4 text-teal-600" />
-                                          Edit DC Details
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                          onClick={() => {
-                                            setSelectedDcId(dc.id);
-                                            setDcDocumentModalOpen(true);
-                                          }}
-                                          className="gap-2"
-                                        >
-                                          <Eye className="h-4 w-4 text-teal-600" />
-                                          View DC Document
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          onClick={() => {
-                                            setSelectedDcId(dc.id);
-                                            setDetailsDialogOpen(true);
-                                          }}
-                                          className="gap-2"
-                                        >
-                                          <Activity className="h-4 w-4 text-blue-600" />
-                                          Track Status
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => handlePrint(dc)} className="gap-2">
-                                          <Printer className="h-4 w-4 text-indigo-600" />
-                                          Print DC
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => handleShare(dc)} className="gap-2">
-                                          <Share2 className="h-4 w-4 text-amber-600" />
-                                          Share PDF
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                          onClick={() => openActionDialog("return", dc)}
-                                          disabled={dc.status !== "pending"}
-                                          className="gap-2"
-                                        >
-                                          <User className="h-4 w-4" />
-                                          Mark as Returned
-                                        </DropdownMenuItem>
-                                        {dc.status === "pending" && (
-                                          <>
-                                            <DropdownMenuItem
-                                              onClick={() => openActionDialog("purchase", dc)}
-                                              className="gap-2 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30 cursor-pointer"
-                                            >
-                                              <ShoppingBag className="h-4 w-4 text-amber-600" />
-                                              Purchase (Direct Sale)
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={() => handleCreateCashMemoForDc(dc)}
-                                              className="gap-2 pl-7 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 cursor-pointer font-medium"
-                                            >
-                                              <Receipt className="h-3.5 w-3.5 text-blue-600" />
-                                              &bull; Cash Invoice
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={() => openActionDialog("invoice", dc)}
-                                              className="gap-2 pl-7 text-xs text-purple-700 hover:bg-purple-50 dark:text-purple-400 cursor-pointer font-medium"
-                                            >
-                                              <FileText className="h-3.5 w-3.5 text-purple-600" />
-                                              &bull; Go GST Bill
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => openActionDialog("cancel", dc)} className="gap-2 text-orange-600">
-                                              <AlertCircle className="h-4 w-4" />
-                                              Cancel Case
-                                            </DropdownMenuItem>
-                                          </>
-                                        )}
-                                        {dc.status === "cancelled" && (
-                                          <DropdownMenuItem onClick={() => restoreFromCancelled(dc)} className="gap-2">
-                                            <Undo2 className="h-4 w-4" />
-                                            Restore to Pending
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              const cs =
+                                                getHospitalContactSummary(
+                                                  dc.hospitalName,
+                                                );
+                                              handleOpenHospitalContact(
+                                                dc.hospitalName,
+                                                dc,
+                                                !cs.hasPhone,
+                                              );
+                                            }}
+                                            className="gap-2 font-medium text-emerald-800 dark:text-emerald-300"
+                                          >
+                                            <Phone className="h-4 w-4 text-emerald-600" />
+                                            {getHospitalContactSummary(
+                                              dc.hospitalName,
+                                            ).hasPhone
+                                              ? `Call (${getHospitalContactSummary(dc.hospitalName).primaryPhone})`
+                                              : "Add Phone Number"}
                                           </DropdownMenuItem>
-                                        )}
-                                        {dc.status === "returned" && (
-                                          <>
+                                          <DropdownMenuItem
+                                            onClick={() => openEditDcModal(dc)}
+                                            className="gap-2 font-bold text-teal-800 dark:text-teal-300 bg-teal-50/60 hover:bg-teal-100 cursor-pointer"
+                                          >
+                                            <Edit className="h-4 w-4 text-blue-600" />
+                                            Edit DC Details
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              setSelectedDcId(dc.id);
+                                              setDcDocumentModalOpen(true);
+                                            }}
+                                            className="gap-2"
+                                          >
+                                            <Eye className="h-4 w-4 text-blue-600" />
+                                            View DC Document
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              setSelectedDcId(dc.id);
+                                              setDetailsDialogOpen(true);
+                                            }}
+                                            className="gap-2"
+                                          >
+                                            <Activity className="h-4 w-4 text-blue-600" />
+                                            Track Status
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={() => handlePrint(dc)}
+                                            className="gap-2"
+                                          >
+                                            <Printer className="h-4 w-4 text-indigo-600" />
+                                            Print DC
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={() => handleShare(dc)}
+                                            className="gap-2"
+                                          >
+                                            <Share2 className="h-4 w-4 text-slate-600" />
+                                            Share PDF
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem
+                                            onClick={() =>
+                                              openActionDialog("return", dc)
+                                            }
+                                            disabled={dc.status !== "pending"}
+                                            className="gap-2"
+                                          >
+                                            <RotateCcw className="h-4 w-4" />
+                                            Mark as Returned
+                                          </DropdownMenuItem>
+                                          {dc.status === "pending" && (
+                                            <>
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  openActionDialog(
+                                                    "purchase",
+                                                    dc,
+                                                  )
+                                                }
+                                                className="gap-2 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30 cursor-pointer"
+                                              >
+                                                <ShoppingBag className="h-4 w-4 text-slate-600" />
+                                                Purchase (Direct Sale)
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  handleCreateCashMemoForDc(dc)
+                                                }
+                                                className="gap-2 pl-7 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 cursor-pointer font-medium"
+                                              >
+                                                <Receipt className="h-3.5 w-3.5 text-blue-600" />
+                                                &bull; Cash Invoice
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  openActionDialog(
+                                                    "invoice",
+                                                    dc,
+                                                  )
+                                                }
+                                                className="gap-2 pl-7 text-xs text-purple-700 hover:bg-purple-50 dark:text-purple-400 cursor-pointer font-medium"
+                                              >
+                                                <FileText className="h-3.5 w-3.5 text-slate-600" />
+                                                &bull; Go GST Bill
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  openActionDialog("cancel", dc)
+                                                }
+                                                className="gap-2 text-orange-600"
+                                              >
+                                                <AlertCircle className="h-4 w-4" />
+                                                Cancel Case
+                                              </DropdownMenuItem>
+                                            </>
+                                          )}
+                                          {dc.status === "cancelled" && (
                                             <DropdownMenuItem
-                                              onClick={() => openActionDialog("invoice", dc)}
+                                              onClick={() =>
+                                                restoreFromCancelled(dc)
+                                              }
                                               className="gap-2"
                                             >
-                                              <Receipt className="h-4 w-4" />
-                                              Link Invoice
+                                              <Undo2 className="h-4 w-4" />
+                                              Restore to Pending
                                             </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={() => handleCreateCashMemoForDc(dc)}
-                                              className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
-                                            >
-                                              <Receipt className="h-4 w-4 text-blue-600" />
-                                              Create Cash Memo
-                                            </DropdownMenuItem>
-                                          </>
-                                        )}
-                                        {dc.status === "completed" && (
-                                           <>
-                                             {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                               <>
-                                                 <DropdownMenuItem
-                                                   onClick={() => openActionDialog("invoice", dc)}
-                                                   className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
-                                                 >
-                                                   <FileText className="h-4 w-4 text-purple-600" />
-                                                   Tax Invoice: {dc.invoiceRef}
-                                                 </DropdownMenuItem>
-                                                 {dc.invoiceUrl ? (
-                                                   <DropdownMenuItem
-                                                     onClick={() => window.open(dc.invoiceUrl, '_blank')}
-                                                     className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                                   >
-                                                     <ExternalLink className="h-4 w-4 text-emerald-600" />
-                                                     Open GoGSTBill
-                                                   </DropdownMenuItem>
-                                                 ) : (
-                                                   <DropdownMenuItem
-                                                     onClick={() => openActionDialog("invoice", dc)}
-                                                     className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
-                                                   >
-                                                     <Link2 className="h-4 w-4 text-indigo-600" />
-                                                     Enter GoGSTBill URL
-                                                   </DropdownMenuItem>
-                                                 )}
-                                               </>
-                                             )}
-                                             {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                               <DropdownMenuItem
-                                                 onClick={() => {
-                                                   setViewingCashMemoRef(dc.invoiceRef!);
-                                                   setCashMemoModalOpen(true);
-                                                 }}
-                                                 className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
-                                               >
-                                                 <Receipt className="h-4 w-4 text-blue-600" />
-                                                 View Cash Memo ({dc.invoiceRef})
-                                               </DropdownMenuItem>
-                                             )}
-                                             <DropdownMenuItem
-                                               onClick={() => openPaymentDialog(dc)}
-                                               className="gap-2 font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                             >
-                                               <Wallet className="h-4 w-4 text-emerald-600" />
-                                               Edit Payment Info
-                                             </DropdownMenuItem>
-                                             <DropdownMenuItem
-                                               onClick={() => openDelinkConfirmDialog(dc)}
-                                               className="gap-2 font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 cursor-pointer"
-                                             >
-                                               <Undo2 className="h-4 w-4 text-amber-600" />
-                                               Delink & Move to Cash Queue
-                                             </DropdownMenuItem>
-                                             <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
-                                               <Undo2 className="h-4 w-4" />
-                                               Move back to Returned
-                                             </DropdownMenuItem>
-                                           </>
-                                         )}
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem onClick={() => requestDelete(dc)} className="text-destructive gap-2">
-                                          <X className="h-4 w-4" />
-                                          Delete
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
+                                          )}
+                                          {dc.status === "returned" && (
+                                            <>
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  openActionDialog(
+                                                    "invoice",
+                                                    dc,
+                                                  )
+                                                }
+                                                className="gap-2"
+                                              >
+                                                <Receipt className="h-4 w-4" />
+                                                Link Invoice
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  handleCreateCashMemoForDc(dc)
+                                                }
+                                                className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
+                                              >
+                                                <Receipt className="h-4 w-4 text-blue-600" />
+                                                Create Cash Memo
+                                              </DropdownMenuItem>
+                                            </>
+                                          )}
+                                          {dc.status === "completed" && (
+                                            <>
+                                              {dc.invoiceRef &&
+                                                (dc.isTaxInvoice ||
+                                                  (!dc.cashAmount &&
+                                                    !dc.invoiceRef.startsWith(
+                                                      "SRR-",
+                                                    ))) && (
+                                                  <>
+                                                    <DropdownMenuItem
+                                                      onClick={() =>
+                                                        openActionDialog(
+                                                          "invoice",
+                                                          dc,
+                                                        )
+                                                      }
+                                                      className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
+                                                    >
+                                                      <FileText className="h-4 w-4 text-slate-600" />
+                                                      Tax Invoice:{" "}
+                                                      {dc.invoiceRef}
+                                                    </DropdownMenuItem>
+                                                    {dc.invoiceUrl ? (
+                                                      <DropdownMenuItem
+                                                        onClick={() =>
+                                                          window.open(
+                                                            dc.invoiceUrl,
+                                                            "_blank",
+                                                          )
+                                                        }
+                                                        className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                                      >
+                                                        <ExternalLink className="h-4 w-4 text-emerald-600" />
+                                                        Open GoGSTBill
+                                                      </DropdownMenuItem>
+                                                    ) : (
+                                                      <DropdownMenuItem
+                                                        onClick={() =>
+                                                          openActionDialog(
+                                                            "invoice",
+                                                            dc,
+                                                          )
+                                                        }
+                                                        className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
+                                                      >
+                                                        <Link2 className="h-4 w-4 text-indigo-600" />
+                                                        Enter GoGSTBill URL
+                                                      </DropdownMenuItem>
+                                                    )}
+                                                  </>
+                                                )}
+                                              {dc.invoiceRef &&
+                                                !(
+                                                  dc.isTaxInvoice ||
+                                                  (!dc.cashAmount &&
+                                                    !dc.invoiceRef.startsWith(
+                                                      "SRR-",
+                                                    ))
+                                                ) && (
+                                                  <DropdownMenuItem
+                                                    onClick={() => {
+                                                      setViewingCashMemoRef(
+                                                        dc.invoiceRef!,
+                                                      );
+                                                      setCashMemoModalOpen(
+                                                        true,
+                                                      );
+                                                    }}
+                                                    className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
+                                                  >
+                                                    <Receipt className="h-4 w-4 text-blue-600" />
+                                                    View Cash Memo (
+                                                    {dc.invoiceRef})
+                                                  </DropdownMenuItem>
+                                                )}
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  openPaymentDialog(dc)
+                                                }
+                                                className="gap-2 font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                              >
+                                                <Wallet className="h-4 w-4 text-emerald-600" />
+                                                Edit Payment Info
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  openDelinkConfirmDialog(dc)
+                                                }
+                                                className="gap-2 font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 cursor-pointer"
+                                              >
+                                                <Undo2 className="h-4 w-4 text-slate-600" />
+                                                Delink & Move to Cash Queue
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() =>
+                                                  moveBackToReturned(dc)
+                                                }
+                                                className="gap-2"
+                                              >
+                                                <Undo2 className="h-4 w-4" />
+                                                Move back to Returned
+                                              </DropdownMenuItem>
+                                            </>
+                                          )}
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem
+                                            onClick={() => requestDelete(dc)}
+                                            className="text-destructive gap-2"
+                                          >
+                                            <X className="h-4 w-4" />
+                                            Delete
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              );
+                            })}
+                          </div>
 
-                        {/* Desktop Table View */}
-                        <div className="hidden md:block border border-border/80 rounded-xl overflow-hidden shadow-md bg-white/95 dark:bg-slate-900/95 backdrop-blur-md">
-                          <div className="max-h-[60vh] overflow-y-auto">
-                            <table className="w-full border-separate border-spacing-0">
-                              <thead>
-                                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-border/60 sticky top-0 z-10 text-slate-700 dark:text-slate-300">
-                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[50px] border-r border-border/50">
-                                    Select
-                                  </th>
-                                  <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[110px] border-r border-border/50">
-                                    <SortableHeader sortKey="date">
-                                      <Calendar className="h-3.5 w-3.5 mr-1" />
-                                      Date
-                                    </SortableHeader>
-                                  </th>
-                                  <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[100px] border-r border-border/50">
-                                    <SortableHeader sortKey="dcNo">
-                                      DC No
-                                    </SortableHeader>
-                                  </th>
-                                  {(activeQueue === "cash" || activeQueue === "completed" || activeQueue === "all") && (
-                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[150px] border-r border-border/50">
-                                      Invoice / Memo No
+                          {/* Desktop Table View */}
+                          <div className="hidden md:block border border-border/80 rounded-xl overflow-hidden shadow-none bg-background dark:bg-slate-900/95 ">
+                            <div className="max-h-[60vh] overflow-y-auto">
+                              <table className="w-full border-separate border-spacing-0">
+                                <thead>
+                                  <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-border sticky top-0 z-10 text-slate-700 dark:text-slate-300">
+                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[50px] border-r border-border/50">
+                                      Select
                                     </th>
-                                  )}
-                                  <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 border-r border-border/50 min-w-[200px]">
-                                    <SortableHeader sortKey="party">
-                                      Party Name
-                                    </SortableHeader>
-                                  </th>
-                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[80px] border-r border-border/50">
-                                    <SortableHeader sortKey="items">
-                                      <Package className="h-3.5 w-3.5 mr-1" />
-                                      Items
-                                    </SortableHeader>
-                                  </th>
-                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[70px] border-r border-border/50">
-                                    <SortableHeader sortKey="days">
-                                      Days
-                                    </SortableHeader>
-                                  </th>
-                                  <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
-                                    Delivered
-                                  </th>
-                                  {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash" || activeQueue === "cancelled") && (
+                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[110px] border-r border-border/50">
+                                      <SortableHeader sortKey="date">
+                                        <Calendar className="h-3.5 w-3.5 mr-1" />
+                                        Date
+                                      </SortableHeader>
+                                    </th>
+                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[100px] border-r border-border/50">
+                                      <SortableHeader sortKey="dcNo">
+                                        DC No
+                                      </SortableHeader>
+                                    </th>
+                                    {(activeQueue === "cash" ||
+                                      activeQueue === "completed" ||
+                                      activeQueue === "all") && (
+                                      <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[150px] border-r border-border/50">
+                                        Invoice / Memo No
+                                      </th>
+                                    )}
+                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 border-r border-border/50 min-w-[200px]">
+                                      <SortableHeader sortKey="party">
+                                        Party Name
+                                      </SortableHeader>
+                                    </th>
+                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[80px] border-r border-border/50">
+                                      <SortableHeader sortKey="items">
+                                        <Package className="h-3.5 w-3.5 mr-1" />
+                                        Items
+                                      </SortableHeader>
+                                    </th>
+                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[70px] border-r border-border/50">
+                                      <SortableHeader sortKey="days">
+                                        Days
+                                      </SortableHeader>
+                                    </th>
                                     <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
-                                      Returned
+                                      Delivered
                                     </th>
-                                  )}
-                                  <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[60px]">
+                                    {(activeQueue === "returned" ||
+                                      activeQueue === "completed" ||
+                                      activeQueue === "cash" ||
+                                      activeQueue === "cancelled") && (
+                                      <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
+                                        Returned
+                                      </th>
+                                    )}
+                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[60px]">
                                       Actions
                                     </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {filteredDcs.map((dc) => {
-                                  const daysPending = getDaysPending(dc);
-                                  const totalQty = getTotalQty(dc);
-                                  return (
-                                    <tr
-                                      key={dc.id}
-                                      onMouseMove={(e) => {
-                                        const rect = e.currentTarget.getBoundingClientRect();
-                                        e.currentTarget.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
-                                        e.currentTarget.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.setProperty('--mouse-x', '-999px');
-                                        e.currentTarget.style.setProperty('--mouse-y', '-999px');
-                                      }}
-                                      style={{
-                                        backgroundImage: selectedDcId === dc.id
-                                          ? undefined
-                                          : 'radial-gradient(550px circle at var(--mouse-x, -999px) var(--mouse-y, -999px), rgba(13, 148, 136, 0.16), transparent 75%)',
-                                      }}
-                                      className={`group border-b border-border/50 transition-all duration-200 cursor-pointer relative hover:shadow-[0_2px_12px_-2px_rgba(13,148,136,0.18)] hover:z-10 ${selectedDcId === dc.id
-                                        ? 'bg-teal-500/10 hover:bg-teal-500/15 border-l-4 border-l-teal-600 font-semibold shadow-xs'
-                                        : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/80'
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filteredDcs.map((dc) => {
+                                    const daysPending = getDaysPending(dc);
+                                    const totalQty = getTotalQty(dc);
+                                    return (
+                                      <tr
+                                        key={dc.id}
+                                        className={`group border-b border-border/50 transition-colors duration-150 cursor-pointer ${
+                                          selectedDcId === dc.id
+                                            ? "bg-teal-500/10 hover:bg-teal-500/15 border-l-4 border-l-teal-600 font-semibold"
+                                            : "hover:bg-slate-100/70 dark:hover:bg-slate-800/70"
                                         }`}
-                                      onClick={() => {
-                                        setSelectedDcId(dc.id);
-                                      }}
-                                    >
-                                      <td className="relative p-3 text-center border-r-2 border-slate-200">
-                                        <span
-                                          className={`absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r transition-all duration-200 ${
-                                            selectedDcId === dc.id
-                                              ? "bg-teal-600 opacity-100 scale-y-100"
-                                              : "bg-teal-500 opacity-0 group-hover:opacity-100 scale-y-50 group-hover:scale-y-100"
-                                          }`}
-                                        />
-                                        <input
-                                          type="radio"
-                                          name="selected-dc"
-                                          className="h-4 w-4 accent-blue-600 cursor-pointer transition-transform duration-200 group-hover:scale-110"
-                                          checked={selectedDcId === dc.id}
-                                          onChange={() => setSelectedDcId(dc.id)}
-                                          aria-label={`Select DC ${dc.dcNo}`}
-                                          onClick={(e) => e.stopPropagation()}
-                                        />
-                                      </td>
-                                      <td className="p-3 border-r-2 border-slate-200">
-                                        <div className="flex items-center gap-2">
-                                          <Calendar className="h-4 w-4 text-slate-400 group-hover:text-teal-600 group-hover:scale-110 transition-all duration-200 flex-shrink-0" />
+                                        onClick={() => {
+                                          setSelectedDcId(dc.id);
+                                        }}
+                                      >
+                                        <td className="relative p-3 text-center border-r-2 border-slate-200">
+                                          <span
+                                            className={`absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r transition-all duration-200 ${
+                                              selectedDcId === dc.id
+                                                ? "bg-teal-600 opacity-100 scale-y-100"
+                                                : "bg-teal-500 opacity-0 group-hover:opacity-100 scale-y-50 group-hover:scale-y-100"
+                                            }`}
+                                          />
+                                          <input
+                                            type="radio"
+                                            name="selected-dc"
+                                            className="h-4 w-4 accent-blue-600 cursor-pointer transition-transform duration-200 group-hover:scale-110"
+                                            checked={selectedDcId === dc.id}
+                                            onChange={() =>
+                                              setSelectedDcId(dc.id)
+                                            }
+                                            aria-label={`Select DC ${dc.dcNo}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                        </td>
+                                        <td className="p-3 border-r-2 border-slate-200">
+                                          <div className="flex items-center gap-2">
+                                            <Calendar className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-hover:scale-110 transition-all duration-200 flex-shrink-0" />
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedDcId(dc.id);
+                                                setDetailsDialogOpen(true);
+                                              }}
+                                              className="text-sm font-medium hover:text-blue-700 group-hover:text-slate-900 transition-colors text-left"
+                                            >
+                                              {formatDate(getDisplayDate(dc))}
+                                            </button>
+                                          </div>
+                                        </td>
+                                        <td className="p-3 border-r-2 border-slate-200">
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               setSelectedDcId(dc.id);
                                               setDetailsDialogOpen(true);
                                             }}
-                                            className="text-sm font-medium hover:text-blue-700 group-hover:text-slate-900 transition-colors text-left"
+                                            className="text-sm font-extrabold text-teal-800 hover:text-teal-900 group-hover:text-teal-700 group-hover:translate-x-1 inline-flex items-center gap-1 hover:underline transition-all duration-200"
                                           >
-                                            {formatDate(getDisplayDate(dc))}
+                                            {dc.dcNo}
                                           </button>
-                                        </div>
-                                      </td>
-                                      <td className="p-3 border-r-2 border-slate-200">
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedDcId(dc.id);
-                                            setDetailsDialogOpen(true);
-                                          }}
-                                          className="text-sm font-extrabold text-teal-800 hover:text-teal-900 group-hover:text-teal-700 group-hover:translate-x-1 inline-flex items-center gap-1 hover:underline transition-all duration-200"
-                                        >
-                                          {dc.dcNo}
-                                        </button>
-                                      </td>
-                                      {(activeQueue === "cash" || activeQueue === "completed" || activeQueue === "all") && (
-                                        <td className="p-3 border-r-2 border-slate-200">
-                                          {dc.invoiceRef ? (
-                                            (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) ? (
-                                              <div className="flex items-center gap-1.5 flex-wrap">
-                                                {dc.invoiceUrl ? (
-                                                  <a
-                                                    href={dc.invoiceUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-full shadow-2xs whitespace-nowrap transition-colors"
-                                                    title={`GoGSTBill Invoice: ${dc.invoiceUrl} (Click to open)`}
-                                                  >
-                                                    <FileText className="w-3 h-3 text-purple-600 shrink-0" />
-                                                    <span>{dc.invoiceRef}</span>
-                                                    <ExternalLink className="w-2.5 h-2.5 text-purple-600 ml-0.5" />
-                                                  </a>
-                                                ) : (
+                                        </td>
+                                        {(activeQueue === "cash" ||
+                                          activeQueue === "completed" ||
+                                          activeQueue === "all") && (
+                                          <td className="p-3 border-r-2 border-slate-200">
+                                            {dc.invoiceRef ? (
+                                              dc.isTaxInvoice ||
+                                              (!dc.cashAmount &&
+                                                !dc.invoiceRef.startsWith(
+                                                  "SRR-",
+                                                )) ? (
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  {dc.invoiceUrl ? (
+                                                    <a
+                                                      href={dc.invoiceUrl}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      onClick={(e) =>
+                                                        e.stopPropagation()
+                                                      }
+                                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-full shadow-none whitespace-nowrap transition-colors"
+                                                      title={`GoGSTBill Invoice: ${dc.invoiceUrl} (Click to open)`}
+                                                    >
+                                                      <FileText className="w-3 h-3 text-slate-600 shrink-0" />
+                                                      <span>
+                                                        {dc.invoiceRef}
+                                                      </span>
+                                                      <ExternalLink className="w-2.5 h-2.5 text-slate-600 ml-0.5" />
+                                                    </a>
+                                                  ) : (
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openActionDialog(
+                                                          "invoice",
+                                                          dc,
+                                                        );
+                                                      }}
+                                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full shadow-none whitespace-nowrap transition-colors cursor-pointer"
+                                                      title={`Tax Invoice: ${dc.invoiceRef} (Click to enter GoGSTBill link)`}
+                                                    >
+                                                      <FileText className="w-3 h-3 text-slate-600 shrink-0" />
+                                                      <span>
+                                                        {dc.invoiceRef}
+                                                      </span>
+                                                      <Link2 className="w-2.5 h-2.5 text-purple-500 ml-0.5 opacity-70" />
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <div className="flex flex-col gap-1 items-start">
                                                   <button
                                                     type="button"
                                                     onClick={(e) => {
                                                       e.stopPropagation();
-                                                      openActionDialog("invoice", dc);
+                                                      setViewingCashMemoRef(
+                                                        dc.invoiceRef!,
+                                                      );
+                                                      setCashMemoModalOpen(
+                                                        true,
+                                                      );
                                                     }}
-                                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full shadow-2xs whitespace-nowrap transition-colors cursor-pointer"
-                                                    title={`Tax Invoice: ${dc.invoiceRef} (Click to enter GoGSTBill link)`}
+                                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full hover:bg-blue-100 hover:text-blue-800 transition-all cursor-pointer shadow-none whitespace-nowrap"
+                                                    title="Click to View Cash Memo"
                                                   >
-                                                    <FileText className="w-3 h-3 text-purple-600 shrink-0" />
+                                                    <Receipt className="w-3 h-3 text-blue-600 shrink-0" />
                                                     <span>{dc.invoiceRef}</span>
-                                                    <Link2 className="w-2.5 h-2.5 text-purple-500 ml-0.5 opacity-70" />
                                                   </button>
-                                                )}
-                                              </div>
-                                            ) : (
-                                              <div className="flex flex-col gap-1 items-start">
-                                                <button
-                                                  type="button"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setViewingCashMemoRef(dc.invoiceRef!);
-                                                    setCashMemoModalOpen(true);
-                                                  }}
-                                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full hover:bg-blue-100 hover:text-blue-800 transition-all cursor-pointer shadow-2xs whitespace-nowrap"
-                                                  title="Click to View Cash Memo"
-                                                >
-                                                  <Receipt className="w-3 h-3 text-blue-600 shrink-0" />
-                                                  <span>{dc.invoiceRef}</span>
-                                                </button>
-                                                {dc.status === "cash" && (() => {
-                                                  const isPart = Boolean(dc.cashRemarks?.includes("Part Payment") || dc.cashRemarks?.includes("Partial"));
-                                                  const partMatch = dc.cashRemarks?.match(/₹?\s*([0-9,]+)\s*of\s*₹?\s*([0-9,]+)/i);
-                                                  const paidAmt = partMatch ? parseFloat(partMatch[1].replace(/,/g, "")) : 0;
-                                                  const origAmt = partMatch ? parseFloat(partMatch[2].replace(/,/g, "")) : (dc.cashAmount || 0);
+                                                  {dc.status === "cash" &&
+                                                    (() => {
+                                                      
+                                                       const isPart = Boolean(
+                                                        dc.cashRemarks?.includes(
+                                                          "Part Payment",
+                                                        ) ||
+                                                        dc.cashRemarks?.includes(
+                                                          "Partial",
+                                                        ),
+                                                      );
+                                                      const partMatch =
+                                                        dc.cashRemarks?.match(
+                                                          /₹?\s*([0-9,]+)\s*of\s*₹?\s*([0-9,]+)/i,
+                                                        );
+                                                      const paidAmt = partMatch
+                                                        ? parseFloat(
+                                                            partMatch[1].replace(
+                                                              /,/g,
+                                                              "",
+                                                            ),
+                                                          )
+                                                        : 0;
+                                                      const origAmt = partMatch
+                                                        ? parseFloat(
+                                                            partMatch[2].replace(
+                                                              /,/g,
+                                                              "",
+                                                            ),
+                                                          )
+                                                        : dc.cashAmount || 0;
 
-                                                  if (isPart && paidAmt > 0 && origAmt > 0) {
-                                                    const dueAmt = Math.max(0, origAmt - paidAmt);
-                                                    return (
-                                                      <span
-                                                        className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border border-amber-400 bg-amber-100 text-amber-900 shadow-2xs whitespace-nowrap"
-                                                        title={`Part Payment Recorded: Paid ₹${paidAmt} of Original Invoice ₹${origAmt}. Balance Due: ₹${dueAmt}`}
-                                                      >
-                                                        ⚠️ PART PAYMENT: PAID ₹{paidAmt.toLocaleString('en-IN')} / ₹{origAmt.toLocaleString('en-IN')} (DUE ₹{dueAmt.toLocaleString('en-IN')})
-                                                      </span>
-                                                    );
-                                                  }
-
-                                                  return (
-                                                    <span
-                                                      className={`inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border whitespace-nowrap ${
-                                                        getCashMemoAgingDays(dc) > 15
-                                                          ? "bg-rose-100 text-rose-800 border-rose-300 animate-pulse"
-                                                          : getCashMemoAgingDays(dc) > 7
-                                                          ? "bg-amber-100 text-amber-800 border-amber-300"
-                                                          : "bg-blue-50 text-blue-700 border-blue-200"
-                                                      }`}
-                                                      title={
-                                                        dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0)
-                                                          ? `Our Expected Cash: ₹${(dc.cashAmount || 0).toLocaleString('en-IN')} (Printed Bill: ₹${dc.billedAmount.toLocaleString('en-IN')} | Hospital Cut: ₹${(dc.hospitalMargin || (dc.billedAmount - (dc.cashAmount || 0))).toLocaleString('en-IN')}) • Unpaid for ${getCashMemoAgingDays(dc)} days`
-                                                          : `Unpaid for ${getCashMemoAgingDays(dc)} days`
+                                                      if (
+                                                        isPart &&
+                                                        paidAmt > 0 &&
+                                                        origAmt > 0
+                                                      ) {
+                                                        const dueAmt = Math.max(
+                                                          0,
+                                                          origAmt - paidAmt,
+                                                        );
+                                                         return (
+                                                           <span
+                                                             className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border border-amber-400 bg-amber-100 text-amber-900 shadow-none max-w-full truncate"
+                                                             title={`Part Payment Recorded: Paid ₹${paidAmt.toLocaleString("en-IN")} of Original Invoice ₹${origAmt.toLocaleString("en-IN")}. Balance Due: ₹${dueAmt.toLocaleString("en-IN")}`}
+                                                           >
+                                                             <span className="truncate">
+                                                               ⚡ PART: ₹{formatCompact(paidAmt)} / ₹{formatCompact(origAmt)} (DUE ₹{formatCompact(dueAmt)})
+                                                             </span>
+                                                           </span>
+                                                        );
                                                       }
-                                                    >
-                                                      ● UNPAID {dc.cashAmount ? `₹${dc.cashAmount}` : ''} ({getCashMemoAgingDays(dc)}d)
-                                                      {dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0) && (
-                                                        <span className="text-[8px] font-extrabold text-amber-800 bg-amber-200/90 px-1 py-0.2 rounded ml-0.5" title={`Printed Hiked Bill: ₹${dc.billedAmount}`}>
-                                                          Hiked
+
+                                                      return (
+                                                        <span
+                                                          className={`inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                                                            getCashMemoAgingDays(
+                                                              dc,
+                                                            ) > 15
+                                                              ? "bg-rose-100 text-rose-800 border-rose-300 animate-pulse"
+                                                              : getCashMemoAgingDays(
+                                                                    dc,
+                                                                  ) > 7
+                                                                ? "bg-amber-100 text-amber-800 border-amber-300"
+                                                                : "bg-blue-50 text-blue-700 border-blue-200"
+                                                          }`}
+                                                          title={
+                                                            dc.billedAmount &&
+                                                            dc.billedAmount >
+                                                              (dc.cashAmount ||
+                                                                0)
+                                                              ? `Our Expected Cash: ₹${(dc.cashAmount || 0).toLocaleString("en-IN")} (Printed Bill: ₹${dc.billedAmount.toLocaleString("en-IN")} | Hospital Cut: ₹${(dc.hospitalMargin || dc.billedAmount - (dc.cashAmount || 0)).toLocaleString("en-IN")}) • Unpaid for ${getCashMemoAgingDays(dc)} days`
+                                                              : `Unpaid for ${getCashMemoAgingDays(dc)} days`
+                                                          }
+                                                        >
+                                                          ● UNPAID{" "}
+                                                          {dc.cashAmount
+                                                            ? `₹${dc.cashAmount}`
+                                                            : ""}{" "}
+                                                          (
+                                                          {getCashMemoAgingDays(
+                                                            dc,
+                                                          )}
+                                                          d)
+                                                          {dc.billedAmount &&
+                                                            dc.billedAmount >
+                                                              (dc.cashAmount ||
+                                                                0) && (
+                                                              <span
+                                                                className="text-[8px] font-extrabold text-amber-800 bg-amber-200/90 px-1 py-0.2 rounded ml-0.5"
+                                                                title={`Printed Hiked Bill: ₹${dc.billedAmount}`}
+                                                              >
+                                                                Hiked
+                                                              </span>
+                                                            )}
                                                         </span>
-                                                      )}
-                                                    </span>
-                                                  );
-                                                })()}
-                                                {dc.status === "completed" && dc.cashAmount && (
-                                                  <span 
-                                                    className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full whitespace-nowrap" 
-                                                    title={
-                                                      dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0)
-                                                        ? `Paid Cash: ₹${dc.cashAmount} (Printed Bill: ₹${dc.billedAmount} | Hospital Cut: ₹${dc.hospitalMargin || (dc.billedAmount - (dc.cashAmount || 0))})`
-                                                        : "Cash Memo Paid"
-                                                    }
-                                                  >
-                                                    {(dc.isPartialPayment || (dc.paidAmount && dc.originalInvoiceTotal && dc.paidAmount < dc.originalInvoiceTotal) || (dc.cashRemarks && dc.cashRemarks.includes("Part Payment Received")))
-                                                      ? `⚡ PARTLY PAID ₹${(dc.paidAmount || 0).toLocaleString('en-IN')} / ₹${(dc.originalInvoiceTotal || dc.cashAmount || 0).toLocaleString('en-IN')}`
-                                                      : `✓ PAID ₹${(dc.cashAmount || 0).toLocaleString('en-IN')}`}
-                                                    {dc.billedAmount && dc.billedAmount > (dc.cashAmount || 0) && (
-                                                      <span className="text-[8px] font-bold text-emerald-950 bg-emerald-200 px-1 rounded ml-0.5">
-                                                        Hiked
+                                                      );
+                                                    })()}
+                                                  {dc.status === "completed" &&
+                                                    dc.cashAmount && (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full max-w-full truncate"
+                                                        title={
+                                                          dc.billedAmount &&
+                                                          dc.billedAmount >
+                                                            (dc.cashAmount || 0)
+                                                            ? `Paid Cash: ₹${dc.cashAmount} (Printed Bill: ₹${dc.billedAmount} | Hospital Cut: ₹${dc.hospitalMargin || dc.billedAmount - (dc.cashAmount || 0)})`
+                                                            : "Cash Memo Paid"
+                                                        }
+                                                      >
+                                                        {dc.isPartialPayment ||
+                                                        (dc.paidAmount &&
+                                                          dc.originalInvoiceTotal &&
+                                                          dc.paidAmount <
+                                                            dc.originalInvoiceTotal) ||
+                                                        (dc.cashRemarks &&
+                                                          dc.cashRemarks.includes(
+                                                            "Part Payment Received",
+                                                          ))
+                                                          ? `⚡ PART: ₹${formatCompact(dc.paidAmount || 0)} / ₹${formatCompact(dc.originalInvoiceTotal || dc.cashAmount || 0)}`
+                                                          : `✓ PAID ₹${formatCompact(dc.cashAmount || 0)}`}
+                                                        {dc.billedAmount &&
+                                                          dc.billedAmount >
+                                                            (dc.cashAmount ||
+                                                              0) && (
+                                                            <span className="text-[8px] font-bold text-emerald-950 bg-emerald-200 px-1 rounded ml-0.5">
+                                                              Hiked
+                                                            </span>
+                                                          )}
                                                       </span>
                                                     )}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            )
-                                          ) : (
-                                            <span className="text-xs text-slate-400 font-medium">-</span>
-                                          )}
-                                        </td>
-                                      )}
-                                      <td className="p-3 border-r-2 border-slate-200">
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedDcId(dc.id);
-                                            setDetailsDialogOpen(true);
-                                          }}
-                                          className="text-sm font-semibold text-slate-900 hover:text-teal-800 transition-colors text-left break-words whitespace-normal block"
-                                        >
-                                          {dc.hospitalName}
-                                        </button>
-                                      </td>
-                                      <td className="p-3 text-center border-r-2 border-slate-200">
-                                        <div className="flex items-center justify-center gap-1">
-                                          <Badge variant="outline" className="text-xs font-medium border-slate-300">
-                                            {totalQty}
-                                          </Badge>
-                                        </div>
-                                      </td>
-                                      <td className="p-3 text-center border-r-2 border-slate-200">
-                                        <div className={`text-sm font-medium ${daysPending > 7 && dc.status === 'pending' ? 'text-red-600' : 'text-slate-600'}`}>
-                                          {daysPending}d
-                                          {daysPending > 7 && dc.status === 'pending' && (
-                                            <AlertCircle className="h-3 w-3 inline ml-1" />
-                                          )}
-                                        </div>
-                                      </td>
-                                      <td className="p-3 border-r-2 border-slate-200">
-                                        <div className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5" title={dc.deliveredBy}>
-                                          {dc.deliveredBy ? (
-                                            <>
-                                              {getTransportMode(dc.deliveredBy) && (
-                                                renderTransportIcon(getTransportMode(dc.deliveredBy)?.iconName, "w-3 h-3 text-teal-600 shrink-0")
-                                              )}
-                                              <span className="truncate">{dc.deliveredBy}</span>
-                                            </>
-                                          ) : (
-                                            "-"
-                                          )}
-                                        </div>
-                                      </td>
-                                      {(activeQueue === "returned" || activeQueue === "completed" || activeQueue === "cash" || activeQueue === "cancelled") && (
+                                                </div>
+                                              )
+                                            ) : (
+                                              <span className="text-xs text-slate-400 font-medium">
+                                                -
+                                              </span>
+                                            )}
+                                          </td>
+                                        )}
                                         <td className="p-3 border-r-2 border-slate-200">
-                                          <div className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5" title={dc.returnedBy}>
-                                            {dc.returnedBy ? (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedDcId(dc.id);
+                                              setDetailsDialogOpen(true);
+                                            }}
+                                            className="text-sm font-semibold text-slate-900 hover:text-teal-800 transition-colors text-left break-words whitespace-normal block"
+                                          >
+                                            {dc.hospitalName}
+                                          </button>
+                                        </td>
+                                        <td className="p-3 text-center border-r-2 border-slate-200">
+                                          <div className="flex items-center justify-center gap-1">
+                                            <Badge
+                                              variant="outline"
+                                              className="text-xs font-medium border-slate-300"
+                                            >
+                                              {totalQty}
+                                            </Badge>
+                                          </div>
+                                        </td>
+                                        <td className="p-3 text-center border-r-2 border-slate-200">
+                                          <div
+                                            className={`text-sm font-medium ${daysPending > 7 && dc.status === "pending" ? "text-red-600" : "text-slate-600"}`}
+                                          >
+                                            {daysPending}d
+                                            {daysPending > 7 &&
+                                              dc.status === "pending" && (
+                                                <AlertCircle className="h-3 w-3 inline ml-1" />
+                                              )}
+                                          </div>
+                                        </td>
+                                        <td className="p-3 border-r-2 border-slate-200">
+                                          <div
+                                            className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5"
+                                            title={dc.deliveredBy}
+                                          >
+                                            {dc.deliveredBy ? (
                                               <>
-                                                {getTransportMode(dc.returnedBy) && (
-                                                  renderTransportIcon(getTransportMode(dc.returnedBy)?.iconName, "w-3 h-3 text-teal-600 shrink-0")
-                                                )}
-                                                <span className="truncate">{dc.returnedBy}</span>
+                                                {getTransportMode(
+                                                  dc.deliveredBy,
+                                                ) &&
+                                                  renderTransportIcon(
+                                                    getTransportMode(
+                                                      dc.deliveredBy,
+                                                    )?.iconName,
+                                                    "w-3 h-3 text-blue-600 shrink-0",
+                                                  )}
+                                                <span className="truncate">
+                                                  {dc.deliveredBy}
+                                                </span>
                                               </>
                                             ) : (
                                               "-"
                                             )}
                                           </div>
                                         </td>
-                                      )}
+                                        {(activeQueue === "returned" ||
+                                          activeQueue === "completed" ||
+                                          activeQueue === "cash" ||
+                                          activeQueue === "cancelled") && (
+                                          <td className="p-3 border-r-2 border-slate-200">
+                                            <div
+                                              className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5"
+                                              title={dc.returnedBy}
+                                            >
+                                              {dc.returnedBy ? (
+                                                <>
+                                                  {getTransportMode(
+                                                    dc.returnedBy,
+                                                  ) &&
+                                                    renderTransportIcon(
+                                                      getTransportMode(
+                                                        dc.returnedBy,
+                                                      )?.iconName,
+                                                      "w-3 h-3 text-blue-600 shrink-0",
+                                                    )}
+                                                  <span className="truncate">
+                                                    {dc.returnedBy}
+                                                  </span>
+                                                </>
+                                              ) : (
+                                                "-"
+                                              )}
+                                            </div>
+                                          </td>
+                                        )}
                                         <td className="p-3 text-center">
                                           <div className="flex items-center justify-center gap-1.5">
                                             {/* Quick Call Icon Action */}
                                             {(() => {
-                                              const contactSummary = getHospitalContactSummary(dc.hospitalName);
+                                              const contactSummary =
+                                                getHospitalContactSummary(
+                                                  dc.hospitalName,
+                                                );
                                               return (
                                                 <button
                                                   type="button"
                                                   onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleOpenHospitalContact(dc.hospitalName, dc, !contactSummary.hasPhone);
+                                                    handleOpenHospitalContact(
+                                                      dc.hospitalName,
+                                                      dc,
+                                                      !contactSummary.hasPhone,
+                                                    );
                                                   }}
-                                                  className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-xs border ${
+                                                  className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-none border ${
                                                     contactSummary.hasPhone
                                                       ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
                                                       : "bg-slate-50 border-slate-200 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200"
@@ -3170,34 +4182,34 @@ const SavedDcs = () => {
                                                 </button>
                                               );
                                             })()}
-                                            <button 
+                                            <button
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 setSelectedDcId(dc.id);
                                                 setDcDocumentModalOpen(true);
                                               }}
-                                              className="w-8 h-8 flex items-center justify-center bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 transition-all shadow-xs"
+                                              className="w-8 h-8 flex items-center justify-center bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 transition-all shadow-none"
                                               title="View Delivery Challan (Document Preview)"
                                             >
                                               <Eye className="w-4 h-4 text-teal-700" />
                                             </button>
-                                            <button 
+                                            <button
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 setSelectedDcId(dc.id);
                                                 setDetailsDialogOpen(true);
                                               }}
-                                              className="w-8 h-8 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-full text-blue-700 hover:bg-blue-100 transition-all shadow-xs"
+                                              className="w-8 h-8 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-full text-blue-700 hover:bg-blue-100 transition-all shadow-none"
                                               title="Track Status & History"
                                             >
                                               <Activity className="w-4 h-4 text-blue-700" />
                                             </button>
-                                            <button 
+                                            <button
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 handlePrint(dc);
                                               }}
-                                              className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 transition-all shadow-xs"
+                                              className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 transition-all shadow-none"
                                               title="Print DC"
                                             >
                                               <Printer className="w-4 h-4 text-slate-700" />
@@ -3208,9 +4220,13 @@ const SavedDcs = () => {
                                                   size="sm"
                                                   variant="ghost"
                                                   className="h-8 w-8 p-0 hover:bg-slate-200"
-                                                  disabled={loadingDcIds.has(dc.id)}
+                                                  disabled={loadingDcIds.has(
+                                                    dc.id,
+                                                  )}
                                                   title="Actions"
-                                                  onClick={(e) => e.stopPropagation()}
+                                                  onClick={(e) =>
+                                                    e.stopPropagation()
+                                                  }
                                                 >
                                                   {loadingDcIds.has(dc.id) ? (
                                                     <RefreshCw className="h-4 w-4 text-slate-600 animate-spin" />
@@ -3219,35 +4235,51 @@ const SavedDcs = () => {
                                                   )}
                                                 </Button>
                                               </DropdownMenuTrigger>
-                                              <DropdownMenuContent align="end" className="w-52">
+                                              <DropdownMenuContent
+                                                align="end"
+                                                className="w-52"
+                                              >
                                                 <DropdownMenuItem
                                                   onClick={() => {
-                                                    const cs = getHospitalContactSummary(dc.hospitalName);
-                                                    handleOpenHospitalContact(dc.hospitalName, dc, !cs.hasPhone);
+                                                    const cs =
+                                                      getHospitalContactSummary(
+                                                        dc.hospitalName,
+                                                      );
+                                                    handleOpenHospitalContact(
+                                                      dc.hospitalName,
+                                                      dc,
+                                                      !cs.hasPhone,
+                                                    );
                                                   }}
                                                   className="gap-2 font-medium text-emerald-800 dark:text-emerald-300"
                                                 >
                                                   <Phone className="h-4 w-4 text-emerald-600" />
-                                                  {getHospitalContactSummary(dc.hospitalName).hasPhone
+                                                  {getHospitalContactSummary(
+                                                    dc.hospitalName,
+                                                  ).hasPhone
                                                     ? `Call (${getHospitalContactSummary(dc.hospitalName).primaryPhone})`
                                                     : "Add Phone Number"}
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
-                                                  onClick={() => openEditDcModal(dc)}
+                                                  onClick={() =>
+                                                    openEditDcModal(dc)
+                                                  }
                                                   className="gap-2 font-bold text-teal-800 dark:text-teal-300 bg-teal-50/60 hover:bg-teal-100 cursor-pointer"
                                                 >
-                                                  <Edit className="h-4 w-4 text-teal-600" />
+                                                  <Edit className="h-4 w-4 text-blue-600" />
                                                   Edit DC Details
                                                 </DropdownMenuItem>
                                                 <DropdownMenuSeparator />
                                                 <DropdownMenuItem
                                                   onClick={() => {
                                                     setSelectedDcId(dc.id);
-                                                    setDcDocumentModalOpen(true);
+                                                    setDcDocumentModalOpen(
+                                                      true,
+                                                    );
                                                   }}
                                                   className="gap-2"
                                                 >
-                                                  <Eye className="h-4 w-4 text-teal-600" />
+                                                  <Eye className="h-4 w-4 text-blue-600" />
                                                   View DC Document
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
@@ -3260,208 +4292,365 @@ const SavedDcs = () => {
                                                   <Activity className="h-4 w-4 text-blue-600" />
                                                   Track Status
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => handlePrint(dc)} className="gap-2">
+                                                <DropdownMenuItem
+                                                  onClick={() =>
+                                                    handlePrint(dc)
+                                                  }
+                                                  className="gap-2"
+                                                >
                                                   <Printer className="h-4 w-4 text-indigo-600" />
                                                   Print DC
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => handleShare(dc)} className="gap-2">
-                                                  <Share2 className="h-4 w-4 text-amber-600" />
+                                                <DropdownMenuItem
+                                                  onClick={() =>
+                                                    handleShare(dc)
+                                                  }
+                                                  className="gap-2"
+                                                >
+                                                  <Share2 className="h-4 w-4 text-slate-600" />
                                                   Share PDF
                                                 </DropdownMenuItem>
                                                 <DropdownMenuSeparator />
-                                              <DropdownMenuItem
-                                                onClick={() => openActionDialog("return", dc)}
-                                                disabled={dc.status !== "pending"}
-                                                className="gap-2"
-                                              >
-                                                <User className="h-4 w-4" />
-                                                Mark as Returned
-                                              </DropdownMenuItem>
-                                              {dc.status === "pending" && (
-                                                <>
-                                                  <DropdownMenuItem
-                                                    onClick={() => openActionDialog("purchase", dc)}
-                                                    className="gap-2 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30 cursor-pointer"
-                                                  >
-                                                    <ShoppingBag className="h-4 w-4 text-amber-600" />
-                                                    Purchase (Direct Sale)
-                                                  </DropdownMenuItem>
-                                                  <DropdownMenuItem
-                                                    onClick={() => handleCreateCashMemoForDc(dc)}
-                                                    className="gap-2 pl-7 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 cursor-pointer font-medium"
-                                                  >
-                                                    <Receipt className="h-3.5 w-3.5 text-blue-600" />
-                                                    &bull; Cash Invoice
-                                                  </DropdownMenuItem>
-                                                  <DropdownMenuItem
-                                                    onClick={() => openActionDialog("invoice", dc)}
-                                                    className="gap-2 pl-7 text-xs text-purple-700 hover:bg-purple-50 dark:text-purple-400 cursor-pointer font-medium"
-                                                  >
-                                                    <FileText className="h-3.5 w-3.5 text-purple-600" />
-                                                    &bull; Go GST Bill
-                                                  </DropdownMenuItem>
-                                                  <DropdownMenuItem onClick={() => openActionDialog("cancel", dc)} className="gap-2 text-orange-600">
-                                                    <AlertCircle className="h-4 w-4" />
-                                                    Cancel Case
-                                                  </DropdownMenuItem>
-                                                </>
-                                              )}
-                                              {dc.status === "cancelled" && (
-                                                <DropdownMenuItem onClick={() => restoreFromCancelled(dc)} className="gap-2">
-                                                  <Undo2 className="h-4 w-4" />
-                                                  Restore to Pending
-                                                </DropdownMenuItem>
-                                              )}
-                                              {dc.status === "returned" && (
                                                 <DropdownMenuItem
-                                                  onClick={() => openActionDialog("invoice", dc)}
+                                                  onClick={() =>
+                                                    openActionDialog(
+                                                      "return",
+                                                      dc,
+                                                    )
+                                                  }
+                                                  disabled={
+                                                    dc.status !== "pending"
+                                                  }
                                                   className="gap-2"
                                                 >
-                                                  <Receipt className="h-4 w-4" />
-                                                  Link Invoice
+                                                  <RotateCcw className="h-4 w-4" />
+                                                  Mark as Returned
                                                 </DropdownMenuItem>
-                                              )}
-                                              {dc.status === "returned" && !dc.invoiceRef && (
-                                                <DropdownMenuItem
-                                                  onClick={() => handleCreateCashMemoForDc(dc)}
-                                                  className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
-                                                >
-                                                  <Receipt className="h-4 w-4 text-blue-600" />
-                                                  Create Cash Memo
-                                                </DropdownMenuItem>
-                                              )}
-                                              {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                                <>
-                                                  <DropdownMenuItem
-                                                    onClick={() => openActionDialog("invoice", dc)}
-                                                    className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
-                                                  >
-                                                    <FileText className="h-4 w-4 text-purple-600" />
-                                                    Tax Invoice: {dc.invoiceRef}
-                                                  </DropdownMenuItem>
-                                                  {dc.invoiceUrl ? (
+                                                {dc.status === "pending" && (
+                                                  <>
                                                     <DropdownMenuItem
-                                                      onClick={() => window.open(dc.invoiceUrl, '_blank')}
-                                                      className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                                      onClick={() =>
+                                                        openActionDialog(
+                                                          "purchase",
+                                                          dc,
+                                                        )
+                                                      }
+                                                      className="gap-2 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30 cursor-pointer"
                                                     >
-                                                      <ExternalLink className="h-4 w-4 text-emerald-600" />
-                                                      Open GoGSTBill
+                                                      <ShoppingBag className="h-4 w-4 text-slate-600" />
+                                                      Purchase (Direct Sale)
                                                     </DropdownMenuItem>
-                                                  ) : (
                                                     <DropdownMenuItem
-                                                      onClick={() => openActionDialog("invoice", dc)}
-                                                      className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
+                                                      onClick={() =>
+                                                        handleCreateCashMemoForDc(
+                                                          dc,
+                                                        )
+                                                      }
+                                                      className="gap-2 pl-7 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 cursor-pointer font-medium"
                                                     >
-                                                      <Link2 className="h-4 w-4 text-indigo-600" />
-                                                      Enter GoGSTBill URL
+                                                      <Receipt className="h-3.5 w-3.5 text-blue-600" />
+                                                      &bull; Cash Invoice
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                      onClick={() =>
+                                                        openActionDialog(
+                                                          "invoice",
+                                                          dc,
+                                                        )
+                                                      }
+                                                      className="gap-2 pl-7 text-xs text-purple-700 hover:bg-purple-50 dark:text-purple-400 cursor-pointer font-medium"
+                                                    >
+                                                      <FileText className="h-3.5 w-3.5 text-slate-600" />
+                                                      &bull; Go GST Bill
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                      onClick={() =>
+                                                        openActionDialog(
+                                                          "cancel",
+                                                          dc,
+                                                        )
+                                                      }
+                                                      className="gap-2 text-orange-600"
+                                                    >
+                                                      <AlertCircle className="h-4 w-4" />
+                                                      Cancel Case
+                                                    </DropdownMenuItem>
+                                                  </>
+                                                )}
+                                                {dc.status === "cancelled" && (
+                                                  <DropdownMenuItem
+                                                    onClick={() =>
+                                                      restoreFromCancelled(dc)
+                                                    }
+                                                    className="gap-2"
+                                                  >
+                                                    <Undo2 className="h-4 w-4" />
+                                                    Restore to Pending
+                                                  </DropdownMenuItem>
+                                                )}
+                                                {dc.status === "returned" && (
+                                                  <DropdownMenuItem
+                                                    onClick={() =>
+                                                      openActionDialog(
+                                                        "invoice",
+                                                        dc,
+                                                      )
+                                                    }
+                                                    className="gap-2"
+                                                  >
+                                                    <Receipt className="h-4 w-4" />
+                                                    Link Invoice
+                                                  </DropdownMenuItem>
+                                                )}
+                                                {dc.status === "returned" &&
+                                                  !dc.invoiceRef && (
+                                                    <DropdownMenuItem
+                                                      onClick={() =>
+                                                        handleCreateCashMemoForDc(
+                                                          dc,
+                                                        )
+                                                      }
+                                                      className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
+                                                    >
+                                                      <Receipt className="h-4 w-4 text-blue-600" />
+                                                      Create Cash Memo
                                                     </DropdownMenuItem>
                                                   )}
-                                                </>
-                                              )}
-                                              {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                                <>
-                                                  <DropdownMenuItem
-                                                    onClick={() => {
-                                                      setViewingCashMemoRef(dc.invoiceRef!);
-                                                      setCashMemoModalOpen(true);
-                                                    }}
-                                                    className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
-                                                  >
-                                                    <Receipt className="h-4 w-4 text-blue-600" />
-                                                    View Cash Memo ({dc.invoiceRef})
-                                                  </DropdownMenuItem>
-                                                  <DropdownMenuItem onClick={() => handleShareWhatsApp(dc)} className="gap-2">
-                                                    <MessageSquare className="h-4 w-4 text-emerald-600" />
-                                                    Share via WhatsApp
-                                                  </DropdownMenuItem>
-                                                  {dc.status === "cash" && (
+                                                {dc.invoiceRef &&
+                                                  (dc.isTaxInvoice ||
+                                                    (!dc.cashAmount &&
+                                                      !dc.invoiceRef.startsWith(
+                                                        "SRR-",
+                                                      ))) && (
+                                                    <>
+                                                      <DropdownMenuItem
+                                                        onClick={() =>
+                                                          openActionDialog(
+                                                            "invoice",
+                                                            dc,
+                                                          )
+                                                        }
+                                                        className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
+                                                      >
+                                                        <FileText className="h-4 w-4 text-slate-600" />
+                                                        Tax Invoice:{" "}
+                                                        {dc.invoiceRef}
+                                                      </DropdownMenuItem>
+                                                      {dc.invoiceUrl ? (
+                                                        <DropdownMenuItem
+                                                          onClick={() =>
+                                                            window.open(
+                                                              dc.invoiceUrl,
+                                                              "_blank",
+                                                            )
+                                                          }
+                                                          className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                                        >
+                                                          <ExternalLink className="h-4 w-4 text-emerald-600" />
+                                                          Open GoGSTBill
+                                                        </DropdownMenuItem>
+                                                      ) : (
+                                                        <DropdownMenuItem
+                                                          onClick={() =>
+                                                            openActionDialog(
+                                                              "invoice",
+                                                              dc,
+                                                            )
+                                                          }
+                                                          className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
+                                                        >
+                                                          <Link2 className="h-4 w-4 text-indigo-600" />
+                                                          Enter GoGSTBill URL
+                                                        </DropdownMenuItem>
+                                                      )}
+                                                    </>
+                                                  )}
+                                                {dc.invoiceRef &&
+                                                  !(
+                                                    dc.isTaxInvoice ||
+                                                    (!dc.cashAmount &&
+                                                      !dc.invoiceRef.startsWith(
+                                                        "SRR-",
+                                                      ))
+                                                  ) && (
+                                                    <>
+                                                      <DropdownMenuItem
+                                                        onClick={() => {
+                                                          setViewingCashMemoRef(
+                                                            dc.invoiceRef!,
+                                                          );
+                                                          setCashMemoModalOpen(
+                                                            true,
+                                                          );
+                                                        }}
+                                                        className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
+                                                      >
+                                                        <Receipt className="h-4 w-4 text-blue-600" />
+                                                        View Cash Memo (
+                                                        {dc.invoiceRef})
+                                                      </DropdownMenuItem>
+                                                      <DropdownMenuItem
+                                                        onClick={() =>
+                                                          handleShareWhatsApp(
+                                                            dc,
+                                                          )
+                                                        }
+                                                        className="gap-2"
+                                                      >
+                                                        <MessageSquare className="h-4 w-4 text-emerald-600" />
+                                                        Share via WhatsApp
+                                                      </DropdownMenuItem>
+                                                      {dc.status === "cash" && (
+                                                        <DropdownMenuItem
+                                                          onClick={() =>
+                                                            openPaymentDialog(
+                                                              dc,
+                                                            )
+                                                          }
+                                                          className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                                                        >
+                                                          <Wallet className="h-4 w-4 text-emerald-600" />
+                                                          Mark as Paid
+                                                        </DropdownMenuItem>
+                                                      )}
+                                                    </>
+                                                  )}
+                                                {dc.status === "completed" && (
+                                                  <>
+                                                    {dc.invoiceRef &&
+                                                      (dc.isTaxInvoice ||
+                                                        (!dc.cashAmount &&
+                                                          !dc.invoiceRef.startsWith(
+                                                            "SRR-",
+                                                          ))) && (
+                                                        <>
+                                                          <DropdownMenuItem
+                                                            onClick={() =>
+                                                              openActionDialog(
+                                                                "invoice",
+                                                                dc,
+                                                              )
+                                                            }
+                                                            className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
+                                                          >
+                                                            <FileText className="h-4 w-4 text-slate-600" />
+                                                            Tax Invoice:{" "}
+                                                            {dc.invoiceRef}
+                                                          </DropdownMenuItem>
+                                                          {dc.invoiceUrl ? (
+                                                            <DropdownMenuItem
+                                                              onClick={() =>
+                                                                window.open(
+                                                                  dc.invoiceUrl,
+                                                                  "_blank",
+                                                                )
+                                                              }
+                                                              className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+                                                            >
+                                                              <ExternalLink className="h-4 w-4 text-emerald-600" />
+                                                              Open GoGSTBill
+                                                            </DropdownMenuItem>
+                                                          ) : (
+                                                            <DropdownMenuItem
+                                                              onClick={() =>
+                                                                openActionDialog(
+                                                                  "invoice",
+                                                                  dc,
+                                                                )
+                                                              }
+                                                              className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
+                                                            >
+                                                              <Link2 className="h-4 w-4 text-indigo-600" />
+                                                              Enter GoGSTBill
+                                                              URL
+                                                            </DropdownMenuItem>
+                                                          )}
+                                                        </>
+                                                      )}
+                                                    {dc.invoiceRef &&
+                                                      !(
+                                                        dc.isTaxInvoice ||
+                                                        (!dc.cashAmount &&
+                                                          !dc.invoiceRef.startsWith(
+                                                            "SRR-",
+                                                          ))
+                                                      ) && (
+                                                        <DropdownMenuItem
+                                                          onClick={() => {
+                                                            setViewingCashMemoRef(
+                                                              dc.invoiceRef!,
+                                                            );
+                                                            setCashMemoModalOpen(
+                                                              true,
+                                                            );
+                                                          }}
+                                                          className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
+                                                        >
+                                                          <Receipt className="h-4 w-4 text-blue-600" />
+                                                          View Cash Memo (
+                                                          {dc.invoiceRef})
+                                                        </DropdownMenuItem>
+                                                      )}
                                                     <DropdownMenuItem
-                                                      onClick={() => openPaymentDialog(dc)}
-                                                      className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                                                      onClick={() =>
+                                                        openPaymentDialog(dc)
+                                                      }
+                                                      className="gap-2 font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
                                                     >
                                                       <Wallet className="h-4 w-4 text-emerald-600" />
-                                                      Mark as Paid
+                                                      Edit Payment Info
                                                     </DropdownMenuItem>
-                                                  )}
-                                                </>
-                                              )}
-                                              {dc.status === "completed" && (
-                                             <>
-                                               {dc.invoiceRef && (dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                                 <>
-                                                   <DropdownMenuItem
-                                                     onClick={() => openActionDialog("invoice", dc)}
-                                                     className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
-                                                   >
-                                                     <FileText className="h-4 w-4 text-purple-600" />
-                                                     Tax Invoice: {dc.invoiceRef}
-                                                   </DropdownMenuItem>
-                                                   {dc.invoiceUrl ? (
-                                                     <DropdownMenuItem
-                                                       onClick={() => window.open(dc.invoiceUrl, '_blank')}
-                                                       className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                                     >
-                                                       <ExternalLink className="h-4 w-4 text-emerald-600" />
-                                                       Open GoGSTBill
-                                                     </DropdownMenuItem>
-                                                   ) : (
-                                                     <DropdownMenuItem
-                                                       onClick={() => openActionDialog("invoice", dc)}
-                                                       className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
-                                                     >
-                                                       <Link2 className="h-4 w-4 text-indigo-600" />
-                                                       Enter GoGSTBill URL
-                                                     </DropdownMenuItem>
-                                                   )}
-                                                 </>
-                                               )}
-                                               {dc.invoiceRef && !(dc.isTaxInvoice || (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
-                                                 <DropdownMenuItem
-                                                   onClick={() => {
-                                                     setViewingCashMemoRef(dc.invoiceRef!);
-                                                     setCashMemoModalOpen(true);
-                                                   }}
-                                                   className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
-                                                 >
-                                                   <Receipt className="h-4 w-4 text-blue-600" />
-                                                   View Cash Memo ({dc.invoiceRef})
-                                                 </DropdownMenuItem>
-                                               )}
-                                               <DropdownMenuItem
-                                                 onClick={() => openPaymentDialog(dc)}
-                                                 className="gap-2 font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                               >
-                                                 <Wallet className="h-4 w-4 text-emerald-600" />
-                                                 Edit Payment Info
-                                               </DropdownMenuItem>
-                                               <DropdownMenuItem
-                                                 onClick={() => openDelinkConfirmDialog(dc)}
-                                                 className="gap-2 font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 cursor-pointer"
-                                               >
-                                                 <Undo2 className="h-4 w-4 text-amber-600" />
-                                                 Delink & Move to Cash Queue
-                                               </DropdownMenuItem>
-                                               <DropdownMenuItem onClick={() => moveBackToReturned(dc)} className="gap-2">
-                                                 <Undo2 className="h-4 w-4" />
-                                                 Move back to Returned
-                                               </DropdownMenuItem>
-                                             </>
-                                           )}
-                                              {dc.status === "returned" && (
-                                                <DropdownMenuItem onClick={() => setMoveToPendingDialog({ open: true, dc })} className="gap-2">
-                                                  <Undo2 className="h-4 w-4" />
-                                                  Move back to Pending
+                                                    <DropdownMenuItem
+                                                      onClick={() =>
+                                                        openDelinkConfirmDialog(
+                                                          dc,
+                                                        )
+                                                      }
+                                                      className="gap-2 font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 cursor-pointer"
+                                                    >
+                                                      <Undo2 className="h-4 w-4 text-slate-600" />
+                                                      Delink & Move to Cash
+                                                      Queue
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                      onClick={() =>
+                                                        moveBackToReturned(dc)
+                                                      }
+                                                      className="gap-2"
+                                                    >
+                                                      <Undo2 className="h-4 w-4" />
+                                                      Move back to Returned
+                                                    </DropdownMenuItem>
+                                                  </>
+                                                )}
+                                                {dc.status === "returned" && (
+                                                  <DropdownMenuItem
+                                                    onClick={() =>
+                                                      setMoveToPendingDialog({
+                                                        open: true,
+                                                        dc,
+                                                      })
+                                                    }
+                                                    className="gap-2"
+                                                  >
+                                                    <Undo2 className="h-4 w-4" />
+                                                    Move back to Pending
+                                                  </DropdownMenuItem>
+                                                )}
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem
+                                                  onClick={() =>
+                                                    requestDelete(dc)
+                                                  }
+                                                  className="text-destructive gap-2"
+                                                >
+                                                  <X className="h-4 w-4" />
+                                                  Delete
                                                 </DropdownMenuItem>
-                                              )}
-                                              <DropdownMenuSeparator />
-                                              <DropdownMenuItem onClick={() => requestDelete(dc)} className="text-destructive gap-2">
-                                                <X className="h-4 w-4" />
-                                                Delete
-                                              </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                          </DropdownMenu>
-                                        </div>
-                                      </td>
+                                              </DropdownMenuContent>
+                                            </DropdownMenu>
+                                          </div>
+                                        </td>
                                       </tr>
                                     );
                                   })}
@@ -3476,9 +4665,9 @@ const SavedDcs = () => {
                 </>
               )}
             </CardContent>
-        </Card>
-      </div>
-    </main>
+          </Card>
+        </div>
+      </main>
 
       {/* Action Dialogs */}
       <Dialog
@@ -3489,7 +4678,7 @@ const SavedDcs = () => {
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[500px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="sm:max-w-[500px] p-0 border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>
@@ -3508,78 +4697,121 @@ const SavedDcs = () => {
           {actionDialog.type === "return" && actionDialog.dc && (
             <div>
               {/* Top Header */}
-              <div className="bg-gradient-to-r from-teal-50 via-cyan-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0 border border-teal-200/80 shadow-xs">
-                      <RotateCcw className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-teal-100 text-teal-800 border border-teal-300">
-                          DC #{actionDialog.dc.dcNo}
-                        </span>
-                        {actionDialog.dc.date && (
-                          <span className="text-[11px] font-medium text-slate-500">
-                            {actionDialog.dc.date}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-bold text-teal-800 bg-teal-100/80 border border-teal-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          Return Inward
-                        </span>
-                      </div>
-                      <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
-                        Receive Returned Items
-                      </h3>
-                    </div>
+              <div className="bg-slate-50/80 dark:bg-slate-900/80 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800 rounded-t-2xl">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 border border-teal-200/80 dark:border-teal-800">
+                    <RotateCcw className="w-5 h-5" />
                   </div>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
-                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
-                  {actionDialog.dc.doctorName && (
-                    <span className="flex items-center gap-1">
-                      <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      Dr. {actionDialog.dc.doctorName}
-                    </span>
-                  )}
-                  {actionDialog.dc.patientName && (
-                    <span className="flex items-center gap-1">
-                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      {actionDialog.dc.patientName}
-                    </span>
-                  )}
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                      <span>Returned By</span>
+                      <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-200 border border-teal-300 dark:border-teal-700">
+                        DC #{actionDialog.dc.dcNo}
+                      </span>
+                    </h3>
+                    {(actionDialog.dc.doctorName || actionDialog.dc.patientName) && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                        {actionDialog.dc.doctorName ? `Dr. ${actionDialog.dc.doctorName}` : ""}
+                        {actionDialog.dc.doctorName && actionDialog.dc.patientName ? ` • ` : ""}
+                        {actionDialog.dc.patientName ? `Pt: ${actionDialog.dc.patientName}` : ""}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Top Info Card */}
-              <div className="px-5 pt-4 pb-1">
-                <div className="rounded-xl border border-teal-200/90 dark:border-teal-900/40 bg-teal-50/60 dark:bg-teal-950/20 p-3.5 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between font-bold text-teal-900 dark:text-teal-200">
-                    <span className="flex items-center gap-1.5">
-                      <UserCheck className="w-3.5 h-3.5 text-teal-600" />
-                      Pending Return Verification
-                    </span>
-                    <span className="text-[10px] bg-teal-200/80 dark:bg-teal-900/80 px-2 py-0.5 rounded-full font-bold">
-                      {actionDialog.dc.items?.length || 0} Items Dispatched
-                    </span>
+              {/* Dispatch Info Summary */}
+              <div className="px-5 pt-3.5 pb-1">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3.5 text-xs space-y-2.5">
+                  {/* Hospital Header */}
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-bold">
+                    <Building2 className="w-4 h-4 text-teal-600 shrink-0" />
+                    <span className="text-xs truncate">{actionDialog.dc.hospitalName}</span>
                   </div>
-                  <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 pt-1 border-t border-teal-200/60 dark:border-teal-900/40">
-                    <span>Originally Delivered By:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">{actionDialog.dc.deliveredBy || "Standard Dispatch"}</span>
-                  </div>
-                  {actionDialog.dc.receivedBy && (
-                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                      <span>Hospital Received By:</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">{actionDialog.dc.receivedBy}</span>
+
+                  {/* Structured 2-Column Details Grid */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {/* Delivered By */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      {getTransportMode(actionDialog.dc.deliveredBy) ? (
+                        renderTransportIcon(getTransportMode(actionDialog.dc.deliveredBy)?.iconName, "w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5")
+                      ) : (
+                        <Truck className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Delivered By</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {normalizePersonnelName(actionDialog.dc.deliveredBy) || actionDialog.dc.deliveredBy || "Standard Dispatch"}
+                        </div>
+                      </div>
                     </div>
-                  )}
+
+                    {/* Received By */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <UserCheck className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Received By</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {normalizePersonnelName(actionDialog.dc.receivedBy) || actionDialog.dc.receivedBy || "Hospital Receiver"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Total Items */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Package className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Total Items</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {getTotalQty(actionDialog.dc)} <span className="text-[11px] font-normal text-slate-500">({actionDialog.dc.items?.length || 0} types)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Instruments */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Wrench className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Instruments</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {actionDialog.dc.instruments?.length || 0} Sets / Trays
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* Payment & Delink Warning Alert if payment info exists */}
+              {Boolean(
+                actionDialog.dc.status === "completed" ||
+                actionDialog.dc.status === "cash" ||
+                actionDialog.dc.invoiceRef ||
+                actionDialog.dc.cashAmount ||
+                actionDialog.dc.paidAt ||
+                actionDialog.dc.paymentMethod ||
+                actionDialog.dc.utrNo ||
+                actionDialog.dc.isPurchase
+              ) && (
+                <div className="px-5 pt-2 pb-0">
+                  <div className="rounded-xl border border-rose-200/90 dark:border-rose-900/40 bg-rose-50/70 dark:bg-rose-950/20 p-3 space-y-1 text-xs text-rose-950 dark:text-rose-300">
+                    <div className="flex items-center gap-1.5 font-bold text-rose-900 dark:text-rose-200">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span>Payment Records &amp; Linked Tx Will Be Delinked</span>
+                    </div>
+                    <p className="leading-relaxed text-[11px]">
+                      This DC has existing payment records ({actionDialog.dc.invoiceRef ? `Memo #${actionDialog.dc.invoiceRef}` : `Paid ₹${(actionDialog.dc.cashAmount || actionDialog.dc.paidAmount || 0).toLocaleString("en-IN")}`}). Confirming return will permanently delete all payment records and delink any associated bank/cash transactions.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Bottom Options & Form Inputs */}
               <div className="px-5 py-3.5 space-y-3.5">
                 <div>
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Returned By *</Label>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Returned By *
+                  </Label>
                   <div className="mt-1.5">
                     <PersonnelSelect
                       value={returnedByInput}
@@ -3588,59 +4820,20 @@ const SavedDcs = () => {
                       showQuickPicks={false}
                     />
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-0.5">
-                      Quick Select:
-                    </span>
-                    {TRANSPORT_MODES.map((mode) => {
-                      const isSelected =
-                        returnedByInput.trim().toLowerCase() === mode.name.toLowerCase() ||
-                        returnedByInput.trim().toLowerCase() === "courier";
-                      return (
-                        <button
-                          key={mode.name}
-                          type="button"
-                          onClick={() => setReturnedByInput(mode.name)}
-                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
-                            isSelected
-                              ? "bg-teal-600 text-white border-teal-600 shadow-xs"
-                              : "bg-white hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
-                          }`}
-                        >
-                          {renderTransportIcon(mode.iconName, isSelected ? "w-3 h-3 text-white" : "w-3 h-3 text-teal-600")}
-                          <span>{mode.name}</span>
-                        </button>
-                      );
-                    })}
-
-                    {topReturnPersons.map((p) => {
-                      const isSelected = returnedByInput.trim().toLowerCase() === p.name.toLowerCase();
-                      return (
-                        <button
-                          key={p.name}
-                          type="button"
-                          onClick={() => setReturnedByInput(p.name)}
-                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
-                            isSelected
-                              ? "bg-teal-600 text-white border-teal-600 shadow-xs"
-                              : "bg-slate-50 hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
-                          }`}
-                        >
-                          <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-teal-600"}`} />
-                          <span>{p.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Click dropdown above to search team members or select Courier options.
+                  </p>
                 </div>
 
                 <div>
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Return Remarks (Optional)</Label>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Return Remarks (Optional)
+                  </Label>
                   <Textarea
                     value={returnedRemarksInput}
                     onChange={(e) => setReturnedRemarksInput(e.target.value)}
                     placeholder="Condition of returned sets, missing screws, hospital remarks..."
-                    className="mt-1.5 resize-none rounded-xl border-slate-300 dark:border-slate-700 text-xs"
+                    className="mt-1.5 resize-none rounded-xl border-slate-300 dark:border-slate-700 text-xs font-medium"
                     rows={2}
                   />
                 </div>
@@ -3652,14 +4845,14 @@ const SavedDcs = () => {
                   variant="outline"
                   onClick={closeActionDialog}
                   disabled={isActionLoading}
-                  className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                  className="rounded-xl h-9 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={() => handleConfirmReturn(actionDialog.dc!)}
                   disabled={isActionLoading}
-                  className="rounded-xl h-10 px-5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-sm gap-2 min-w-[140px]"
+                  className="rounded-xl h-9 px-5 text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white shadow-none gap-2 min-w-[140px]"
                 >
                   {isActionLoading ? (
                     <>
@@ -3681,10 +4874,10 @@ const SavedDcs = () => {
           {actionDialog.type === "invoice" && actionDialog.dc && (
             <div>
               {/* Top Header */}
-              <div className="bg-gradient-to-r from-purple-50 via-indigo-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+              <div className="bg-background from-purple-50 via-indigo-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 border border-purple-200/80 shadow-xs">
+                    <div className="h-10 w-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 border border-purple-200/80 shadow-none">
                       <FileText className="w-5 h-5" />
                     </div>
                     <div>
@@ -3702,13 +4895,17 @@ const SavedDcs = () => {
                         </span>
                       </div>
                       <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
-                        {actionDialog.dc.invoiceRef ? "Update Linked Invoice" : "Link GoGSTBill Tax Invoice"}
+                        {actionDialog.dc.invoiceRef
+                          ? "Update Linked Invoice"
+                          : "Link GoGSTBill Tax Invoice"}
                       </h3>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
-                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
+                  <span className="text-slate-800 font-semibold">
+                    {actionDialog.dc.hospitalName}
+                  </span>
                   {actionDialog.dc.doctorName && (
                     <span className="flex items-center gap-1">
                       <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -3729,7 +4926,7 @@ const SavedDcs = () => {
                 <div className="rounded-xl border border-purple-200/90 dark:border-purple-900/40 bg-purple-50/60 dark:bg-purple-950/20 p-3.5 space-y-1.5 text-xs">
                   <div className="flex items-center justify-between font-bold text-purple-900 dark:text-purple-200">
                     <span className="flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-purple-600" />
+                      <FileText className="w-3.5 h-3.5 text-slate-600" />
                       GoGSTBill Settlement Link
                     </span>
                     <span className="text-[10px] bg-purple-200/80 dark:bg-purple-900/80 px-2 py-0.5 rounded-full font-bold">
@@ -3737,7 +4934,8 @@ const SavedDcs = () => {
                     </span>
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Attach the official tax invoice number and online sharing URL to settle this DC and lock it into the Completed queue.
+                    Attach the official tax invoice number and online sharing
+                    URL to settle this DC and lock it into the Completed queue.
                   </p>
                 </div>
               </div>
@@ -3745,7 +4943,9 @@ const SavedDcs = () => {
               {/* Bottom Options & Form Inputs */}
               <div className="px-5 py-3.5 space-y-3.5">
                 <div>
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Invoice Number *</Label>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Invoice Number *
+                  </Label>
                   <Input
                     value={invoiceRefInput}
                     onChange={(e) => setInvoiceRefInput(e.target.value)}
@@ -3757,25 +4957,26 @@ const SavedDcs = () => {
                 <div className="rounded-xl border border-purple-200/80 bg-purple-50/50 dark:bg-purple-950/20 dark:border-purple-900/40 p-3.5 space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-bold text-purple-950 dark:text-purple-200 flex items-center gap-1.5">
-                      <Link2 className="h-3.5 w-3.5 text-purple-600" />
+                      <Link2 className="h-3.5 w-3.5 text-slate-600" />
                       GoGSTBill Share URL (Optional)
                     </Label>
-                    {typeof navigator !== "undefined" && navigator.clipboard && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const text = await navigator.clipboard.readText();
-                            if (text) setInvoiceUrlInput(text.trim());
-                          } catch {
-                            // ignore clipboard read failure
-                          }
-                        }}
-                        className="text-[11px] text-purple-700 dark:text-purple-400 hover:underline font-semibold cursor-pointer"
-                      >
-                        Paste Clipboard Link
-                      </button>
-                    )}
+                    {typeof navigator !== "undefined" &&
+                      navigator.clipboard && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const text = await navigator.clipboard.readText();
+                              if (text) setInvoiceUrlInput(text.trim());
+                            } catch {
+                              // ignore clipboard read failure
+                            }
+                          }}
+                          className="text-[11px] text-purple-700 dark:text-purple-400 hover:underline font-semibold cursor-pointer"
+                        >
+                          Paste Clipboard Link
+                        </button>
+                      )}
                   </div>
                   <div className="flex gap-2">
                     <Input
@@ -3789,10 +4990,12 @@ const SavedDcs = () => {
                         type="button"
                         variant="outline"
                         className="h-10 px-3 text-xs border-purple-300 text-purple-800 bg-white hover:bg-purple-100 shrink-0 gap-1.5 rounded-xl cursor-pointer"
-                        onClick={() => window.open(invoiceUrlInput.trim(), '_blank')}
+                        onClick={() =>
+                          window.open(invoiceUrlInput.trim(), "_blank")
+                        }
                         title="Open link in new tab"
                       >
-                        <ExternalLink className="h-3.5 w-3.5 text-purple-600" />
+                        <ExternalLink className="h-3.5 w-3.5 text-slate-600" />
                         Test
                       </Button>
                     )}
@@ -3800,7 +5003,9 @@ const SavedDcs = () => {
                 </div>
 
                 <div>
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Invoice Remarks (Optional)</Label>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Invoice Remarks (Optional)
+                  </Label>
                   <Textarea
                     value={invoiceRemarksInput}
                     onChange={(e) => setInvoiceRemarksInput(e.target.value)}
@@ -3824,7 +5029,7 @@ const SavedDcs = () => {
                 <Button
                   onClick={() => handleConfirmInvoice(actionDialog.dc!)}
                   disabled={isActionLoading}
-                  className="rounded-xl h-10 px-5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-sm gap-2 min-w-[140px]"
+                  className="rounded-xl h-10 px-5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-none gap-2 min-w-[140px]"
                 >
                   {isActionLoading ? (
                     <>
@@ -3834,7 +5039,11 @@ const SavedDcs = () => {
                   ) : (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>{actionDialog.dc.invoiceRef ? 'Update Invoice' : 'Link Invoice'}</span>
+                      <span>
+                        {actionDialog.dc.invoiceRef
+                          ? "Update Invoice"
+                          : "Link Invoice"}
+                      </span>
                     </>
                   )}
                 </Button>
@@ -3846,10 +5055,10 @@ const SavedDcs = () => {
           {actionDialog.type === "cash" && actionDialog.dc && (
             <div>
               {/* Top Header */}
-              <div className="bg-gradient-to-r from-blue-50 via-sky-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+              <div className="bg-background from-blue-50 via-sky-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200/80 shadow-xs">
+                    <div className="h-10 w-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200/80 shadow-none">
                       <Receipt className="w-5 h-5" />
                     </div>
                     <div>
@@ -3873,7 +5082,9 @@ const SavedDcs = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
-                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
+                  <span className="text-slate-800 font-semibold">
+                    {actionDialog.dc.hospitalName}
+                  </span>
                   {actionDialog.dc.doctorName && (
                     <span className="flex items-center gap-1">
                       <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -3902,7 +5113,8 @@ const SavedDcs = () => {
                     </span>
                   </div>
                   <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Set the actual cash to collect. You can also generate an instant prefilled Cash Memo with 1 click.
+                    Set the actual cash to collect. You can also generate an
+                    instant prefilled Cash Memo with 1 click.
                   </p>
                 </div>
               </div>
@@ -3920,7 +5132,9 @@ const SavedDcs = () => {
                     </span>
                   </div>
                   <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 h-10 px-3">
-                    <span className="text-sm font-bold text-slate-500 mr-2">₹</span>
+                    <span className="text-sm font-bold text-slate-500 mr-2">
+                      ₹
+                    </span>
                     <Input
                       type="number"
                       value={cashAmountInput}
@@ -3937,7 +5151,7 @@ const SavedDcs = () => {
                 <div className="rounded-xl border border-amber-200/90 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-900/40 p-3.5 space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="flex items-center gap-1.5 font-bold text-amber-950 dark:text-amber-200 text-xs">
-                      <Receipt className="h-3.5 w-3.5 text-amber-600" />
+                      <Receipt className="h-3.5 w-3.5 text-slate-600" />
                       Hospital Printed / Hiked Total (Optional)
                     </Label>
                     <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full font-bold">
@@ -3945,7 +5159,9 @@ const SavedDcs = () => {
                     </span>
                   </div>
                   <div className="flex items-center rounded-xl border border-amber-300/80 bg-white dark:bg-slate-900 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 h-10 px-3">
-                    <span className="text-sm font-bold text-amber-700 mr-2">₹</span>
+                    <span className="text-sm font-bold text-amber-700 mr-2">
+                      ₹
+                    </span>
                     <Input
                       type="number"
                       value={billedAmountInput}
@@ -3958,18 +5174,25 @@ const SavedDcs = () => {
                   </div>
 
                   {/* Live Calculation of Margin */}
-                  {parseFloat(billedAmountInput) > (parseFloat(cashAmountInput) || 0) && (
+                  {parseFloat(billedAmountInput) >
+                    (parseFloat(cashAmountInput) || 0) && (
                     <div className="mt-1 pt-2 border-t border-amber-200/80 text-xs flex items-center justify-between text-amber-950 dark:text-amber-200 font-semibold">
                       <span>Hospital Markup / Cut:</span>
                       <span className="font-bold text-amber-800">
-                        ₹{(parseFloat(billedAmountInput) - (parseFloat(cashAmountInput) || 0)).toLocaleString('en-IN')}
+                        ₹
+                        {(
+                          parseFloat(billedAmountInput) -
+                          (parseFloat(cashAmountInput) || 0)
+                        ).toLocaleString("en-IN")}
                       </span>
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Cash Remarks (Optional)</Label>
+                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Cash Remarks (Optional)
+                  </Label>
                   <Textarea
                     value={cashRemarksInput}
                     onChange={(e) => setCashRemarksInput(e.target.value)}
@@ -3984,7 +5207,7 @@ const SavedDcs = () => {
               <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2.5">
                 <Button
                   onClick={() => handleCreateCashMemoForDc(actionDialog.dc!)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 w-full sm:w-auto h-10 px-4 text-xs rounded-xl shadow-sm cursor-pointer"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 w-full sm:w-auto h-10 px-4 text-xs rounded-xl shadow-none cursor-pointer"
                 >
                   <Receipt className="w-3.5 h-3.5" />
                   Create Cash Memo (Prefilled)
@@ -4004,8 +5227,10 @@ const SavedDcs = () => {
                     variant="secondary"
                     className="rounded-xl h-10 px-4 text-xs font-bold gap-1.5 border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200"
                   >
-                    {isActionLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                    {isActionLoading ? 'Saving...' : 'Move to Cash Queue'}
+                    {isActionLoading && (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    )}
+                    {isActionLoading ? "Saving..." : "Move to Cash Queue"}
                   </Button>
                 </div>
               </div>
@@ -4016,77 +5241,97 @@ const SavedDcs = () => {
           {actionDialog.type === "cancel" && actionDialog.dc && (
             <div>
               {/* Top Header */}
-              <div className="bg-gradient-to-r from-rose-50 via-orange-50/50 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200/80 shadow-xs">
-                      <AlertCircle className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300">
-                          DC #{actionDialog.dc.dcNo}
-                        </span>
-                        {actionDialog.dc.date && (
-                          <span className="text-[11px] font-medium text-slate-500">
-                            {actionDialog.dc.date}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-bold text-rose-800 bg-rose-100/80 border border-rose-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          Cancellation
-                        </span>
+              <div className="bg-slate-50/80 dark:bg-slate-900/80 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800 rounded-t-2xl">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0 border border-rose-200/80 dark:border-rose-800">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                      <span>Cancel Case</span>
+                      <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700">
+                        DC #{actionDialog.dc.dcNo}
+                      </span>
+                    </h3>
+                    {(actionDialog.dc.doctorName || actionDialog.dc.patientName) && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                        {actionDialog.dc.doctorName ? `Dr. ${actionDialog.dc.doctorName}` : ""}
+                        {actionDialog.dc.doctorName && actionDialog.dc.patientName ? ` • ` : ""}
+                        {actionDialog.dc.patientName ? `Pt: ${actionDialog.dc.patientName}` : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Dispatch Info Summary */}
+              <div className="px-5 pt-3.5 pb-1">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3.5 text-xs space-y-2.5">
+                  {/* Hospital Header */}
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-bold">
+                    <Building2 className="w-4 h-4 text-teal-600 shrink-0" />
+                    <span className="text-xs truncate">{actionDialog.dc.hospitalName}</span>
+                  </div>
+
+                  {/* Structured 2-Column Details Grid */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {/* Delivered By */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      {getTransportMode(actionDialog.dc.deliveredBy) ? (
+                        renderTransportIcon(getTransportMode(actionDialog.dc.deliveredBy)?.iconName, "w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5")
+                      ) : (
+                        <Truck className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Delivered By</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {normalizePersonnelName(actionDialog.dc.deliveredBy) || actionDialog.dc.deliveredBy || "Standard Dispatch"}
+                        </div>
                       </div>
-                      <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
-                        Cancel Delivery Challan
-                      </h3>
+                    </div>
+
+                    {/* Mode */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Target Queue</div>
+                        <div className="font-semibold text-rose-700 dark:text-rose-300 truncate">
+                          Cancelled Cases
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Total Items */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Package className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Total Items</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {getTotalQty(actionDialog.dc)} <span className="text-[11px] font-normal text-slate-500">({actionDialog.dc.items?.length || 0} types)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Instruments */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Wrench className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Instruments</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {actionDialog.dc.instruments?.length || 0} Sets / Trays
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
-                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
-                  {actionDialog.dc.doctorName && (
-                    <span className="flex items-center gap-1">
-                      <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      Dr. {actionDialog.dc.doctorName}
-                    </span>
-                  )}
-                  {actionDialog.dc.patientName && (
-                    <span className="flex items-center gap-1">
-                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      {actionDialog.dc.patientName}
-                    </span>
-                  )}
-                </div>
               </div>
 
-              {/* Top Info Card */}
-              <div className="px-5 pt-4 pb-1">
-                <div className="rounded-xl border border-rose-200/90 dark:border-rose-900/40 bg-rose-50/70 dark:bg-rose-950/20 p-3.5 space-y-2 text-xs">
-                  <div className="flex items-center justify-between font-bold text-rose-900 dark:text-rose-200">
-                    <span className="flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                      Case Cancellation Notice
-                    </span>
-                    <span className="text-[10px] bg-rose-200/80 dark:bg-rose-900/80 px-2 py-0.5 rounded-full font-bold">
-                      Direct to Cancelled
-                    </span>
-                  </div>
-                  <p className="text-rose-950/80 dark:text-rose-300 leading-relaxed">
-                    This DC will be moved directly to the <strong>Cancelled queue</strong>. Please record who returned the physical items and the reason.
-                  </p>
-                  {actionDialog.dc.deliveredBy && (
-                    <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 pt-1.5 border-t border-rose-200/70 dark:border-rose-900/40">
-                      <span>Originally Delivered By:</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">{actionDialog.dc.deliveredBy}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom Options & Form Inputs */}
+              {/* Form Inputs */}
               <div className="px-5 py-3.5 space-y-3.5">
                 <div>
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Returned By (Person / Transport) *</Label>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Returned By *
+                  </Label>
                   <div className="mt-1.5">
                     <PersonnelSelect
                       value={returnedByInput}
@@ -4095,59 +5340,20 @@ const SavedDcs = () => {
                       showQuickPicks={false}
                     />
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-0.5">
-                      Quick Select:
-                    </span>
-                    {TRANSPORT_MODES.map((mode) => {
-                      const isSelected =
-                        returnedByInput.trim().toLowerCase() === mode.name.toLowerCase() ||
-                        returnedByInput.trim().toLowerCase() === "courier";
-                      return (
-                        <button
-                          key={mode.name}
-                          type="button"
-                          onClick={() => setReturnedByInput(mode.name)}
-                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
-                            isSelected
-                              ? "bg-teal-600 text-white border-teal-600 shadow-xs"
-                              : "bg-white hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
-                          }`}
-                        >
-                          {renderTransportIcon(mode.iconName, isSelected ? "w-3 h-3 text-white" : "w-3 h-3 text-teal-600")}
-                          <span>{mode.name}</span>
-                        </button>
-                      );
-                    })}
-
-                    {topReturnPersons.map((p) => {
-                      const isSelected = returnedByInput.trim().toLowerCase() === p.name.toLowerCase();
-                      return (
-                        <button
-                          key={p.name}
-                          type="button"
-                          onClick={() => setReturnedByInput(p.name)}
-                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
-                            isSelected
-                              ? "bg-teal-600 text-white border-teal-600 shadow-xs"
-                              : "bg-slate-50 hover:bg-teal-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-300"
-                          }`}
-                        >
-                          <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-teal-600"}`} />
-                          <span>{p.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Click dropdown above to search team members or select Courier options.
+                  </p>
                 </div>
 
                 <div>
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Cancellation Reason *</Label>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Cancellation Reason *
+                  </Label>
                   <Textarea
                     value={cancelledRemarksInput}
                     onChange={(e) => setCancelledRemarksInput(e.target.value)}
                     placeholder="Why was this case cancelled (e.g., patient unfit, surgery postponed, implant change)?"
-                    className="mt-1.5 resize-none rounded-xl border-slate-300 dark:border-slate-700 text-xs"
+                    className="mt-1.5 resize-none rounded-xl border-slate-300 dark:border-slate-700 text-xs font-medium"
                     rows={2}
                   />
                 </div>
@@ -4159,14 +5365,14 @@ const SavedDcs = () => {
                   variant="outline"
                   onClick={closeActionDialog}
                   disabled={isActionLoading}
-                  className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                  className="rounded-xl h-9 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={() => handleConfirmCancel(actionDialog.dc!)}
                   disabled={isActionLoading}
-                  className="rounded-xl h-10 px-5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-sm gap-2 min-w-[140px]"
+                  className="rounded-xl h-9 px-5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-none gap-2 min-w-[140px]"
                 >
                   {isActionLoading ? (
                     <>
@@ -4188,64 +5394,88 @@ const SavedDcs = () => {
           {actionDialog.type === "purchase" && actionDialog.dc && (
             <div>
               {/* Top Header */}
-              <div className="bg-gradient-to-r from-amber-50 via-yellow-50/50 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200/80 shadow-xs">
-                      <ShoppingBag className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300">
-                          DC #{actionDialog.dc.dcNo}
-                        </span>
-                        {actionDialog.dc.date && (
-                          <span className="text-[11px] font-medium text-slate-500">
-                            {actionDialog.dc.date}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          Direct Sale
-                        </span>
-                      </div>
-                      <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
-                        Direct Purchase (Immediate Sale)
-                      </h3>
-                    </div>
+              <div className="bg-slate-50/80 dark:bg-slate-900/80 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800 rounded-t-2xl">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 border border-amber-200/80 dark:border-amber-800">
+                    <ShoppingBag className="w-5 h-5" />
                   </div>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 flex-wrap">
-                  <span className="text-slate-800 font-semibold">{actionDialog.dc.hospitalName}</span>
-                  {actionDialog.dc.doctorName && (
-                    <span className="flex items-center gap-1">
-                      <Stethoscope className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      Dr. {actionDialog.dc.doctorName}
-                    </span>
-                  )}
-                  {actionDialog.dc.patientName && (
-                    <span className="flex items-center gap-1">
-                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      {actionDialog.dc.patientName}
-                    </span>
-                  )}
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                      <span>Direct Sale</span>
+                      <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                        DC #{actionDialog.dc.dcNo}
+                      </span>
+                    </h3>
+                    {(actionDialog.dc.doctorName || actionDialog.dc.patientName) && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                        {actionDialog.dc.doctorName ? `Dr. ${actionDialog.dc.doctorName}` : ""}
+                        {actionDialog.dc.doctorName && actionDialog.dc.patientName ? ` • ` : ""}
+                        {actionDialog.dc.patientName ? `Pt: ${actionDialog.dc.patientName}` : ""}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Top Info Card */}
-              <div className="px-5 pt-4 pb-1">
-                <div className="rounded-xl border border-amber-200/90 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-950/20 p-3.5 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between font-bold text-amber-900 dark:text-amber-200">
-                    <span className="flex items-center gap-1.5">
-                      <ShoppingBag className="w-3.5 h-3.5 text-amber-600" />
-                      Direct Purchase Mode
-                    </span>
-                    <span className="text-[10px] bg-amber-200/80 dark:bg-amber-900/80 px-2 py-0.5 rounded-full font-bold">
-                      No Material Return
-                    </span>
+              {/* Dispatch Info Summary */}
+              <div className="px-5 pt-3.5 pb-1">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3.5 text-xs space-y-2.5">
+                  {/* Hospital Header */}
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-bold">
+                    <Building2 className="w-4 h-4 text-teal-600 shrink-0" />
+                    <span className="text-xs truncate">{actionDialog.dc.hospitalName}</span>
                   </div>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    All items are consumed/sold directly. Select how you would like to bill this challan:
-                  </p>
+
+                  {/* Structured 2-Column Details Grid */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {/* Delivered By */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      {getTransportMode(actionDialog.dc.deliveredBy) ? (
+                        renderTransportIcon(getTransportMode(actionDialog.dc.deliveredBy)?.iconName, "w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5")
+                      ) : (
+                        <Truck className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Delivered By</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {normalizePersonnelName(actionDialog.dc.deliveredBy) || actionDialog.dc.deliveredBy || "Standard Dispatch"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Mode */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <ShoppingBag className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Sale Mode</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          Direct Sale (No Return)
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Total Items */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Package className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Total Items</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {getTotalQty(actionDialog.dc)} <span className="text-[11px] font-normal text-slate-500">({actionDialog.dc.items?.length || 0} types)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Instruments */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Wrench className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Instruments</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {actionDialog.dc.instruments?.length || 0} Sets / Trays
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -4257,30 +5487,32 @@ const SavedDcs = () => {
                     onClick={() => {
                       handleCreateCashMemoForDc(actionDialog.dc!);
                     }}
-                    className="group relative flex flex-col justify-between p-4 rounded-xl border-2 border-blue-200 dark:border-blue-900/60 hover:border-blue-500 dark:hover:border-blue-500 bg-gradient-to-br from-blue-50/70 to-white dark:from-blue-950/30 dark:to-slate-900 hover:shadow-md transition-all duration-200 cursor-pointer text-left"
+                    className="group relative flex flex-col justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-teal-500 dark:hover:border-teal-500 bg-white dark:bg-slate-900 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-all duration-200 cursor-pointer text-left shadow-xs"
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <div className="p-2.5 rounded-lg bg-blue-600 text-white shadow-xs group-hover:scale-105 transition-transform">
-                          <Receipt className="h-5 w-5" />
+                        <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300">
+                          <Receipt className="h-4 w-4" />
                         </div>
-                        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 hover:bg-blue-100 border-blue-300 text-[11px] font-bold">
+                        <Badge className="bg-teal-50 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300 border-teal-200 text-[10.5px] font-semibold">
                           Cash Memo
                         </Badge>
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                        <h4 className="font-semibold text-xs text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400">
                           Cash Invoice
                         </h4>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                           Open Cash Invoice editor with all items & hospital prefilled from this DC.
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-2.5 border-t border-blue-100 dark:border-blue-900/40 flex items-center justify-between text-xs font-bold text-blue-600 dark:text-blue-400">
+                    <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-teal-600 dark:text-teal-400">
                       <span>Create Cash Invoice</span>
-                      <span className="text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
+                      <span className="text-sm group-hover:translate-x-1 transition-transform">
+                        &rarr;
+                      </span>
                     </div>
                   </div>
 
@@ -4289,30 +5521,32 @@ const SavedDcs = () => {
                     onClick={() => {
                       openActionDialog("invoice", actionDialog.dc!);
                     }}
-                    className="group relative flex flex-col justify-between p-4 rounded-xl border-2 border-purple-200 dark:border-purple-900/60 hover:border-purple-500 dark:hover:border-purple-500 bg-gradient-to-br from-purple-50/70 to-white dark:from-purple-950/30 dark:to-slate-900 hover:shadow-md transition-all duration-200 cursor-pointer text-left"
+                    className="group relative flex flex-col justify-between p-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-purple-500 dark:hover:border-purple-500 bg-white dark:bg-slate-900 hover:bg-purple-50/50 dark:hover:bg-purple-950/20 transition-all duration-200 cursor-pointer text-left shadow-xs"
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <div className="p-2.5 rounded-lg bg-purple-600 text-white shadow-xs group-hover:scale-105 transition-transform">
-                          <FileText className="h-5 w-5" />
+                        <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                          <FileText className="h-4 w-4" />
                         </div>
-                        <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 hover:bg-purple-100 border-purple-300 text-[11px] font-bold">
+                        <Badge className="bg-purple-50 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 text-[10.5px] font-semibold">
                           GoGSTBill
                         </Badge>
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                        <h4 className="font-semibold text-xs text-slate-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400">
                           Go GST Bill
                         </h4>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                           Link GoGSTBill tax invoice number and URL directly to complete this purchase.
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-2.5 border-t border-purple-100 dark:border-purple-900/40 flex items-center justify-between text-xs font-bold text-purple-600 dark:text-purple-400">
+                    <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-purple-600 dark:text-purple-400">
                       <span>Link Go GST Bill</span>
-                      <span className="text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
+                      <span className="text-sm group-hover:translate-x-1 transition-transform">
+                        &rarr;
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -4324,15 +5558,15 @@ const SavedDcs = () => {
                   type="button"
                   variant="ghost"
                   onClick={() => openActionDialog("cash", actionDialog.dc!)}
-                  className="text-xs text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 gap-1.5 h-10 px-3 rounded-xl cursor-pointer"
+                  className="text-xs text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 gap-1.5 h-9 px-3 rounded-xl cursor-pointer"
                 >
-                  <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
+                  <IndianRupee className="h-3.5 w-3.5 text-teal-600" />
                   Quick Cash Entry
                 </Button>
                 <Button
                   variant="outline"
                   onClick={closeActionDialog}
-                  className="h-10 px-4 text-xs font-semibold rounded-xl border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                  className="h-9 px-4 text-xs font-semibold rounded-xl border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
                 >
                   Cancel
                 </Button>
@@ -4344,7 +5578,10 @@ const SavedDcs = () => {
 
       {/* Cash Memo Viewer Modal Popup */}
       <Dialog open={cashMemoModalOpen} onOpenChange={setCashMemoModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border" aria-describedby={undefined}>
+        <DialogContent
+          className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border"
+          aria-describedby={undefined}
+        >
           <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
               <Receipt className="h-5 w-5 text-teal-700" />
@@ -4355,11 +5592,13 @@ const SavedDcs = () => {
                 <Button
                   size="sm"
                   onClick={() => {
-                    const validItems = (activeViewingCashMemo.items || []).filter(
-                      (i) => (i.description || "").trim().length > 0
-                    );
+                    const validItems = (
+                      activeViewingCashMemo.items || []
+                    ).filter((i) => (i.description || "").trim().length > 0);
                     if (validItems.length === 0) {
-                      toast.error("At least one item must be added to save or print the cash invoice.");
+                      toast.error(
+                        "At least one item must be added to save or print the cash invoice.",
+                      );
                       return;
                     }
                     printCashMemo(activeViewingCashMemo);
@@ -4384,10 +5623,15 @@ const SavedDcs = () => {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => navigate(`/cash-invoice?viewInv=${encodeURIComponent(viewingCashMemoRef || "")}`)}
+                  onClick={() =>
+                    navigate(
+                      `/cash-invoice?viewInv=${encodeURIComponent(viewingCashMemoRef || "")}`,
+                    )
+                  }
                   className="text-xs font-semibold gap-1.5"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" /> Open in Cash Invoices Suite
+                  <ExternalLink className="w-3.5 h-3.5" /> Open in Cash Invoices
+                  Suite
                 </Button>
               </div>
             )}
@@ -4397,23 +5641,28 @@ const SavedDcs = () => {
 
       {/* DC Document Preview Modal (View DC like Print) */}
       <Dialog open={dcDocumentModalOpen} onOpenChange={setDcDocumentModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-3 sm:p-6 bg-slate-100 dark:bg-slate-900" aria-describedby={undefined}>
+        <DialogContent
+          className="max-w-4xl max-h-[90vh] overflow-y-auto p-3 sm:p-6 bg-slate-100 dark:bg-slate-900"
+          aria-describedby={undefined}
+        >
           <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-300">
             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg font-bold text-slate-900">
               <FileText className="h-5 w-5 text-teal-700" />
               Delivery Challan Document — {selectedDc?.dcNo}
             </DialogTitle>
             <div className="flex items-center gap-2">
-              {selectedDc && selectedDc.status !== "completed" && selectedDc.status !== "cash" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => selectedDc && openEditDcModal(selectedDc)}
-                  className="border-teal-300 gap-1.5 h-8 text-xs bg-teal-50 text-teal-800 hover:bg-teal-100 font-bold"
-                >
-                  <Edit className="h-3.5 w-3.5 text-teal-700" /> Edit DC
-                </Button>
-              )}
+              {selectedDc &&
+                selectedDc.status !== "completed" &&
+                selectedDc.status !== "cash" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => selectedDc && openEditDcModal(selectedDc)}
+                    className="border-teal-300 gap-1.5 h-8 text-xs bg-teal-50 text-teal-800 hover:bg-teal-100 font-bold"
+                  >
+                    <Edit className="h-3.5 w-3.5 text-teal-700" /> Edit DC
+                  </Button>
+                )}
               <Button
                 size="sm"
                 onClick={() => selectedDc && handlePrint(selectedDc)}
@@ -4427,15 +5676,17 @@ const SavedDcs = () => {
                 onClick={() => selectedDc && handleShare(selectedDc)}
                 className="border-slate-300 gap-1.5 h-8 text-xs bg-white text-slate-800 hover:bg-slate-50"
               >
-                <Share2 className="h-3.5 w-3.5 text-amber-600" /> Share PDF
+                <Share2 className="h-3.5 w-3.5 text-slate-600" /> Share PDF
               </Button>
             </div>
           </DialogHeader>
 
           {!selectedDc ? (
-            <div className="text-sm text-slate-600 p-4">Select a DC to view document preview.</div>
+            <div className="text-sm text-slate-600 p-4">
+              Select a DC to view document preview.
+            </div>
           ) : (
-            <div className="bg-white p-4 sm:p-8 rounded-xl shadow-lg border border-slate-300 text-slate-900 space-y-5 font-sans">
+            <div className="bg-white p-4 sm:p-8 rounded-xl shadow-none border border-slate-300 text-slate-900 space-y-5 font-sans">
               {/* Document Header */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b-2 border-teal-600 gap-3">
                 <div>
@@ -4446,13 +5697,20 @@ const SavedDcs = () => {
                     Implants, Instruments & Surgical Accessories
                   </p>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Hyderabad, India • Mobile: +91 9396857455, +91 8686559393 • Web: srrorthoplus.com
+                    Hyderabad, India • Mobile: +91 9396857455, +91 8686559393 •
+                    Web: srrorthoplus.com
                   </p>
                 </div>
                 <div className="bg-teal-50 border border-teal-200 px-4 py-2 rounded-xl text-left sm:text-right shrink-0">
-                  <div className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">DELIVERY CHALLAN</div>
-                  <div className="text-base sm:text-xl font-black text-teal-950">{selectedDc.dcNo}</div>
-                  <div className="text-xs text-slate-600 font-semibold">{formatDate(getDisplayDate(selectedDc))}</div>
+                  <div className="text-[10px] font-bold text-teal-700 uppercase tracking-wider">
+                    DELIVERY CHALLAN
+                  </div>
+                  <div className="text-base sm:text-xl font-black text-teal-950">
+                    {selectedDc.dcNo}
+                  </div>
+                  <div className="text-xs text-slate-600 font-semibold">
+                    {formatDate(getDisplayDate(selectedDc))}
+                  </div>
                 </div>
               </div>
 
@@ -4460,91 +5718,138 @@ const SavedDcs = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Hospital / Party Name:</span>
-                    {selectedDc.status !== "completed" && selectedDc.status !== "cash" && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openEditDcModal(selectedDc)}
-                        className="h-5 px-1.5 text-[10.5px] font-bold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 border border-teal-200/80 rounded"
-                        title="Edit DC details or change hospital name"
-                      >
-                        <Edit className="w-2.5 h-2.5" />
-                        <span>Change</span>
-                      </Button>
-                    )}
+                    <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">
+                      Hospital / Party Name:
+                    </span>
+                    {selectedDc.status !== "completed" &&
+                      selectedDc.status !== "cash" && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openEditDcModal(selectedDc)}
+                          className="h-5 px-1.5 text-[10.5px] font-bold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 border border-teal-200/80 rounded"
+                          title="Edit DC details or change hospital name"
+                        >
+                          <Edit className="w-2.5 h-2.5" />
+                          <span>Change</span>
+                        </Button>
+                      )}
                   </div>
-                  <span className="font-extrabold text-slate-900 text-sm">{selectedDc.hospitalName}</span>
+                  <span className="font-extrabold text-slate-900 text-sm">
+                    {selectedDc.hospitalName}
+                  </span>
                 </div>
                 <div>
-                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Material Type:</span>
-                  <span className="font-semibold text-slate-800">{selectedDc.materialType || 'SS'}</span>
+                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">
+                    Material Type:
+                  </span>
+                  <span className="font-semibold text-slate-800">
+                    {selectedDc.materialType || "SS"}
+                  </span>
                 </div>
                 <div>
-                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Delivered By:</span>
-                  <span className="font-semibold text-slate-800">{selectedDc.deliveredBy || '-'}</span>
+                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">
+                    Delivered By:
+                  </span>
+                  <span className="font-semibold text-slate-800">
+                    {selectedDc.deliveredBy || "-"}
+                  </span>
                 </div>
                 <div>
-                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">Received By:</span>
-                  <span className="font-semibold text-slate-800">{selectedDc.receivedBy || '-'}</span>
+                  <span className="font-bold text-slate-500 block uppercase tracking-wider text-[10px]">
+                    Received By:
+                  </span>
+                  <span className="font-semibold text-slate-800">
+                    {selectedDc.receivedBy || "-"}
+                  </span>
                 </div>
               </div>
 
               {/* Despatched Items Table - Clean procedure bold header, no procedure column */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Despatched Items List</h3>
+                  <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                    Despatched Items List
+                  </h3>
                   <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
                     Total Qty: {getTotalQty(selectedDc)}
                   </span>
                 </div>
-                <div className="border border-slate-300 rounded-xl overflow-hidden shadow-xs">
+                <div className="border border-slate-300 rounded-xl overflow-hidden shadow-none">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-teal-800 text-white font-bold">
-                        <th className="p-2.5 border-r border-teal-700 w-10 text-center">S.No</th>
-                        <th className="p-2.5 border-r border-teal-700">Item Description</th>
+                        <th className="p-2.5 border-r border-teal-700 w-10 text-center">
+                          S.No
+                        </th>
+                        <th className="p-2.5 border-r border-teal-700">
+                          Item Description
+                        </th>
                         <th className="p-2.5 text-center w-20">Qty</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {(() => {
-                        const grouped: Record<string, typeof selectedDc.items> = {};
+                        const grouped: Record<string, typeof selectedDc.items> =
+                          {};
                         selectedDc.items.forEach((item) => {
-                          const proc = item.procedure || 'General Items';
+                          const proc = item.procedure || "General Items";
                           if (!grouped[proc]) grouped[proc] = [];
                           grouped[proc].push(item);
                         });
 
-                        return Object.entries(grouped).map(([procName, items]) => (
-                          <Fragment key={procName}>
-                            {/* Procedure Header Row - Bold in first cell */}
-                            <tr className="bg-slate-100 font-bold border-b border-slate-300">
-                              <td colSpan={3} className="p-2.5 text-left font-bold text-slate-900 bg-slate-100">
-                                {procName}
-                              </td>
-                            </tr>
-                            {items.map((item, idx) => {
-                              const totalQty = item.sizes.reduce((sum, size) => sum + size.qty, 0);
-                              const sizeStr = item.sizes
-                                .filter((s) => s.size)
-                                .map((s) => `${s.size} (Qty: ${s.qty})`)
-                                .join(', ');
+                        return Object.entries(grouped).map(
+                          ([procName, items]) => (
+                            <Fragment key={procName}>
+                              {/* Procedure Header Row - Bold in first cell */}
+                              <tr className="bg-slate-100 font-bold border-b border-slate-300">
+                                <td
+                                  colSpan={3}
+                                  className="p-2.5 text-left font-bold text-slate-900 bg-slate-100"
+                                >
+                                  {procName}
+                                </td>
+                              </tr>
+                              {items.map((item, idx) => {
+                                const totalQty = item.sizes.reduce(
+                                  (sum, size) => sum + size.qty,
+                                  0,
+                                );
+                                const sizeStr = item.sizes
+                                  .filter((s) => s.size)
+                                  .map((s) => `${s.size} (Qty: ${s.qty})`)
+                                  .join(", ");
 
-                              return (
-                                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'}>
-                                  <td className="p-2.5 text-center font-bold text-slate-500 border-r border-slate-200">{idx + 1}</td>
-                                  <td className="p-2.5 font-bold text-slate-900 border-r border-slate-200">
-                                    <div>{item.name}</div>
-                                    {sizeStr && <div className="text-[11px] text-slate-600 font-normal mt-0.5">{sizeStr}</div>}
-                                  </td>
-                                  <td className="p-2.5 text-center font-extrabold text-teal-800 text-sm">{totalQty}</td>
-                                </tr>
-                              );
-                            })}
-                          </Fragment>
-                        ));
+                                return (
+                                  <tr
+                                    key={idx}
+                                    className={
+                                      idx % 2 === 0
+                                        ? "bg-white"
+                                        : "bg-slate-50/70"
+                                    }
+                                  >
+                                    <td className="p-2.5 text-center font-bold text-slate-500 border-r border-slate-200">
+                                      {idx + 1}
+                                    </td>
+                                    <td className="p-2.5 font-bold text-slate-900 border-r border-slate-200">
+                                      <div>{item.name}</div>
+                                      {sizeStr && (
+                                        <div className="text-[11px] text-slate-600 font-normal mt-0.5">
+                                          {sizeStr}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5 text-center font-extrabold text-teal-800 text-sm">
+                                      {totalQty}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </Fragment>
+                          ),
+                        );
                       })()}
                     </tbody>
                   </table>
@@ -4554,9 +5859,11 @@ const SavedDcs = () => {
               {/* Instruments Details */}
               {selectedDc.instruments && selectedDc.instruments.length > 0 && (
                 <div className="border-t border-slate-200 pt-3 text-xs">
-                  <span className="font-bold text-slate-800 block uppercase tracking-wider text-[10px] mb-1">Instruments Details:</span>
+                  <span className="font-bold text-slate-800 block uppercase tracking-wider text-[10px] mb-1">
+                    Instruments Details:
+                  </span>
                   <div className="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-medium">
-                    {selectedDc.instruments.join(', ')}
+                    {selectedDc.instruments.join(", ")}
                   </div>
                 </div>
               )}
@@ -4564,9 +5871,11 @@ const SavedDcs = () => {
               {/* Box Numbers */}
               {selectedDc.boxNumbers && selectedDc.boxNumbers.length > 0 && (
                 <div className="border-t border-slate-200 pt-3 text-xs">
-                  <span className="font-bold text-slate-800 block uppercase tracking-wider text-[10px] mb-1">Box Numbers:</span>
+                  <span className="font-bold text-slate-800 block uppercase tracking-wider text-[10px] mb-1">
+                    Box Numbers:
+                  </span>
                   <div className="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-200 font-medium">
-                    {selectedDc.boxNumbers.join(', ')}
+                    {selectedDc.boxNumbers.join(", ")}
                   </div>
                 </div>
               )}
@@ -4574,18 +5883,26 @@ const SavedDcs = () => {
               {/* Remarks */}
               {selectedDc.remarks && (
                 <div className="border-t border-slate-200 pt-2 text-xs">
-                  <span className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">Remarks / Instructions:</span>
-                  <p className="text-slate-700 mt-0.5 italic bg-amber-50/60 p-2 rounded border border-amber-200">{selectedDc.remarks}</p>
+                  <span className="font-bold text-slate-700 block uppercase tracking-wider text-[10px]">
+                    Remarks / Instructions:
+                  </span>
+                  <p className="text-slate-700 mt-0.5 italic bg-amber-50/60 p-2 rounded border border-amber-200">
+                    {selectedDc.remarks}
+                  </p>
                 </div>
               )}
 
               {/* Signatures */}
               <div className="flex justify-between items-end border-t-2 border-slate-300 pt-12 mt-12 text-xs text-slate-600">
                 <div>
-                  <div className="border-t-2 border-slate-400 w-36 text-center pt-1 font-bold text-slate-800">Receiver Sign</div>
+                  <div className="border-t-2 border-slate-400 w-36 text-center pt-1 font-bold text-slate-800">
+                    Receiver Sign
+                  </div>
                 </div>
                 <div>
-                  <div className="border-t-2 border-slate-400 w-48 text-center pt-1 font-extrabold text-teal-900">For Sri Raja Rajeshwari Ortho Plus</div>
+                  <div className="border-t-2 border-slate-400 w-48 text-center pt-1 font-extrabold text-teal-900">
+                    For Sri Raja Rajeshwari Ortho Plus
+                  </div>
                 </div>
               </div>
             </div>
@@ -4596,365 +5913,584 @@ const SavedDcs = () => {
       {/* Details Modal */}
       <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
         <DialogContent className="sm:max-w-5xl lg:max-w-6xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-blue-700" />
-              {selectedDc ? `DC ${selectedDc.dcNo}` : "DC Details"}
-              {selectedDc && (
-                <Badge className={`${getStatusBadgeClass(selectedDc.status)} flex items-center gap-1 text-xs font-bold border px-2.5 py-0.5`}>
-                  {getStatusIcon(selectedDc.status)}
-                  {selectedDc.status === 'completed'
-                    ? (
-                        selectedDc.isPartialPayment || (selectedDc.paidAmount && selectedDc.originalInvoiceTotal && selectedDc.paidAmount < selectedDc.originalInvoiceTotal) || selectedDc.cashRemarks?.includes("Part Payment Received")
-                          ? '⚡ COMPLETED (PART PAYMENT SETTLED)'
-                          : (selectedDc.isTaxInvoice || (!selectedDc.cashAmount && selectedDc.invoiceRef && !selectedDc.invoiceRef.startsWith('SRR-')))
-                          ? '📄 TAX INVOICE LINKED (GOGST)'
-                          : (selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '⚡ PAYMENT LINKED & SETTLED' : '✅ PAID (NOT LINKED TO BANK)')
-                      )
-                    : selectedDc.status === 'cash'
-                    ? '⚡ AWAITING PAYMENT (CASH QUEUE)'
-                    : selectedDc.status.toUpperCase()}
-                </Badge>
-              )}
+          <DialogHeader className="pb-1">
+            <DialogTitle className="sr-only">
+              {selectedDc ? `DC ${selectedDc.dcNo} - ${selectedDc.hospitalName}` : "DC Details"}
             </DialogTitle>
             <DialogDescription className="sr-only">
-              View delivery challan details, items, instruments, notes, and history.
+              View delivery challan details, payment info, items, instruments, notes, and history.
             </DialogDescription>
           </DialogHeader>
 
           {!selectedDc ? (
-            <div className="text-sm text-slate-600">Select a DC to view details.</div>
+            <div className="text-sm text-slate-600">
+              Select a DC to view details.
+            </div>
           ) : (
             <div className="space-y-3">
-              {/* Header strip */}
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                <div className="min-w-0">
+              {/* Top 2-Column Header Card */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 shadow-2xs">
+                {/* Left Column: DC Number, Status Pill & Hospital Name + Call Icon */}
+                <div className="space-y-1.5 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <div className="text-sm font-semibold text-slate-900 truncate">{selectedDc.hospitalName}</div>
+                    <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-extrabold text-xs px-2.5 py-0.5 shadow-2xs">
+                      DC #{selectedDc.dcNo}
+                    </Badge>
+
+                    <Badge
+                      className={`${getStatusBadgeClass(selectedDc.status)} flex items-center gap-1 text-[11px] font-bold border px-2 py-0.5`}
+                    >
+                      {getStatusIcon(selectedDc.status)}
+                      {selectedDc.status === "completed"
+                        ? selectedDc.isPartialPayment ||
+                          (selectedDc.paidAmount &&
+                            selectedDc.originalInvoiceTotal &&
+                            selectedDc.paidAmount < selectedDc.originalInvoiceTotal) ||
+                          selectedDc.cashRemarks?.includes("Part Payment Received")
+                          ? "COMPLETED (PART PAID)"
+                          : selectedDc.isTaxInvoice ||
+                              (!selectedDc.cashAmount &&
+                                selectedDc.invoiceRef &&
+                                !selectedDc.invoiceRef.startsWith("SRR-"))
+                            ? "TAX INVOICE LINKED"
+                            : selectedDc.paymentMethod === "bank_transfer" ||
+                                linkedBankTx ||
+                                selectedDc.utrNo
+                              ? "PAYMENT SETTLED"
+                              : "PAID (UNLINKED)"
+                        : selectedDc.status === "cash"
+                          ? "AWAITING PAYMENT"
+                          : selectedDc.status === "pending"
+                            ? "DELIVERED"
+                            : selectedDc.status.toUpperCase()}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h3 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-slate-100 truncate" title={selectedDc.hospitalName}>
+                      {selectedDc.hospitalName}
+                    </h3>
+
+                    {/* Call / Contacts Phone Icon Button */}
                     {(() => {
                       const summary = getHospitalContactSummary(selectedDc.hospitalName);
                       return (
                         <Button
                           type="button"
                           size="sm"
-                          variant="outline"
-                          onClick={() => handleOpenHospitalContact(selectedDc.hospitalName, selectedDc, !summary.hasPhone)}
-                          className={`h-6 px-2 text-[11px] font-bold gap-1 shadow-2xs ${
+                          variant="ghost"
+                          onClick={() =>
+                            handleOpenHospitalContact(
+                              selectedDc.hospitalName,
+                              selectedDc,
+                              !summary.hasPhone,
+                            )
+                          }
+                          className={`h-7 w-7 p-0 rounded-full shrink-0 flex items-center justify-center cursor-pointer transition-transform hover:scale-105 ${
                             summary.hasPhone
-                              ? "text-emerald-800 border-emerald-300 hover:bg-emerald-50 bg-emerald-50/60"
-                              : "text-slate-600 border-slate-300 hover:bg-slate-100 bg-slate-50"
+                              ? "text-emerald-700 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300"
+                              : "text-slate-500 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-400 border border-slate-300"
                           }`}
-                          title={summary.hasPhone ? `Contacts: ${summary.primaryPhone}` : "Add phone number"}
+                          title={
+                            summary.hasPhone
+                              ? `Call / Contacts: ${summary.primaryPhone}`
+                              : "Add Contact / Phone Number"
+                          }
                         >
-                          <Phone className="w-3 h-3 text-emerald-600" />
-                          <span>{summary.hasPhone ? "Call / Contacts" : "Add Number"}</span>
+                          <Phone className="w-3.5 h-3.5" />
                         </Button>
                       );
                     })()}
                   </div>
-                  <div className="mt-1 text-xs text-slate-600">
-                    Date: <span className="font-medium text-slate-800">{formatDate(getDisplayDate(selectedDc))}</span>
-                    <span className="mx-2 text-slate-300">|</span>
-                    Items: <span className="font-medium text-slate-800">{getTotalQty(selectedDc)}</span>
-                  </div>
                 </div>
 
-                <div className="flex items-center gap-1">
-                  {selectedDc.status !== "completed" && selectedDc.status !== "cash" ? (
+                {/* Right Column: Date, Items & Quick Actions */}
+                <div className="flex flex-col sm:items-end justify-between gap-2 pr-6 sm:pr-8">
+                  <div className="text-xs text-slate-600 dark:text-slate-400 font-medium flex items-center gap-2 flex-wrap">
+                    <span>Date: <strong className="text-slate-900 dark:text-slate-100 font-semibold">{formatDate(getDisplayDate(selectedDc))}</strong></span>
+                    <span className="text-slate-300 dark:text-slate-700">|</span>
+                    <span>Items: <strong className="text-slate-900 dark:text-slate-100 font-semibold">{getTotalQty(selectedDc)}</strong></span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {selectedDc.status !== "completed" && selectedDc.status !== "cash" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-teal-700 hover:text-teal-900 hover:bg-teal-50 dark:text-teal-400"
+                        onClick={() => openEditDcModal(selectedDc)}
+                        title="Edit DC Details"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <div
+                        className="h-8 w-8 flex items-center justify-center text-slate-400"
+                        title="Completed — locked"
+                      >
+                        <Lock className="h-4 w-4" />
+                      </div>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-8 w-8 p-0 text-teal-700 hover:text-teal-900 hover:bg-teal-50"
-                      onClick={() => openEditDcModal(selectedDc)}
-                      title="Edit DC Details"
+                      className="h-8 w-8 p-0 text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                      onClick={() => handlePrint(selectedDc)}
+                      title="Print DC"
                     >
-                      <Edit className="h-4 w-4" />
+                      <Printer className="h-4 w-4" />
                     </Button>
-                  ) : (
-                    <div className="h-8 w-8 flex items-center justify-center text-slate-300" title="Completed — locked">
-                      <Lock className="h-4 w-4" />
-                    </div>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-slate-700 hover:text-slate-900 hover:bg-slate-100"
-                    onClick={() => handlePrint(selectedDc)}
-                    title="Print"
-                  >
-                    <Printer className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-slate-700 hover:text-slate-900 hover:bg-slate-100"
-                    onClick={() => handleShare(selectedDc)}
-                    title="Share PDF"
-                  >
-                    <Share2 className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                    onClick={() => requestDelete(selectedDc)}
-                    title="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                      onClick={() => handleShare(selectedDc)}
+                      title="Share PDF"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                      onClick={() => requestDelete(selectedDc)}
+                      title="Delete DC"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
 
               {/* Tabs */}
-              <Tabs defaultValue="overview">
-                <TabsList className="w-full justify-start bg-slate-50 border border-slate-200">
-                  <TabsTrigger value="overview" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+              <Tabs value={detailsModalTab} onValueChange={setDetailsModalTab}>
+                <TabsList className="w-full justify-start bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-1 rounded-lg">
+                  <TabsTrigger
+                    value="overview"
+                    className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                  >
                     Overview
                   </TabsTrigger>
-                  <TabsTrigger value="items" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger
+                    value="items"
+                    className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                  >
                     Items & Instruments
                   </TabsTrigger>
-                  <TabsTrigger value="notes" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger
+                    value="notes"
+                    className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                  >
                     Notes
                   </TabsTrigger>
-                  <TabsTrigger value="history" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  <TabsTrigger
+                    value="history"
+                    className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                  >
                     History
                   </TabsTrigger>
+                  {(selectedDc.status === "completed" ||
+                    selectedDc.status === "cash" ||
+                    selectedDc.paidAmount ||
+                    (selectedDc.partPayments && selectedDc.partPayments.length > 0)) && (
+                    <TabsTrigger
+                      value="payment"
+                      className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white flex items-center gap-1.5"
+                    >
+                      <Banknote className="w-3.5 h-3.5" />
+                      <span>Payment Info</span>
+                      {(selectedDc.paidAmount || (selectedDc.partPayments && selectedDc.partPayments.length > 0)) ? (
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+                      ) : null}
+                    </TabsTrigger>
+                  )}
                 </TabsList>
 
-                <TabsContent value="overview" className="mt-3 space-y-3">
+                {/* Separate Payment Info Tab */}
+                <TabsContent value="payment" className="mt-3 space-y-3">
                   {/* Bank & Payment Settlement Transaction Details */}
-                  {(selectedDc.isTaxInvoice || (!selectedDc.cashAmount && selectedDc.invoiceRef && !selectedDc.invoiceRef.startsWith("SRR-"))) ? (
-                    <div className="rounded-xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 p-3.5 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-lg bg-blue-600 text-white shadow-xs">
-                          <FileText className="w-4 h-4" />
+                  {selectedDc.isTaxInvoice ||
+                  (!selectedDc.cashAmount &&
+                    selectedDc.invoiceRef &&
+                    !selectedDc.invoiceRef.startsWith("SRR-")) ? (
+                    <div className="rounded-xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 p-4 space-y-2">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-xs shrink-0">
+                          <FileText className="w-5 h-5" />
                         </div>
                         <div>
-                          <h4 className="font-bold text-xs text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                            <span>GoGST Tax Invoice Linked ({selectedDc.invoiceRef || 'Linked'})</span>
-                            <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-[10px] py-0 px-1.5 font-bold border border-blue-300">
+                          <h4 className="font-bold text-sm text-blue-900 dark:text-blue-200 flex items-center gap-2">
+                            <span>
+                              GoGST Tax Invoice Linked (
+                              {selectedDc.invoiceRef || "Linked"})
+                            </span>
+                            <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-[10px] py-0 px-2 font-extrabold border border-blue-300">
                               Tax Invoice
                             </Badge>
                           </h4>
-                          <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
-                            Payments and bank settlements for GoGST bill transactions are tracked directly in GoGST.
+                          <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                            Payments and bank settlements for GoGST bill
+                            transactions are tracked directly in GoGSTBill.
                           </p>
                         </div>
                       </div>
                     </div>
-                  ) : (selectedDc.status === "completed" || Boolean(selectedDc.paidAt || linkedBankTx)) && (
-                    <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-emerald-50/20 dark:from-emerald-950/40 dark:to-slate-900 p-3.5 space-y-2.5 shadow-2xs">
-                      {/* Part Payment Alert Banner if Partial Payment */}
-                      {(() => {
-                        let isPart = Boolean(selectedDc.isPartialPayment);
-                        let paid = selectedDc.paidAmount ?? 0;
-                        let orig = selectedDc.originalInvoiceTotal ?? (selectedDc.cashAmount || 0);
+                  ) : (
+                    (selectedDc.status === "completed" ||
+                      Boolean(selectedDc.paidAt || linkedBankTx || (selectedDc.partPayments && selectedDc.partPayments.length > 0))) ? (
+                      <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-background from-emerald-50 via-teal-50/50 to-emerald-50/20 dark:from-emerald-950/40 dark:to-slate-900 p-3.5 space-y-2.5 shadow-none">
+                        {/* Part Payment Alert Banner if Partial Payment */}
+                        {(() => {
+                          let isPart = Boolean(selectedDc.isPartialPayment);
+                          let paid = selectedDc.paidAmount ?? 0;
+                          let orig =
+                            selectedDc.originalInvoiceTotal ??
+                            (selectedDc.cashAmount || 0);
 
-                        // Fallback parsing from cashRemarks string if stored prior: e.g. "Part Payment Received: ₹6 of ₹1,200"
-                        if (selectedDc.cashRemarks && selectedDc.cashRemarks.includes("Part Payment Received")) {
-                          isPart = true;
-                          const match = selectedDc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i);
-                          if (match) {
-                            paid = parseFloat(match[1].replace(/,/g, "")) || paid;
-                            orig = parseFloat(match[2].replace(/,/g, "")) || orig;
+                          // Fallback parsing from cashRemarks string if stored prior: e.g. "Part Payment Received: ₹6 of ₹1,200"
+                          if (
+                            selectedDc.cashRemarks &&
+                            selectedDc.cashRemarks.includes(
+                              "Part Payment Received",
+                            )
+                          ) {
+                            isPart = true;
+                            const match = selectedDc.cashRemarks.match(
+                              /Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i,
+                            );
+                            if (match) {
+                              paid =
+                                parseFloat(match[1].replace(/,/g, "")) || paid;
+                              orig =
+                                parseFloat(match[2].replace(/,/g, "")) || orig;
+                            }
                           }
-                        }
 
-                        if (!isPart && paid > 0 && orig > 0 && paid < orig) {
-                          isPart = true;
-                        }
+                          if (!isPart && paid > 0 && orig > 0 && paid < orig) {
+                            isPart = true;
+                          }
 
-                        const due = Math.max(0, orig - paid);
+                          const due = Math.max(0, orig - paid);
 
-                        if (!isPart && due <= 0) return null;
+                          if (!isPart && due <= 0 && (!selectedDc.partPayments || selectedDc.partPayments.length === 0)) return null;
 
-                        const partPaymentsList = selectedDc.partPayments || [];
+                          const partPaymentsList =
+                            selectedDc.partPayments || [];
 
-                        return (
-                          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 p-2.5 text-xs text-amber-900 dark:text-amber-200 space-y-2">
-                            <div className="flex items-center justify-between font-bold">
-                              <span className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
-                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                                ⚡ Part Payment Settlement Recorded
-                              </span>
-                              <Badge className="bg-amber-500 text-white font-bold text-[10px] px-2">PART PAID</Badge>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 font-mono text-center text-[11px]">
-                              <div className="bg-white/80 dark:bg-slate-900/80 p-1.5 rounded border border-amber-200 dark:border-amber-800">
-                                <span className="text-[10px] font-sans text-slate-500 block">Original Invoice</span>
-                                <span className="font-bold text-slate-800 dark:text-slate-200">₹{orig.toLocaleString('en-IN')}</span>
-                              </div>
-                              <div className="bg-emerald-100/80 dark:bg-emerald-950/80 p-1.5 rounded border border-emerald-300 dark:border-emerald-800">
-                                <span className="text-[10px] font-sans text-emerald-800 dark:text-emerald-300 block">Amount Settled</span>
-                                <span className="font-bold text-emerald-700 dark:text-emerald-400">₹{paid.toLocaleString('en-IN')}</span>
-                              </div>
-                              <div className="bg-rose-100/80 dark:bg-rose-950/80 p-1.5 rounded border border-rose-300 dark:border-rose-800">
-                                <span className="text-[10px] font-sans text-rose-800 dark:text-rose-300 block">Unpaid Balance</span>
-                                <span className="font-bold text-rose-700 dark:text-rose-400">₹{due.toLocaleString('en-IN')}</span>
-                              </div>
-                            </div>
+                          return (
+                            <div className="rounded-lg border border-amber-300/80 bg-amber-50/70 dark:bg-amber-950/40 dark:border-amber-800 p-2.5 text-xs text-amber-950 dark:text-amber-200 space-y-2">
+                              {/* Header + Stats in a compact row */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 dark:border-amber-800/80 pb-2">
+                                <div className="flex items-center gap-1.5 font-bold">
+                                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <span className="text-amber-900 dark:text-amber-100">Part Payment Settlement</span>
+                                  {selectedDc.invoiceRef && (
+                                    <span className="text-[10px] font-mono font-bold text-amber-900 dark:text-amber-200 bg-amber-200/80 dark:bg-amber-900/80 px-1.5 py-0.5 rounded border border-amber-400/60 ml-0.5">
+                                      Memo #{selectedDc.invoiceRef}
+                                    </span>
+                                  )}
+                                  <Badge className="bg-amber-500 text-white font-bold text-[9px] px-1.5 py-0">
+                                    PART PAID
+                                  </Badge>
+                                </div>
 
-                            {/* Collapsible Installments Breakdown */}
-                            {partPaymentsList.length > 0 && (
-                              <div className="pt-2 border-t border-amber-200/80 dark:border-amber-800/80">
-                                <button
-                                  type="button"
-                                  onClick={() => setIsTrackPartPaymentsOpen(!isTrackPartPaymentsOpen)}
-                                  className="w-full flex items-center justify-between text-[11px] font-bold text-amber-900 dark:text-amber-100 hover:text-amber-700 transition-colors py-1 cursor-pointer"
-                                >
-                                  <span className="flex items-center gap-1.5">
-                                    <Banknote className="w-3.5 h-3.5 text-amber-600" />
-                                    <span>Installment Breakdown ({partPaymentsList.length} Payments)</span>
+                                <div className="flex items-center gap-2 font-mono text-[11px] font-semibold flex-wrap">
+                                  <span className="text-slate-600 dark:text-slate-400">
+                                    Invoice: <b className="text-slate-900 dark:text-slate-100">₹{orig.toLocaleString("en-IN")}</b>
                                   </span>
-                                  <span className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded-full border border-amber-300">
-                                    {isTrackPartPaymentsOpen ? "Hide Breakdown" : "View Breakdown"}
-                                    {isTrackPartPaymentsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                                  <span className="text-emerald-700 dark:text-emerald-400">
+                                    Settled: <b>₹{paid.toLocaleString("en-IN")}</b>
                                   </span>
-                                </button>
+                                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                                  <span className="text-rose-700 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/80 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900">
+                                    Unpaid Balance: <b>₹{due.toLocaleString("en-IN")}</b>
+                                  </span>
+                                </div>
+                              </div>
 
-                                {isTrackPartPaymentsOpen && (
-                                  <div className="mt-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                                    {partPaymentsList.map((inst, index) => (
-                                      <div
-                                        key={index}
-                                        className="p-2 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-amber-200/90 dark:border-amber-800/90 text-[11px] flex items-center justify-between gap-2 shadow-2xs"
-                                      >
-                                        <div className="space-y-0.5">
-                                          <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                                            <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 text-[9px] px-1.5 py-0 border-amber-300">
-                                              #{index + 1}
-                                            </Badge>
-                                            <span>Installment #{index + 1} ({inst.paymentMethod === 'bank_transfer' ? '🏦 Bank Transfer' : '💵 Cash'})</span>
+                              {/* Installment Breakdown Rows */}
+                              {partPaymentsList.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px] font-bold text-amber-900 dark:text-amber-200 px-0.5">
+                                    <span className="flex items-center gap-1.5">
+                                      <Banknote className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                                      Installment Breakdown ({partPaymentsList.length} Payments)
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    {partPaymentsList.map((inst, index) => {
+                                      const isExp = expandedInstallmentIdx === index;
+                                      return (
+                                        <div
+                                          key={index}
+                                          className="rounded-md border border-amber-200/90 dark:border-amber-800/80 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 shadow-2xs space-y-1"
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                              <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 text-[9px] px-1 py-0 border-amber-300 font-extrabold shrink-0">
+                                                #{index + 1}
+                                              </Badge>
+
+                                              <span className="font-semibold text-slate-800 dark:text-slate-200 shrink-0 text-[11px]">
+                                                {inst.paymentMethod === "bank_transfer" ? "🏦 Bank Transfer" : "💵 Cash"}
+                                              </span>
+
+                                              <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                                                {formatDate(inst.at)}
+                                              </span>
+
+                                              {inst.utrNo && (
+                                                <div className="flex items-center gap-1 bg-amber-50/80 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-amber-200/80 dark:border-slate-700 text-[10px] font-mono">
+                                                  <span className="text-slate-500 text-[9px]">UTR:</span>
+                                                  <span className="font-bold text-slate-900 dark:text-slate-100">{inst.utrNo}</span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      navigator.clipboard.writeText(inst.utrNo || "");
+                                                      toast({ title: "Copied UTR", description: inst.utrNo });
+                                                    }}
+                                                    className="text-amber-700 hover:text-amber-900 cursor-pointer ml-0.5"
+                                                    title="Copy UTR"
+                                                  >
+                                                    <Copy className="w-3 h-3 text-amber-700" />
+                                                  </button>
+                                                </div>
+                                              )}
+
+                                              {inst.collectedBy && (
+                                                <span className="text-[10px] text-slate-500 hidden sm:inline truncate max-w-[120px]" title={inst.collectedBy}>
+                                                  by {inst.collectedBy}
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2 shrink-0">
+                                              <span className="font-extrabold font-mono text-emerald-700 dark:text-emerald-400 text-xs">
+                                                +₹{inst.amount.toLocaleString("en-IN")}
+                                              </span>
+
+                                              {(inst.remarks || inst.collectedBy) && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setExpandedInstallmentIdx(isExp ? null : index)}
+                                                  className="px-1.5 py-0.5 text-[10px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:text-amber-200 rounded border border-amber-300 flex items-center gap-0.5 cursor-pointer"
+                                                  title="Toggle Extra Info"
+                                                >
+                                                  <span>{isExp ? "Less" : "Info"}</span>
+                                                  {isExp ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                </button>
+                                              )}
+
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleDeletePartPaymentInstallment(selectedDc, index);
+                                                }}
+                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                                title={`Delete installment #${index + 1}`}
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
                                           </div>
-                                          <div className="text-[10px] text-slate-500 flex items-center gap-2">
-                                            <span>{formatDate(inst.at)}</span>
-                                            {inst.collectedBy && <span>• Collected by {inst.collectedBy}</span>}
-                                            {inst.utrNo && <span>• UTR: {inst.utrNo}</span>}
-                                          </div>
-                                          {inst.remarks && (
-                                            <div className="text-[10px] italic text-slate-600 dark:text-slate-400">
-                                              "{inst.remarks}"
+
+                                          {isExp && (
+                                            <div className="pt-1 mt-1 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2">
+                                              {inst.collectedBy && (
+                                                <span>Collected By: <strong className="text-slate-800 dark:text-slate-200">{inst.collectedBy}</strong></span>
+                                              )}
+                                              {inst.remarks && (
+                                                <span className="italic">"{inst.remarks}"</span>
+                                              )}
                                             </div>
                                           )}
                                         </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                          <span className="font-extrabold font-mono text-emerald-700 dark:text-emerald-400 text-xs">
-                                            +₹{inst.amount.toLocaleString('en-IN')}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleDeletePartPaymentInstallment(selectedDc, index);
-                                            }}
-                                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                                            title={`Delete wrong installment #${index + 1} (+₹${inst.amount.toLocaleString('en-IN')})`}
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
-                                )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Render single-transaction payment details card ONLY if there are no multi-installment part payments */}
+                        {(!selectedDc.partPayments ||
+                          selectedDc.partPayments.length === 0) && (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="p-2 rounded-lg bg-emerald-700 text-white shadow-none">
+                                <Landmark className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                                  <span>
+                                    {selectedDc.paymentMethod ===
+                                      "bank_transfer" ||
+                                    linkedBankTx ||
+                                    selectedDc.utrNo
+                                      ? "Payment & Bank Transaction Details"
+                                      : "Cash Collection Record (Physical Cash)"}
+                                  </span>
+                                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[10px] py-0 px-1.5 font-bold border border-emerald-300">
+                                    {selectedDc.paymentMethod ===
+                                      "bank_transfer" ||
+                                    linkedBankTx ||
+                                    selectedDc.utrNo
+                                      ? "🏦 Bank Transfer / UPI"
+                                      : "💵 Physical Cash (Hand Collected)"}
+                                  </Badge>
+                                </h4>
+                                <p className="text-[11px] text-slate-500">
+                                  {selectedDc.paymentMethod === "bank_transfer" ||
+                                  linkedBankTx ||
+                                  selectedDc.utrNo
+                                    ? `Reconciled bank transaction record for DC #${selectedDc.dcNo}`
+                                    : `Physical cash collected in hand for DC #${selectedDc.dcNo} • Unlinked to bank statement`}
+                                </p>
+                              </div>
+                            </div>
+                            {selectedDc.paidAmount ||
+                            selectedDc.cashAmount ||
+                            linkedBankTx?.amount ? (
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-500 uppercase font-bold block">
+                                  Paid Amount
+                                </span>
+                                <span className="text-base font-black font-mono text-emerald-700 dark:text-emerald-400">
+                                  ₹
+                                  {(
+                                    selectedDc.paidAmount ||
+                                    selectedDc.cashAmount ||
+                                    linkedBankTx?.amount ||
+                                    0
+                                  ).toLocaleString("en-IN")}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+
+                        {(!selectedDc.partPayments ||
+                          selectedDc.partPayments.length === 0) && (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2.5 border-t border-emerald-200/90 dark:border-emerald-800/80 text-xs">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                Bank Account
+                              </span>
+                              <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1 mt-0.5">
+                                <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                {selectedDc.paymentMethod === "bank_transfer" ||
+                                linkedBankTx ||
+                                selectedDc.utrNo
+                                  ? selectedDc.bankName || "Operating Account"
+                                  : selectedDc.bankName ||
+                                    "Physical Cash Treasury (In Hand)"}{" "}
+                                {selectedDc.accountNumber
+                                  ? `(${selectedDc.accountNumber})`
+                                  : ""}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                UTR / Ref #
+                              </span>
+                              {selectedDc.utrNo ||
+                              linkedBankTx?.referenceNumber ? (
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <code className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 text-[11px]">
+                                    {selectedDc.utrNo ||
+                                      linkedBankTx?.referenceNumber}
+                                  </code>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const val =
+                                        selectedDc.utrNo ||
+                                        linkedBankTx?.referenceNumber ||
+                                        "";
+                                      navigator.clipboard.writeText(val);
+                                      toast({
+                                        title: "Copied UTR #",
+                                        description: val,
+                                      });
+                                    }}
+                                    className="text-slate-400 hover:text-slate-700 p-0.5 rounded cursor-pointer"
+                                    title="Copy UTR Number"
+                                  >
+                                    <Copy className="w-3.5 h-3.5 text-teal-700" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 mt-0.5 block">
+                                  N/A
+                                </span>
+                              )}
+                            </div>
+
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                Settlement Date
+                              </span>
+                              <span className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1 mt-0.5">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                {selectedDc.paidAt
+                                  ? formatDate(selectedDc.paidAt)
+                                  : linkedBankTx?.date
+                                    ? `${linkedBankTx.date} ${linkedBankTx.time || ""}`
+                                    : formatDate(selectedDc.savedAt)}
+                              </span>
+                            </div>
+
+                            {selectedDc.invoiceRef && (
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                  Invoice / Memo Ref
+                                </span>
+                                <span className="font-mono font-bold text-teal-800 dark:text-teal-300 mt-0.5 block">
+                                  {selectedDc.invoiceRef}
+                                </span>
+                              </div>
+                            )}
+
+                            {linkedBankTx?.description && (
+                              <div className="sm:col-span-2">
+                                <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                  Bank Narration
+                                </span>
+                                <span
+                                  className="font-medium text-slate-800 dark:text-slate-200 mt-0.5 block truncate"
+                                  title={linkedBankTx.description}
+                                >
+                                  {linkedBankTx.description}
+                                </span>
                               </div>
                             )}
                           </div>
-                        );
-                      })()}
-
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="p-2 rounded-lg bg-emerald-700 text-white shadow-xs">
-                            <Landmark className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                               <span>{selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? 'Payment & Bank Transaction Details' : 'Cash Collection Record (Physical Cash)'}</span>
-                               <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[10px] py-0 px-1.5 font-bold border border-emerald-300">
-                                 {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? '🏦 Bank Transfer / UPI' : '💵 Physical Cash (Hand Collected)'}
-                               </Badge>
-                             </h4>
-                             <p className="text-[11px] text-slate-500">
-                               {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo 
-                                 ? `Reconciled bank transaction record for DC #${selectedDc.dcNo}`
-                                 : `Physical cash collected in hand for DC #${selectedDc.dcNo} • Unlinked to bank statement`}
-                             </p>
-                          </div>
-                        </div>
-                        {(selectedDc.paidAmount || selectedDc.cashAmount || linkedBankTx?.amount) ? (
-                          <div className="text-right">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold block">Paid Amount</span>
-                            <span className="text-base font-black font-mono text-emerald-700 dark:text-emerald-400">
-                              ₹{(selectedDc.paidAmount || selectedDc.cashAmount || linkedBankTx?.amount || 0).toLocaleString('en-IN')}
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2.5 border-t border-emerald-200/90 dark:border-emerald-800/80 text-xs">
-                        <div>
-                          <span className="text-[10px] font-bold uppercase text-slate-500 block">Bank Account</span>
-                          <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1 mt-0.5">
-                            <Building2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                            {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? (selectedDc.bankName || 'Operating Account') : (selectedDc.bankName || 'Physical Cash Treasury (In Hand)')} {selectedDc.accountNumber ? `(${selectedDc.accountNumber})` : ''}
-                          </span>
-                        </div>
-
-                        <div>
-                          <span className="text-[10px] font-bold uppercase text-slate-500 block">UTR / Ref #</span>
-                          {selectedDc.utrNo || linkedBankTx?.referenceNumber ? (
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <code className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 text-[11px]">
-                                {selectedDc.utrNo || linkedBankTx?.referenceNumber}
-                              </code>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const val = selectedDc.utrNo || linkedBankTx?.referenceNumber || '';
-                                  navigator.clipboard.writeText(val);
-                                  toast({ title: 'Copied UTR #', description: val });
-                                }}
-                                className="text-slate-400 hover:text-slate-700 p-0.5 rounded cursor-pointer"
-                                title="Copy UTR Number"
-                              >
-                                <Copy className="w-3.5 h-3.5 text-teal-700" />
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 mt-0.5 block">N/A</span>
-                          )}
-                        </div>
-
-                        <div>
-                          <span className="text-[10px] font-bold uppercase text-slate-500 block">Settlement Date</span>
-                          <span className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1 mt-0.5">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            {selectedDc.paidAt ? formatDate(selectedDc.paidAt) : linkedBankTx?.date ? `${linkedBankTx.date} ${linkedBankTx.time || ''}` : formatDate(selectedDc.savedAt)}
-                          </span>
-                        </div>
-
-                        {selectedDc.invoiceRef && (
-                          <div>
-                            <span className="text-[10px] font-bold uppercase text-slate-500 block">Invoice / Memo Ref</span>
-                            <span className="font-mono font-bold text-teal-800 dark:text-teal-300 mt-0.5 block">
-                              {selectedDc.invoiceRef}
-                            </span>
-                          </div>
-                        )}
-
-                        {linkedBankTx?.description && (
-                          <div className="sm:col-span-2">
-                            <span className="text-[10px] font-bold uppercase text-slate-500 block">Bank Narration</span>
-                            <span className="font-medium text-slate-800 dark:text-slate-200 mt-0.5 block truncate" title={linkedBankTx.description}>
-                              {linkedBankTx.description}
-                            </span>
-                          </div>
                         )}
                       </div>
-                    </div>
+                    ) : (
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-6 text-center space-y-2">
+                        <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center mx-auto">
+                          <Banknote className="w-5 h-5" />
+                        </div>
+                        <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                          No Payment Settlement Recorded
+                        </h4>
+                        <p className="text-xs text-slate-500 max-w-md mx-auto">
+                          Payment settlements, cash receipts, and bank transaction reconciliations for DC #{selectedDc.dcNo} will appear here once recorded.
+                        </p>
+                      </div>
+                    )
                   )}
+                </TabsContent>
+
+                {/* Overview Tab Content */}
+                <TabsContent value="overview" className="mt-3 space-y-3">
 
                   {/* Tracking + actions (courier-tracking style) */}
                   <div className="rounded-md border border-slate-200 bg-white p-2.5 sm:p-3">
@@ -4962,73 +6498,229 @@ const SavedDcs = () => {
                       {/* Animated Workflow Progress */}
                       <div className="min-w-0">
                         <div className="flex items-center justify-between mb-3">
-                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Workflow Lifecycle</span>
-                          <span className="text-[11px] font-medium text-slate-400">Step-by-step audit trail</span>
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            Workflow Lifecycle
+                          </span>
+                          <span className="text-[11px] font-medium text-slate-400">
+                            Step-by-step audit trail
+                          </span>
                         </div>
                         {(() => {
                           const isCancelled = selectedDc.status === "cancelled";
                           const isPurchase = selectedDc.isPurchase;
-                          const isReturned = selectedDc.status === "returned" || selectedDc.status === "completed" || selectedDc.status === "cash";
+                          const isReturned =
+                            selectedDc.status === "returned" ||
+                            selectedDc.status === "completed" ||
+                            selectedDc.status === "cash";
                           const isCompleted = selectedDc.status === "completed";
-                          const isBankLinked = Boolean(selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo);
+                          const isBankLinked = Boolean(
+                            selectedDc.paymentMethod === "bank_transfer" ||
+                            linkedBankTx ||
+                            selectedDc.utrNo,
+                          );
 
                           const isCashQueue = selectedDc.status === "cash";
                           const isAwaitingPayment = isCashQueue;
                           const isPaidNotLinked = isCompleted && !isBankLinked;
                           const isPaidAndLinked = isCompleted && isBankLinked;
-                          const selectedIsTaxInvoice = Boolean((selectedDc as any)?.isTaxInvoice || (!selectedDc?.cashAmount && selectedDc?.invoiceRef && !selectedDc?.invoiceRef.startsWith("SRR-")));
+                          const selectedIsTaxInvoice = Boolean(
+                            (selectedDc as any)?.isTaxInvoice ||
+                            (!selectedDc?.cashAmount &&
+                              selectedDc?.invoiceRef &&
+                              !selectedDc?.invoiceRef.startsWith("SRR-")),
+                          );
 
                           const Step = ({
-                            num, label, sublabel, state
+                            num,
+                            label,
+                            sublabel,
+                            state,
+                            icon,
                           }: {
-                            num: number; label: string; sublabel: string; state: "done" | "active" | "pending" | "cancelled"
-                          }) => (
-                            <div className="flex flex-col items-center gap-1 flex-1 min-w-0 z-10">
-                              <div className="relative flex items-center justify-center">
-                                {state === "active" && (
-                                  <div className="absolute -inset-1 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
-                                )}
-                                <div className={`
-                                  relative h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold border-2 shrink-0 transition-all
-                                  ${state === "done" ? "bg-emerald-600 border-emerald-600 text-white shadow-xs" :
-                                    state === "active" ? "bg-amber-500 border-amber-500 text-white font-extrabold shadow-xs" :
-                                    state === "cancelled" ? "bg-red-100 border-red-500 text-red-600" :
-                                    "bg-slate-50 border-slate-200 text-slate-400"}
-                                `}>
-                                  {state === "done" ? <Check className="h-4 w-4 stroke-[2.5]" /> : state === "cancelled" ? "✕" : num}
+                            num: number;
+                            label: string;
+                            sublabel: string;
+                            state: "done" | "active" | "pending" | "cancelled";
+                            icon?: React.ReactNode;
+                          }) => {
+                            const renderStepIcon = () => {
+                              if (state === "cancelled")
+                                return <Ban className="h-4 w-4 stroke-[2.2]" />;
+                              if (icon) return icon;
+
+                              // Fallbacks based on label
+                              if (label.includes("Delivered"))
+                                return <Truck className="h-4 w-4 stroke-[2.2]" />;
+                              if (label.includes("Purchased"))
+                                return <ShoppingBag className="h-4 w-4 stroke-[2.2]" />;
+                              if (label.includes("Returned"))
+                                return <RotateCcw className="h-4 w-4 stroke-[2.2]" />;
+                              if (label.includes("Awaiting"))
+                                return <Clock className="h-4 w-4 stroke-[2.2]" />;
+                              if (label.includes("GoGST"))
+                                return <Receipt className="h-4 w-4 stroke-[2.2]" />;
+                              if (label.includes("Cash Invoice") || label.includes("Cash Memo"))
+                                return <IndianRupee className="h-4 w-4 stroke-[2.2]" />;
+                              if (label.includes("Not Linked"))
+                                return <Wallet className="h-4 w-4 stroke-[2.2]" />;
+                              if (label.includes("Settled") || label.includes("Paid"))
+                                return <CheckCircle2 className="h-4 w-4 stroke-[2.2]" />;
+
+                              return state === "done" ? (
+                                <Check className="h-4 w-4 stroke-[2.5]" />
+                              ) : (
+                                num
+                              );
+                            };
+
+                            return (
+                              <div className="flex flex-col items-center gap-1 flex-1 min-w-0 z-10">
+                                <div className="relative flex items-center justify-center">
+                                  {state === "active" && (
+                                    <div className="absolute -inset-1 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+                                  )}
+                                  <div
+                                    className={`
+                                    relative h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold border-2 shrink-0 transition-all
+                                    ${
+                                      state === "done"
+                                        ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                        : state === "active"
+                                          ? "bg-amber-500 border-amber-500 text-white font-extrabold shadow-md scale-105"
+                                          : state === "cancelled"
+                                            ? "bg-red-100 border-red-500 text-red-600"
+                                            : "bg-slate-100 border-slate-200 text-slate-400 dark:bg-slate-800 dark:border-slate-700"
+                                    }
+                                  `}
+                                  >
+                                    {renderStepIcon()}
+                                  </div>
+                                </div>
+                                <div
+                                  className={`text-[11px] font-bold text-center leading-tight mt-1
+                                  ${
+                                    state === "done"
+                                      ? "text-emerald-700 dark:text-emerald-400"
+                                      : state === "active"
+                                        ? "text-amber-700 dark:text-amber-300 font-extrabold"
+                                        : state === "cancelled"
+                                          ? "text-red-600"
+                                          : "text-slate-400"
+                                  }
+                                `}
+                                >
+                                  {label}
+                                </div>
+                                <div className="text-[10px] text-slate-400 text-center leading-tight truncate w-full px-0.5">
+                                  {sublabel}
                                 </div>
                               </div>
-                              <div className={`text-[11px] font-bold text-center leading-tight mt-1
-                                ${state === "done" ? "text-emerald-700 dark:text-emerald-400" :
-                                  state === "active" ? "text-amber-700 dark:text-amber-300 font-extrabold" :
-                                  state === "cancelled" ? "text-red-600" :
-                                  "text-slate-400"}
-                              `}>{label}</div>
-                              <div className="text-[10px] text-slate-400 text-center leading-tight truncate w-full px-0.5">{sublabel}</div>
-                            </div>
-                          );
+                            );
+                          };
 
                           const Line = ({ done }: { done: boolean }) => (
-                            <div className={`h-0.5 flex-1 rounded-full -mt-7 shrink-0 transition-colors duration-300 ${
-                              done ? "bg-emerald-500" : "bg-slate-200 dark:bg-slate-700"
-                            }`} />
+                            <div
+                              className={`h-0.5 flex-1 rounded-full -mt-7 shrink-0 transition-colors duration-300 ${
+                                done
+                                  ? "bg-emerald-500"
+                                  : "bg-slate-200 dark:bg-slate-700"
+                              }`}
+                            />
                           );
 
-                          if (isCancelled) return (
-                            <div className="flex items-center gap-1">
-                              <Step num={1} label="Created" sublabel={formatDate(selectedDc.savedAt || getDisplayDate(selectedDc))} state="done" />
-                              <Line done={true} />
-                              <Step num={2} label="Cancelled" sublabel={selectedDc.cancelledAt ? formatDate(selectedDc.cancelledAt) : "–"} state="cancelled" />
-                            </div>
-                          );
+                          if (isCancelled)
+                            return (
+                              <div className="flex items-center gap-1">
+                                <Step
+                                  num={1}
+                                  label="Delivered"
+                                  sublabel={formatDate(
+                                    selectedDc.savedAt ||
+                                      getDisplayDate(selectedDc),
+                                  )}
+                                  state="done"
+                                />
+                                <Line done={true} />
+                                <Step
+                                  num={2}
+                                  label="Cancelled"
+                                  sublabel={
+                                    selectedDc.cancelledAt
+                                      ? formatDate(selectedDc.cancelledAt)
+                                      : "–"
+                                  }
+                                  state="cancelled"
+                                />
+                              </div>
+                            );
 
-                          if (selectedIsTaxInvoice) return (
+                          if (selectedIsTaxInvoice)
+                            return (
+                              <div className="flex items-center gap-1">
+                                {/* Step 1: Created */}
+                                <Step
+                                  num={1}
+                                  label="Delivered"
+                                  sublabel={formatDate(
+                                    selectedDc.savedAt ||
+                                      getDisplayDate(selectedDc),
+                                  )}
+                                  state="done"
+                                />
+                                <Line done={isReturned} />
+
+                                {/* Step 2: Returned / Purchased */}
+                                <Step
+                                  num={2}
+                                  label={isPurchase ? "Purchased" : "Returned"}
+                                  sublabel={
+                                    selectedDc.returnedAt
+                                      ? formatDate(selectedDc.returnedAt)
+                                      : isPurchase
+                                        ? "Direct Sale"
+                                        : "Awaiting Return"
+                                  }
+                                  state={isReturned ? "done" : "active"}
+                                />
+                                <Line done={isReturned} />
+
+                                {/* Step 3: Awaiting Billing */}
+                                <Step
+                                  num={3}
+                                  label="Awaiting Billing"
+                                  sublabel="Passed (GoGST Selected)"
+                                  state="done"
+                                />
+                                <Line done={Boolean(selectedDc.invoiceRef)} />
+
+                                {/* Step 4: GoGST Bill Linked */}
+                                <Step
+                                  num={4}
+                                  label="GoGST Bill Linked"
+                                  sublabel={
+                                    selectedDc.invoiceRef
+                                      ? `${selectedDc.invoiceRef} (Check in GoGST to track payments)`
+                                      : "(Check in GoGST to track payments)"
+                                  }
+                                  state={
+                                    selectedDc.invoiceRef ? "done" : "pending"
+                                  }
+                                />
+                              </div>
+                            );
+
+                          const hasBilled = isCashQueue || isCompleted;
+
+                          return (
                             <div className="flex items-center gap-1">
                               {/* Step 1: Created */}
                               <Step
                                 num={1}
-                                label="Created"
-                                sublabel={formatDate(selectedDc.savedAt || getDisplayDate(selectedDc))}
+                                label="Delivered"
+                                sublabel={formatDate(
+                                  selectedDc.savedAt ||
+                                    getDisplayDate(selectedDc),
+                                )}
                                 state="done"
                               />
                               <Line done={isReturned} />
@@ -5037,52 +6729,37 @@ const SavedDcs = () => {
                               <Step
                                 num={2}
                                 label={isPurchase ? "Purchased" : "Returned"}
-                                sublabel={selectedDc.returnedAt ? formatDate(selectedDc.returnedAt) : isPurchase ? "Direct Sale" : "Pending"}
+                                sublabel={
+                                  selectedDc.returnedAt
+                                    ? formatDate(selectedDc.returnedAt)
+                                    : isPurchase
+                                      ? "Direct Sale"
+                                      : "Awaiting Return"
+                                }
                                 state={isReturned ? "done" : "active"}
                               />
-                              <Line done={isReturned} />
-
-                              {/* Step 3: Awaiting Billing */}
-                              <Step
-                                num={3}
-                                label="Awaiting Billing"
-                                sublabel="Passed (GoGST Selected)"
-                                state="done"
-                              />
-                              <Line done={Boolean(selectedDc.invoiceRef)} />
-
-                              {/* Step 4: GoGST Bill Linked */}
-                              <Step
-                                num={4}
-                                label="GoGST Bill Linked"
-                                sublabel={
-                                  selectedDc.invoiceRef
-                                    ? `${selectedDc.invoiceRef} (Check in GoGST to track payments)`
-                                    : "(Check in GoGST to track payments)"
-                                }
-                                state={selectedDc.invoiceRef ? "done" : "pending"}
-                              />
-                            </div>
-                          );
-
-                          const hasBilled = isCashQueue || isCompleted;
-
-                          return (
-                            <div className="flex items-center gap-1">
-                              {/* Step 1: Created */}
-                              <Step num={1} label="Created" sublabel={formatDate(selectedDc.savedAt || getDisplayDate(selectedDc))} state="done" />
-                              <Line done={isReturned} />
-
-                              {/* Step 2: Returned / Purchased */}
-                              <Step num={2} label={isPurchase ? "Purchased" : "Returned"} sublabel={selectedDc.returnedAt ? formatDate(selectedDc.returnedAt) : isPurchase ? "Direct Sale" : "Pending"} state={isReturned ? "done" : "active"} />
                               <Line done={hasBilled || isReturned} />
 
                               {/* Step 3: Awaiting Billing */}
                               <Step
                                 num={3}
                                 label="Awaiting Billing"
-                                sublabel={isCashQueue ? "Passed (Cash Memo Created)" : hasBilled ? "Passed" : isReturned ? "Cash or GoGST decision" : "Pending Return"}
-                                state={hasBilled ? "done" : isReturned ? "active" : "pending"}
+                                sublabel={
+                                  isCashQueue
+                                    ? "Passed (Cash Memo Created)"
+                                    : hasBilled
+                                      ? "Passed"
+                                      : isReturned
+                                        ? "Cash or GoGST decision"
+                                        : "Pending Return"
+                                }
+                                state={
+                                  hasBilled
+                                    ? "done"
+                                    : isReturned
+                                      ? "active"
+                                      : "pending"
+                                }
                               />
                               <Line done={hasBilled} />
 
@@ -5093,17 +6770,25 @@ const SavedDcs = () => {
                                   isCashQueue || isCompleted
                                     ? "Cash Invoice"
                                     : isReturned
-                                    ? "Cash Invoice OR GoGST Bill"
-                                    : "Cash Invoice"
+                                      ? "Cash Invoice OR GoGST Bill"
+                                      : "Cash Invoice"
                                 }
                                 sublabel={
                                   isCashQueue
-                                    ? `(Awaiting Payment) • Due ₹${Math.max(0, (selectedDc.originalInvoiceTotal || selectedDc.cashAmount || selectedDc.billedAmount || 0) - (selectedDc.paidAmount || 0)).toLocaleString('en-IN')}`
+                                    ? `(Awaiting Payment) • Due ₹${Math.max(0, (selectedDc.originalInvoiceTotal || selectedDc.cashAmount || selectedDc.billedAmount || 0) - (selectedDc.paidAmount || 0)).toLocaleString("en-IN")}`
                                     : isCompleted
-                                    ? "Passed"
-                                    : isReturned ? "Branching: GoGST Tax Invoice OR Cash Memo" : "Bill Not Raised Yet"
+                                      ? "Passed"
+                                      : isReturned
+                                        ? "Branching: GoGST Tax Invoice OR Cash Memo"
+                                        : "Bill Not Raised Yet"
                                 }
-                                state={isCashQueue ? "active" : isCompleted ? "done" : "pending"}
+                                state={
+                                  isCashQueue
+                                    ? "active"
+                                    : isCompleted
+                                      ? "done"
+                                      : "pending"
+                                }
                               />
                               <Line done={isCompleted} />
 
@@ -5111,27 +6796,59 @@ const SavedDcs = () => {
                               <Step
                                 num={5}
                                 label="Paid (Not Linked)"
-                                sublabel={isPaidNotLinked ? "Cash Collected" : isPaidAndLinked ? "Passed" : "Pending"}
-                                state={isPaidNotLinked ? "active" : isPaidAndLinked ? "done" : "pending"}
+                                sublabel={
+                                  isPaidNotLinked
+                                    ? "Cash Collected"
+                                    : isPaidAndLinked
+                                      ? "Passed"
+                                      : "Pending"
+                                }
+                                state={
+                                  isPaidNotLinked
+                                    ? "active"
+                                    : isPaidAndLinked
+                                      ? "done"
+                                      : "pending"
+                                }
                               />
                               <Line done={isPaidAndLinked} />
 
                               {/* Step 6: Paid & Linked & Settled */}
                               {(() => {
-                                let isPart = Boolean(selectedDc.isPartialPayment);
+                                let isPart = Boolean(
+                                  selectedDc.isPartialPayment,
+                                );
                                 let paid = selectedDc.paidAmount ?? 0;
-                                let orig = selectedDc.originalInvoiceTotal ?? (selectedDc.cashAmount || 0);
+                                let orig =
+                                  selectedDc.originalInvoiceTotal ??
+                                  (selectedDc.cashAmount || 0);
 
-                                if (selectedDc.cashRemarks && selectedDc.cashRemarks.includes("Part Payment Received")) {
+                                if (
+                                  selectedDc.cashRemarks &&
+                                  selectedDc.cashRemarks.includes(
+                                    "Part Payment Received",
+                                  )
+                                ) {
                                   isPart = true;
-                                  const match = selectedDc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i);
+                                  const match = selectedDc.cashRemarks.match(
+                                    /Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i,
+                                  );
                                   if (match) {
-                                    paid = parseFloat(match[1].replace(/,/g, "")) || paid;
-                                    orig = parseFloat(match[2].replace(/,/g, "")) || orig;
+                                    paid =
+                                      parseFloat(match[1].replace(/,/g, "")) ||
+                                      paid;
+                                    orig =
+                                      parseFloat(match[2].replace(/,/g, "")) ||
+                                      orig;
                                   }
                                 }
 
-                                if (!isPart && paid > 0 && orig > 0 && paid < orig) {
+                                if (
+                                  !isPart &&
+                                  paid > 0 &&
+                                  orig > 0 &&
+                                  paid < orig
+                                ) {
                                   isPart = true;
                                 }
 
@@ -5140,17 +6857,30 @@ const SavedDcs = () => {
                                 return (
                                   <Step
                                     num={6}
-                                    label={isPart ? "Part Paid Settled" : "Paid & Linked & Settled"}
+                                    label={
+                                      isPart
+                                        ? "Part Paid Settled"
+                                        : "Paid & Linked & Settled"
+                                    }
                                     sublabel={
                                       isPart
-                                        ? `⚠️ Paid ₹${paid.toLocaleString('en-IN')} / ₹${orig.toLocaleString('en-IN')} (Due ₹${due.toLocaleString('en-IN')})`
+                                        ? `⚠️ Paid ₹${paid.toLocaleString("en-IN")} / ₹${orig.toLocaleString("en-IN")} (Due ₹${due.toLocaleString("en-IN")})`
                                         : isPaidAndLinked
-                                        ? (selectedDc.paidAt ? formatDate(selectedDc.paidAt) : selectedDc.utrNo || linkedBankTx?.referenceNumber ? `Ref: ${selectedDc.utrNo || linkedBankTx?.referenceNumber}` : "Bank Settled")
-                                        : isCompleted
-                                        ? "Completed"
-                                        : "Bank Match"
+                                          ? selectedDc.paidAt
+                                            ? formatDate(selectedDc.paidAt)
+                                            : selectedDc.utrNo ||
+                                                linkedBankTx?.referenceNumber
+                                              ? `Ref: ${selectedDc.utrNo || linkedBankTx?.referenceNumber}`
+                                              : "Bank Settled"
+                                          : isCompleted
+                                            ? "Completed"
+                                            : "Bank Match"
                                     }
-                                    state={isCompleted || isPaidAndLinked ? "done" : "pending"}
+                                    state={
+                                      isCompleted || isPaidAndLinked
+                                        ? "done"
+                                        : "pending"
+                                    }
                                   />
                                 );
                               })()}
@@ -5170,31 +6900,60 @@ const SavedDcs = () => {
                               Next Steps
                             </span>
                           </div>
-                          {(selectedDc.isTaxInvoice || (!selectedDc.cashAmount && selectedDc.invoiceRef && !selectedDc.invoiceRef.startsWith('SRR-'))) ? (
-                            <Badge variant="outline" className="text-[10px] font-bold border-purple-300 text-purple-800 bg-purple-100 gap-1 py-0.5 px-2">
-                              <FileText className="h-3 w-3 text-purple-600" />
+                          {selectedDc.isTaxInvoice ||
+                          (!selectedDc.cashAmount &&
+                            selectedDc.invoiceRef &&
+                            !selectedDc.invoiceRef.startsWith("SRR-")) ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-bold border-purple-300 text-purple-800 bg-purple-100 gap-1 py-0.5 px-2"
+                            >
+                              <FileText className="h-3 w-3 text-slate-600" />
                               Invoice Linked • Track Payments in GoGSTBill
                             </Badge>
                           ) : selectedDc.status === "completed" ? (
-                            <Badge variant="outline" className="text-[10px] font-bold border-emerald-300 text-emerald-800 bg-emerald-100 gap-1 py-0.5 px-2">
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-bold border-emerald-300 text-emerald-800 bg-emerald-100 gap-1 py-0.5 px-2"
+                            >
                               <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                              {selectedDc.isPartialPayment || (selectedDc.paidAmount && selectedDc.originalInvoiceTotal && selectedDc.paidAmount < selectedDc.originalInvoiceTotal) || selectedDc.cashRemarks?.includes("Part Payment Received")
-                                ? '⚡ Part Payment Settled & Completed'
-                                : selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo
-                                ? '⚡ Payment Linked & Settled'
-                                : '✅ Payment Settled & Completed'}
+                              {selectedDc.isPartialPayment ||
+                              (selectedDc.paidAmount &&
+                                selectedDc.originalInvoiceTotal &&
+                                selectedDc.paidAmount <
+                                  selectedDc.originalInvoiceTotal) ||
+                              selectedDc.cashRemarks?.includes(
+                                "Part Payment Received",
+                              )
+                                ? "⚡ Part Payment Settled & Completed"
+                                : selectedDc.paymentMethod ===
+                                      "bank_transfer" ||
+                                    linkedBankTx ||
+                                    selectedDc.utrNo
+                                  ? "⚡ Payment Linked & Settled"
+                                  : "✅ Payment Settled & Completed"}
                             </Badge>
                           ) : selectedDc.status === "cash" ? (
-                            <Badge variant="outline" className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50 gap-1 py-0 h-5">
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50 gap-1 py-0 h-5"
+                            >
                               ● Awaiting Payment
                             </Badge>
                           ) : selectedDc.status === "returned" ? (
-                            <Badge variant="outline" className="text-[10px] font-medium border-teal-200 text-teal-700 bg-teal-50 gap-1 py-0 h-5">
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-medium border-teal-200 text-teal-700 bg-teal-50 gap-1 py-0 h-5"
+                            >
                               Returned • Ready to Bill
                             </Badge>
                           ) : selectedDc.status === "pending" ? (
-                            <Badge variant="outline" className="text-[10px] font-medium border-amber-200 text-amber-700 bg-amber-50 gap-1 py-0 h-5">
-                              Pending Return
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-bold border-teal-300 text-teal-800 bg-teal-50 gap-1 py-0.5 px-2"
+                            >
+                              <Truck className="h-3 w-3 text-teal-600" />
+                              Delivered • Pending Return
                             </Badge>
                           ) : null}
                         </div>
@@ -5206,14 +6965,20 @@ const SavedDcs = () => {
                               {/* 1. Record Return */}
                               <button
                                 type="button"
-                                onClick={() => openActionDialog("return", selectedDc)}
-                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-indigo-200/90 bg-indigo-50/60 hover:bg-indigo-100 hover:border-indigo-300 text-indigo-900 transition-all text-center group shadow-2xs hover:shadow-sm"
+                                onClick={() =>
+                                  openActionDialog("return", selectedDc)
+                                }
+                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-indigo-200/90 bg-indigo-50/60 hover:bg-indigo-100 hover:border-indigo-300 text-indigo-900 transition-all text-center group shadow-none hover:shadow-none"
                               >
                                 <div className="h-7 w-7 rounded-full bg-indigo-100 group-hover:bg-indigo-200 flex items-center justify-center mb-1 text-indigo-700 transition-colors">
-                                  <User className="h-4 w-4" />
+                                  <RotateCcw className="h-4 w-4" />
                                 </div>
-                                <span className="text-xs font-bold leading-tight">Return</span>
-                                <span className="text-[10px] text-slate-500 mt-0.5">Receive Sets</span>
+                                <span className="text-xs font-bold leading-tight">
+                                  Return
+                                </span>
+                                <span className="text-[10px] text-slate-500 mt-0.5">
+                                  Receive Sets
+                                </span>
                               </button>
 
                               {/* 2. Purchase: Cash Memo */}
@@ -5223,16 +6988,20 @@ const SavedDcs = () => {
                                   setDetailsDialogOpen(false);
                                   handleCreateCashMemoForDc(selectedDc);
                                 }}
-                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all text-center group shadow-2xs hover:shadow-sm"
+                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all text-center group shadow-none hover:shadow-none"
                               >
-                                <span className="absolute -top-1.5 right-2 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-500 text-white shadow-2xs">
+                                <span className="absolute -top-1.5 right-2 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-500 text-white shadow-none">
                                   Purchase
                                 </span>
                                 <div className="h-7 w-7 rounded-full bg-amber-100 group-hover:bg-amber-200 flex items-center justify-center mb-1 text-amber-800 transition-colors">
                                   <Receipt className="h-4 w-4" />
                                 </div>
-                                <span className="text-xs font-bold leading-tight">Cash Memo</span>
-                                <span className="text-[10px] text-amber-800/80 mt-0.5">Instant Bill</span>
+                                <span className="text-xs font-bold leading-tight">
+                                  Cash Memo
+                                </span>
+                                <span className="text-[10px] text-amber-800/80 mt-0.5">
+                                  Instant Bill
+                                </span>
                               </button>
 
                               {/* 3. Purchase: Go GST Bill */}
@@ -5242,84 +7011,103 @@ const SavedDcs = () => {
                                   setDetailsDialogOpen(false);
                                   openActionDialog("invoice", selectedDc);
                                 }}
-                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all text-center group shadow-2xs hover:shadow-sm"
+                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all text-center group shadow-none hover:shadow-none"
                               >
-                                <span className="absolute -top-1.5 right-2 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-500 text-white shadow-2xs">
+                                <span className="absolute -top-1.5 right-2 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-500 text-white shadow-none">
                                   Purchase
                                 </span>
                                 <div className="h-7 w-7 rounded-full bg-amber-100 group-hover:bg-amber-200 flex items-center justify-center mb-1 text-amber-800 transition-colors">
                                   <FileText className="h-4 w-4" />
                                 </div>
-                                <span className="text-xs font-bold leading-tight">Go GST Bill</span>
-                                <span className="text-[10px] text-amber-800/80 mt-0.5">Link Invoice</span>
+                                <span className="text-xs font-bold leading-tight">
+                                  Go GST Bill
+                                </span>
+                                <span className="text-[10px] text-amber-800/80 mt-0.5">
+                                  Link Invoice
+                                </span>
                               </button>
 
                               {/* 4. Cancel Case */}
                               <button
                                 type="button"
-                                onClick={() => openActionDialog("cancel", selectedDc)}
-                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-rose-200/90 bg-rose-50/50 hover:bg-rose-100 hover:border-rose-300 text-rose-900 transition-all text-center group shadow-2xs hover:shadow-sm"
+                                onClick={() =>
+                                  openActionDialog("cancel", selectedDc)
+                                }
+                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-rose-200/90 bg-rose-50/50 hover:bg-rose-100 hover:border-rose-300 text-rose-900 transition-all text-center group shadow-none hover:shadow-none"
                               >
                                 <div className="h-7 w-7 rounded-full bg-rose-100 group-hover:bg-rose-200 flex items-center justify-center mb-1 text-rose-700 transition-colors">
                                   <AlertCircle className="h-4 w-4" />
                                 </div>
-                                <span className="text-xs font-bold leading-tight text-rose-800">Cancel Case</span>
-                                <span className="text-[10px] text-rose-600/80 mt-0.5">Surgery Cancelled</span>
+                                <span className="text-xs font-bold leading-tight text-rose-800">
+                                  Cancel Case
+                                </span>
+                                <span className="text-[10px] text-rose-600/80 mt-0.5">
+                                  Surgery Cancelled
+                                </span>
                               </button>
                             </div>
                           </div>
                         )}
 
                         {/* State: Returned, Awaiting Billing */}
-                        {selectedDc.status === "returned" && !selectedDc.invoiceRef && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {/* Option 1: Create Cash Memo */}
-                            <div className="rounded-lg border border-blue-200/80 bg-blue-50/40 p-2.5 flex flex-col justify-between hover:border-blue-300 transition-colors">
-                              <div>
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-900">
-                                    <Receipt className="h-3.5 w-3.5 text-blue-600" />
-                                    Create Cash Memo
+                        {selectedDc.status === "returned" &&
+                          !selectedDc.invoiceRef && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {/* Option 1: Create Cash Memo */}
+                              <div className="rounded-lg border border-blue-200/80 bg-blue-50/40 p-2.5 flex flex-col justify-between hover:border-blue-300 transition-colors">
+                                <div>
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-900">
+                                      <Receipt className="h-3.5 w-3.5 text-blue-600" />
+                                      Create Cash Memo
+                                    </div>
+                                    <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
+                                      Instant
+                                    </span>
                                   </div>
-                                  <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
-                                    Instant
-                                  </span>
+                                  <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                                    Auto-fill returned items and generate
+                                    instant cash bill
+                                  </p>
                                 </div>
-                                <p className="text-[11px] text-slate-600 mt-1 leading-snug">
-                                  Auto-fill returned items and generate instant cash bill
-                                </p>
+                                <Button
+                                  size="sm"
+                                  className="mt-2.5 h-7 w-full text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shadow-none"
+                                  onClick={() =>
+                                    handleCreateCashMemoForDc(selectedDc)
+                                  }
+                                >
+                                  Create Cash Memo{" "}
+                                  <ArrowRight className="h-3 w-3" />
+                                </Button>
                               </div>
-                              <Button
-                                size="sm"
-                                className="mt-2.5 h-7 w-full text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shadow-sm"
-                                onClick={() => handleCreateCashMemoForDc(selectedDc)}
-                              >
-                                Create Cash Memo <ArrowRight className="h-3 w-3" />
-                              </Button>
-                            </div>
 
-                            {/* Option 2: Link GoGSTBill */}
-                            <div className="rounded-lg border border-purple-200/80 bg-purple-50/40 p-2.5 flex flex-col justify-between hover:border-purple-300 transition-colors">
-                              <div>
-                                <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-900">
-                                  <FileText className="h-3.5 w-3.5 text-purple-600" />
-                                  Link GoGSTBill
+                              {/* Option 2: Link GoGSTBill */}
+                              <div className="rounded-lg border border-purple-200/80 bg-purple-50/40 p-2.5 flex flex-col justify-between hover:border-purple-300 transition-colors">
+                                <div>
+                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-900">
+                                    <FileText className="h-3.5 w-3.5 text-slate-600" />
+                                    Link GoGSTBill
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                                    Attach tax invoice number from GoGSTBill
+                                    portal
+                                  </p>
                                 </div>
-                                <p className="text-[11px] text-slate-600 mt-1 leading-snug">
-                                  Attach tax invoice number from GoGSTBill portal
-                                </p>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2.5 h-7 w-full text-xs font-medium border-purple-300 text-purple-700 bg-white hover:bg-purple-50 gap-1.5"
+                                  onClick={() =>
+                                    openActionDialog("invoice", selectedDc)
+                                  }
+                                >
+                                  Link Invoice Number{" "}
+                                  <ArrowRight className="h-3 w-3" />
+                                </Button>
                               </div>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="mt-2.5 h-7 w-full text-xs font-medium border-purple-300 text-purple-700 bg-white hover:bg-purple-50 gap-1.5"
-                                onClick={() => openActionDialog("invoice", selectedDc)}
-                              >
-                                Link Invoice Number <ArrowRight className="h-3 w-3" />
-                              </Button>
                             </div>
-                          </div>
-                        )}
+                          )}
 
                         {/* State: Cash Queue - Awaiting Payment */}
                         {selectedDc.status === "cash" && (
@@ -5335,11 +7123,21 @@ const SavedDcs = () => {
                                     {selectedDc.invoiceRef || "Cash Memo"}
                                   </span>
                                   <Badge className="bg-amber-500/15 text-amber-800 border-amber-300 text-[10px] px-1.5 py-0 font-bold">
-                                    ● Awaiting Payment ({getCashMemoAgingDays(selectedDc)}d)
+                                    ● Awaiting Payment (
+                                    {getCashMemoAgingDays(selectedDc)}d)
                                   </Badge>
                                 </div>
                                 <p className="text-[11px] text-slate-600 mt-0.5">
-                                  Unpaid in Cash Queue. Remaining Due: <span className="font-bold text-slate-800">₹{Math.max(0, (selectedDc.originalInvoiceTotal || selectedDc.cashAmount || 0) - (selectedDc.paidAmount || 0)).toLocaleString("en-IN")}</span>
+                                  Unpaid in Cash Queue. Remaining Due:{" "}
+                                  <span className="font-bold text-slate-800">
+                                    ₹
+                                    {Math.max(
+                                      0,
+                                      (selectedDc.originalInvoiceTotal ||
+                                        selectedDc.cashAmount ||
+                                        0) - (selectedDc.paidAmount || 0),
+                                    ).toLocaleString("en-IN")}
+                                  </span>
                                 </p>
                               </div>
                             </div>
@@ -5352,7 +7150,9 @@ const SavedDcs = () => {
                                   className="h-7 text-xs border-amber-300 text-amber-900 bg-white hover:bg-amber-50 font-medium"
                                   onClick={() => {
                                     setDetailsDialogOpen(false);
-                                    setViewingCashMemoRef(selectedDc.invoiceRef!);
+                                    setViewingCashMemoRef(
+                                      selectedDc.invoiceRef!,
+                                    );
                                     setCashMemoModalOpen(true);
                                   }}
                                 >
@@ -5361,31 +7161,40 @@ const SavedDcs = () => {
                               )}
                               <Button
                                 size="sm"
-                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-sm"
+                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-none"
                                 onClick={() => openPaymentDialog(selectedDc)}
                               >
-                                <Wallet className="h-3.5 w-3.5 mr-1" /> Collect / Mark as Paid
+                                <Wallet className="h-3.5 w-3.5 mr-1" /> Collect
+                                / Mark as Paid
                               </Button>
                             </div>
                           </div>
                         )}
 
                         {/* State: GoGST Tax Invoice Linked */}
-                        {(selectedDc.isTaxInvoice || (!selectedDc.cashAmount && selectedDc.invoiceRef && !selectedDc.invoiceRef.startsWith('SRR-'))) ? (
-                          <div className="rounded-xl border border-purple-300/90 bg-purple-50/70 dark:bg-purple-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-2xs">
+                        {selectedDc.isTaxInvoice ||
+                        (!selectedDc.cashAmount &&
+                          selectedDc.invoiceRef &&
+                          !selectedDc.invoiceRef.startsWith("SRR-")) ? (
+                          <div className="rounded-xl border border-purple-300/90 bg-purple-50/70 dark:bg-purple-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-none">
                             <div className="flex items-center gap-2.5">
-                              <div className="h-9 w-9 rounded-xl bg-purple-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                              <div className="h-9 w-9 rounded-xl bg-purple-700 text-white flex items-center justify-center shrink-0 shadow-none">
                                 <FileText className="h-5 w-5" />
                               </div>
                               <div>
                                 <div className="text-xs font-bold text-purple-950 dark:text-purple-200 flex items-center gap-2 flex-wrap">
-                                  <span>GoGST Tax Invoice Linked: {selectedDc.invoiceRef}</span>
+                                  <span>
+                                    GoGST Tax Invoice Linked:{" "}
+                                    {selectedDc.invoiceRef}
+                                  </span>
                                   <Badge className="bg-purple-700 text-white text-[10px] font-bold py-0.5 px-2">
                                     INVOICE LINKED
                                   </Badge>
                                 </div>
                                 <p className="text-[11px] text-purple-800 dark:text-purple-300 mt-0.5 leading-relaxed">
-                                  Invoice linked is final step in OrthoDC. Payment details and collection are tracked directly in GoGSTBill.
+                                  Invoice linked is final step in OrthoDC.
+                                  Payment details and collection are tracked
+                                  directly in GoGSTBill.
                                 </p>
                               </div>
                             </div>
@@ -5400,72 +7209,106 @@ const SavedDcs = () => {
                                   openActionDialog("invoice", selectedDc);
                                 }}
                               >
-                                <FileText className="h-3 w-3 mr-1 text-purple-600" /> View / Edit Link
+                                <FileText className="h-3 w-3 mr-1 text-slate-600" />{" "}
+                                View / Edit Link
                               </Button>
                               <Button
                                 size="sm"
-                                className="h-7 text-xs bg-purple-700 hover:bg-purple-800 text-white font-bold shadow-xs gap-1"
-                                onClick={() => window.open(selectedDc.invoiceUrl || "https://gogstbill.com", "_blank")}
+                                className="h-7 text-xs bg-purple-700 hover:bg-purple-800 text-white font-bold shadow-none gap-1"
+                                onClick={() =>
+                                  window.open(
+                                    selectedDc.invoiceUrl ||
+                                      "https://gogstbill.com",
+                                    "_blank",
+                                  )
+                                }
                               >
-                                <ExternalLink className="h-3 w-3" /> Open GoGSTBill
+                                <ExternalLink className="h-3 w-3" /> Open
+                                GoGSTBill
                               </Button>
                             </div>
                           </div>
-                        ) : (selectedDc.status === "completed" || (selectedDc.status !== "cash" && selectedDc.invoiceRef)) && (
-                          <div className="rounded-xl border border-emerald-300/90 bg-emerald-50/70 dark:bg-emerald-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-2xs">
-                            <div className="flex items-center gap-2.5">
-                              <div className="h-9 w-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-                                <CheckCircle2 className="h-5 w-5" />
-                              </div>
-                              <div>
-                                <div className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-2 flex-wrap">
-                                  <span>
-                                    {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo
-                                      ? '⚡ Bank Payment Linked & Settled'
-                                      : '💵 Physical Cash Collected (Unlinked to Bank Deposit)'}
-                                  </span>
-                                  <Badge className="bg-emerald-700 text-white text-[10px] font-bold py-0.5 px-2">
-                                    {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo ? 'BANK SETTLED' : 'CASH COLLECTED'}
-                                  </Badge>
+                        ) : (
+                          (selectedDc.status === "completed" ||
+                            (selectedDc.status !== "cash" &&
+                              selectedDc.invoiceRef)) && (
+                            <div className="rounded-xl border border-emerald-300/90 bg-emerald-50/70 dark:bg-emerald-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-none">
+                              <div className="flex items-center gap-2.5">
+                                <div className="h-9 w-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-none">
+                                  <CheckCircle2 className="h-5 w-5" />
                                 </div>
-                                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                                  {selectedDc.invoiceRef ? `Cash Memo: ${selectedDc.invoiceRef} • ` : ''}
-                                  {selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo
-                                    ? `Reconciled with Bank Deposit (UTR: ${selectedDc.utrNo || linkedBankTx?.referenceNumber || 'Verified'})`
-                                    : `Cash payment of ₹${((selectedDc as any).cashAmount || 0).toLocaleString('en-IN')} collected${selectedDc.collectedBy ? ` by ${selectedDc.collectedBy}` : ''}. Optional bank deposit link pending.`}
-                                </p>
+                                <div>
+                                  <div className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-2 flex-wrap">
+                                    <span>
+                                      {selectedDc.paymentMethod ===
+                                        "bank_transfer" ||
+                                      linkedBankTx ||
+                                      selectedDc.utrNo
+                                        ? "⚡ Bank Payment Linked & Settled"
+                                        : "💵 Physical Cash Collected (Unlinked to Bank Deposit)"}
+                                    </span>
+                                    <Badge className="bg-emerald-700 text-white text-[10px] font-bold py-0.5 px-2">
+                                      {selectedDc.paymentMethod ===
+                                        "bank_transfer" ||
+                                      linkedBankTx ||
+                                      selectedDc.utrNo
+                                        ? "BANK SETTLED"
+                                        : "CASH COLLECTED"}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                                    {selectedDc.invoiceRef
+                                      ? `Cash Memo: ${selectedDc.invoiceRef} • `
+                                      : ""}
+                                    {selectedDc.paymentMethod ===
+                                      "bank_transfer" ||
+                                    linkedBankTx ||
+                                    selectedDc.utrNo
+                                      ? `Reconciled with Bank Deposit (UTR: ${selectedDc.utrNo || linkedBankTx?.referenceNumber || "Verified"})`
+                                      : `Cash payment of ₹${((selectedDc as any).cashAmount || 0).toLocaleString("en-IN")} collected${selectedDc.collectedBy ? ` by ${selectedDc.collectedBy}` : ""}. Optional bank deposit link pending.`}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                                {selectedIsCashMemo && (
+                                  <Button
+                                    size="sm"
+                                    className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-none"
+                                    onClick={() => {
+                                      setDetailsDialogOpen(false);
+                                      setViewingCashMemoRef(
+                                        selectedDc.invoiceRef!,
+                                      );
+                                      setCashMemoModalOpen(true);
+                                    }}
+                                  >
+                                    <Receipt className="h-3.5 w-3.5 mr-1" />{" "}
+                                    View Cash Memo
+                                  </Button>
+                                )}
+                                {!(
+                                  selectedDc.paymentMethod ===
+                                    "bank_transfer" ||
+                                  linkedBankTx ||
+                                  selectedDc.utrNo
+                                ) && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs border-emerald-400 text-emerald-800 bg-white hover:bg-emerald-50 font-semibold shadow-none"
+                                    onClick={() => {
+                                      setDetailsDialogOpen(false);
+                                      openPaymentDialog(selectedDc);
+                                    }}
+                                  >
+                                    <Landmark className="h-3 w-3 mr-1 text-emerald-600" />{" "}
+                                    Link Bank Deposit
+                                  </Button>
+                                )}
                               </div>
                             </div>
-
-                            <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                              {selectedIsCashMemo && (
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
-                                  onClick={() => {
-                                    setDetailsDialogOpen(false);
-                                    setViewingCashMemoRef(selectedDc.invoiceRef!);
-                                    setCashMemoModalOpen(true);
-                                  }}
-                                >
-                                  <Receipt className="h-3.5 w-3.5 mr-1" /> View Cash Memo
-                                </Button>
-                              )}
-                              {!(selectedDc.paymentMethod === 'bank_transfer' || linkedBankTx || selectedDc.utrNo) && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs border-emerald-400 text-emerald-800 bg-white hover:bg-emerald-50 font-semibold shadow-2xs"
-                                  onClick={() => {
-                                    setDetailsDialogOpen(false);
-                                    openPaymentDialog(selectedDc);
-                                  }}
-                                >
-                                  <Landmark className="h-3 w-3 mr-1 text-emerald-600" /> Link Bank Deposit
-                                </Button>
-                              )}
-                            </div>
-                          </div>
+                          )
                         )}
 
                         {/* State: Cancelled */}
@@ -5474,10 +7317,15 @@ const SavedDcs = () => {
                             <div className="flex items-center gap-2">
                               <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
                               <div>
-                                <span className="text-xs text-slate-700">This case was cancelled.</span>
+                                <span className="text-xs text-slate-700">
+                                  This case was cancelled.
+                                </span>
                                 {selectedDc.returnedBy && (
                                   <div className="text-[11px] text-slate-600 font-medium">
-                                    Items returned by: <span className="text-slate-900 font-bold">{selectedDc.returnedBy}</span>
+                                    Items returned by:{" "}
+                                    <span className="text-slate-900 font-bold">
+                                      {selectedDc.returnedBy}
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -5496,122 +7344,190 @@ const SavedDcs = () => {
                     </div>
                   </div>
 
-                    {/* Optional Cash Memo / Tax Invoice Card in Overview */}
-                    {selectedDc.invoiceRef && (
-                      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 mt-3">
-                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {selectedIsTaxInvoice ? (
-                              <>
-                                <FileText className="h-4 w-4 text-purple-600" />
-                                Tax Invoice Details
-                              </>
-                            ) : (
-                              <>
-                                <Receipt className="h-4 w-4 text-emerald-600" />
-                                Cash Memo Details
-                              </>
-                            )}
-                          </div>
-                          {selectedDc.status === "cash" && (
-                            <Badge variant="outline" className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50">
-                              Awaiting Payment
-                            </Badge>
+                  {/* Optional Cash Memo / Tax Invoice Card in Overview */}
+                  {selectedDc.invoiceRef && (
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 mt-3">
+                      <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {selectedIsTaxInvoice ? (
+                            <>
+                              <FileText className="h-4 w-4 text-slate-600" />
+                              Tax Invoice Details
+                            </>
+                          ) : (
+                            <>
+                              <Receipt className="h-4 w-4 text-emerald-600" />
+                              Cash Memo Details
+                            </>
                           )}
                         </div>
-                        <div className="space-y-2 text-xs">
+                        {selectedDc.status === "cash" && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] font-bold border-amber-300 text-amber-800 bg-amber-50"
+                          >
+                            Awaiting Payment
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">
+                            {selectedIsTaxInvoice
+                              ? "Tax Invoice No"
+                              : "Cash Memo No"}
+                          </span>
+                          <span className="font-semibold font-mono text-slate-800 dark:text-slate-200">
+                            {selectedDc.invoiceRef || "-"}
+                          </span>
+                        </div>
+                        {selectedIsTaxInvoice && (
                           <div className="flex items-center justify-between gap-3">
                             <span className="text-slate-500">
-                              {selectedIsTaxInvoice ? "Tax Invoice No" : "Cash Memo No"}
+                              GoGSTBill Link
                             </span>
-                            <span className="font-semibold font-mono text-slate-800 dark:text-slate-200">{selectedDc.invoiceRef || "-"}</span>
+                            {selectedDc.invoiceUrl ? (
+                              <a
+                                href={selectedDc.invoiceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs truncate max-w-[200px]"
+                                title={selectedDc.invoiceUrl}
+                              >
+                                <span>Open Invoice</span>
+                                <ExternalLink className="h-3 w-3 shrink-0" />
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDetailsDialogOpen(false);
+                                  openActionDialog("invoice", selectedDc);
+                                }}
+                                className="text-xs text-purple-700 hover:text-purple-900 font-semibold underline cursor-pointer"
+                              >
+                                + Attach Link
+                              </button>
+                            )}
                           </div>
-                          {selectedIsTaxInvoice && (
+                        )}
+                        {!selectedIsTaxInvoice && (
+                          <>
+                            {Boolean(
+                              (selectedDc as any).billedAmount &&
+                              (selectedDc as any).billedAmount >
+                                ((selectedDc as any).cashAmount || 0),
+                            ) && (
+                              <>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-slate-500">
+                                    Printed Bill (Hiked)
+                                  </span>
+                                  <span className="font-semibold text-slate-600 line-through">
+                                    ₹
+                                    {(
+                                      selectedDc as any
+                                    ).billedAmount.toLocaleString("en-IN")}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-amber-700 font-medium">
+                                    Hospital Cut / Margin
+                                  </span>
+                                  <span className="font-bold text-amber-700">
+                                    - ₹
+                                    {(
+                                      (selectedDc as any).hospitalMargin ||
+                                      (selectedDc as any).billedAmount -
+                                        ((selectedDc as any).cashAmount || 0)
+                                    ).toLocaleString("en-IN")}
+                                  </span>
+                                </div>
+                              </>
+                            )}
                             <div className="flex items-center justify-between gap-3">
-                              <span className="text-slate-500">GoGSTBill Link</span>
-                              {selectedDc.invoiceUrl ? (
-                                <a
-                                  href={selectedDc.invoiceUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs truncate max-w-[200px]"
-                                  title={selectedDc.invoiceUrl}
-                                >
-                                  <span>Open Invoice</span>
-                                  <ExternalLink className="h-3 w-3 shrink-0" />
-                                </a>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setDetailsDialogOpen(false);
-                                    openActionDialog("invoice", selectedDc);
-                                  }}
-                                  className="text-xs text-purple-700 hover:text-purple-900 font-semibold underline cursor-pointer"
-                                >
-                                  + Attach Link
-                                </button>
-                              )}
-                            </div>
-                          )}
-                          {!selectedIsTaxInvoice && (
-                            <>
-                              {Boolean((selectedDc as any).billedAmount && (selectedDc as any).billedAmount > ((selectedDc as any).cashAmount || 0)) && (
-                                <>
-                                  <div className="flex items-center justify-between gap-3">
-                                    <span className="text-slate-500">Printed Bill (Hiked)</span>
-                                    <span className="font-semibold text-slate-600 line-through">
-                                      ₹{(selectedDc as any).billedAmount.toLocaleString('en-IN')}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-3">
-                                    <span className="text-amber-700 font-medium">Hospital Cut / Margin</span>
-                                    <span className="font-bold text-amber-700">
-                                      - ₹{((selectedDc as any).hospitalMargin || ((selectedDc as any).billedAmount - ((selectedDc as any).cashAmount || 0))).toLocaleString('en-IN')}
-                                    </span>
-                                  </div>
-                                </>
-                              )}
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-slate-500">
-                                  {selectedDc.status === "cash"
-                                    ? "Net Cash Due"
-                                    : (selectedDc.isPartialPayment || (selectedDc.paidAmount && selectedDc.originalInvoiceTotal && selectedDc.paidAmount < selectedDc.originalInvoiceTotal) || selectedDc.cashRemarks?.includes("Part Payment Received"))
+                              <span className="text-slate-500">
+                                {selectedDc.status === "cash"
+                                  ? "Net Cash Due"
+                                  : selectedDc.isPartialPayment ||
+                                      (selectedDc.paidAmount &&
+                                        selectedDc.originalInvoiceTotal &&
+                                        selectedDc.paidAmount <
+                                          selectedDc.originalInvoiceTotal) ||
+                                      selectedDc.cashRemarks?.includes(
+                                        "Part Payment Received",
+                                      )
                                     ? "Settled Part Paid Amount"
-                                    : ((selectedDc as any).billedAmount ? "Our Net Cash" : "Cash Amount")}
-                                </span>
-                                <span className={`font-bold ${selectedDc.status === "cash" ? "text-amber-800 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-400"}`}>
-                                  {(() => {
-                                    if (selectedDc.status === "cash") {
-                                      const orig = selectedDc.originalInvoiceTotal || selectedDc.cashAmount || 0;
-                                      const paid = selectedDc.paidAmount || 0;
-                                      const remaining = Math.max(0, orig - paid);
-                                      return `₹${remaining.toLocaleString('en-IN')}`;
+                                    : (selectedDc as any).billedAmount
+                                      ? "Our Net Cash"
+                                      : "Cash Amount"}
+                              </span>
+                              <span
+                                className={`font-bold ${selectedDc.status === "cash" ? "text-amber-800 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-400"}`}
+                              >
+                                {(() => {
+                                  if (selectedDc.status === "cash") {
+                                    const orig =
+                                      selectedDc.originalInvoiceTotal ||
+                                      selectedDc.cashAmount ||
+                                      0;
+                                    const paid = selectedDc.paidAmount || 0;
+                                    const remaining = Math.max(0, orig - paid);
+                                    return `₹${remaining.toLocaleString("en-IN")}`;
+                                  }
+                                  const isPart =
+                                    selectedDc.isPartialPayment ||
+                                    (selectedDc.paidAmount &&
+                                      selectedDc.originalInvoiceTotal &&
+                                      selectedDc.paidAmount <
+                                        selectedDc.originalInvoiceTotal) ||
+                                    selectedDc.cashRemarks?.includes(
+                                      "Part Payment Received",
+                                    );
+                                  if (isPart) {
+                                    let paid = selectedDc.paidAmount ?? 0;
+                                    if (
+                                      selectedDc.cashRemarks &&
+                                      selectedDc.cashRemarks.includes(
+                                        "Part Payment Received",
+                                      )
+                                    ) {
+                                      const match =
+                                        selectedDc.cashRemarks.match(
+                                          /Part Payment Received:\s*₹?([\d,]+)\s*of/i,
+                                        );
+                                      if (match)
+                                        paid =
+                                          parseFloat(
+                                            match[1].replace(/,/g, ""),
+                                          ) || paid;
                                     }
-                                    const isPart = selectedDc.isPartialPayment || (selectedDc.paidAmount && selectedDc.originalInvoiceTotal && selectedDc.paidAmount < selectedDc.originalInvoiceTotal) || selectedDc.cashRemarks?.includes("Part Payment Received");
-                                    if (isPart) {
-                                      let paid = selectedDc.paidAmount ?? 0;
-                                      if (selectedDc.cashRemarks && selectedDc.cashRemarks.includes("Part Payment Received")) {
-                                        const match = selectedDc.cashRemarks.match(/Part Payment Received:\s*₹?([\d,]+)\s*of/i);
-                                        if (match) paid = parseFloat(match[1].replace(/,/g, "")) || paid;
-                                      }
-                                      return `₹${paid.toLocaleString('en-IN')} (Part Paid)`;
-                                    }
-                                    return typeof (selectedDc as any).cashAmount === "number"
-                                      ? `₹${(selectedDc as any).cashAmount.toLocaleString('en-IN')}`
-                                      : "-";
-                                  })()}
-                                  {selectedDc.status === "cash" ? " (Unpaid)" : ""}
-                                </span>
-                              </div>
-                              {selectedDc.status !== "cash" && selectedDc.paymentMethod && (
+                                    return `₹${paid.toLocaleString("en-IN")} (Part Paid)`;
+                                  }
+                                  return typeof (selectedDc as any)
+                                    .cashAmount === "number"
+                                    ? `₹${(selectedDc as any).cashAmount.toLocaleString("en-IN")}`
+                                    : "-";
+                                })()}
+                                {selectedDc.status === "cash"
+                                  ? " (Unpaid)"
+                                  : ""}
+                              </span>
+                            </div>
+                            {selectedDc.status !== "cash" &&
+                              selectedDc.paymentMethod && (
                                 <div className="flex items-center justify-between gap-3 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
-                                  <span className="text-slate-500">Payment Mode</span>
+                                  <span className="text-slate-500">
+                                    Payment Mode
+                                  </span>
                                   <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
                                     {selectedDc.paymentMethod === "cash" ? (
                                       <>
                                         <Banknote className="h-3.5 w-3.5 text-emerald-600" />
-                                        Cash {selectedDc.collectedBy ? `(${selectedDc.collectedBy})` : ""}
+                                        Cash{" "}
+                                        {selectedDc.collectedBy
+                                          ? `(${selectedDc.collectedBy})`
+                                          : ""}
                                       </>
                                     ) : (
                                       <>
@@ -5622,20 +7538,21 @@ const SavedDcs = () => {
                                   </span>
                                 </div>
                               )}
-                              {selectedDc.status === "cash" && (
-                                <Button
-                                  size="sm"
-                                  className="mt-2 h-8 w-full text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 rounded-xl shadow-xs"
-                                  onClick={() => openPaymentDialog(selectedDc)}
-                                >
-                                  <Wallet className="h-3.5 w-3.5" /> Mark as Paid (Collect Payment)
-                                </Button>
-                              )}
-                            </>
-                          )}
-                        </div>
+                            {selectedDc.status === "cash" && (
+                              <Button
+                                size="sm"
+                                className="mt-2 h-8 w-full text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 rounded-xl shadow-none"
+                                onClick={() => openPaymentDialog(selectedDc)}
+                              >
+                                <Wallet className="h-3.5 w-3.5" /> Mark as Paid
+                                (Collect Payment)
+                              </Button>
+                            )}
+                          </>
+                        )}
                       </div>
-                    )}
+                    </div>
+                  )}
                 </TabsContent>
 
                 {/* HISTORY TAB: DETAILED ACTIVITY & AUDIT TIMELINE */}
@@ -5646,36 +7563,55 @@ const SavedDcs = () => {
                         <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
                           Detailed Activity &amp; Transaction Audit Trail
                         </h4>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">Complete timestamped event history for DC #{selectedDc.dcNo}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Complete timestamped event history for DC #
+                          {selectedDc.dcNo}
+                        </p>
                       </div>
-                      <Badge variant="outline" className="border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold">
-                        {(selectedDc.history || []).length || 1} Event Log{((selectedDc.history || []).length || 1) > 1 ? "s" : ""}
+                      <Badge
+                        variant="outline"
+                        className="border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold"
+                      >
+                        {(selectedDc.history || []).length || 1} Event Log
+                        {((selectedDc.history || []).length || 1) > 1
+                          ? "s"
+                          : ""}
                       </Badge>
                     </div>
 
                     <div className="p-4">
                       <div className="relative pl-6 space-y-5">
-                        {(selectedDc.history && selectedDc.history.length > 0) ? (
+                        {selectedDc.history && selectedDc.history.length > 0 ? (
                           selectedDc.history
                             .slice()
                             .reverse()
                             .map((h, idx) => {
                               const isFirst = idx === 0;
                               return (
-                                <div key={`${h.at}-${idx}`} className="relative pl-2">
+                                <div
+                                  key={`${h.at}-${idx}`}
+                                  className="relative pl-2"
+                                >
                                   {/* Timeline node */}
-                                  <span className={`absolute -left-6 top-1 h-3.5 w-3.5 rounded-full border-2 border-white dark:border-slate-900 shadow-xs ${
-                                    h.action.includes('COMPLETED') || h.action.includes('PAID') ? 'bg-emerald-600 ring-2 ring-emerald-500/20' :
-                                    h.action.includes('RETURN') ? 'bg-teal-600' :
-                                    h.action.includes('CASH') ? 'bg-blue-600' :
-                                    h.action.includes('CANCEL') ? 'bg-rose-600' :
-                                    'bg-indigo-600'
-                                  }`} />
+                                  <span
+                                    className={`absolute -left-6 top-1 h-3.5 w-3.5 rounded-full border-2 border-white dark:border-slate-900 shadow-none ${
+                                      h.action.includes("COMPLETED") ||
+                                      h.action.includes("PAID")
+                                        ? "bg-emerald-600 ring-2 ring-emerald-500/20"
+                                        : h.action.includes("RETURN")
+                                          ? "bg-teal-600"
+                                          : h.action.includes("CASH")
+                                            ? "bg-blue-600"
+                                            : h.action.includes("CANCEL")
+                                              ? "bg-rose-600"
+                                              : "bg-indigo-600"
+                                    }`}
+                                  />
 
                                   <div className="bg-slate-50/80 dark:bg-slate-850/60 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-1.5">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                       <span className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                                        {h.action.replace(/_/g, " ")}
+                                        {h.action === "CREATED" ? "DC DELIVERED" : h.action.replace(/_/g, " ")}
                                         {isFirst && (
                                           <Badge className="text-[9px] py-0 px-1.5 bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-0 font-bold">
                                             Latest Event
@@ -5690,74 +7626,164 @@ const SavedDcs = () => {
                                     {/* Status Badge transition */}
                                     {h.fromStatus && h.toStatus && (
                                       <div className="flex items-center gap-1.5 text-[10px]">
-                                        <span className="text-slate-400">Status Change:</span>
-                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold uppercase bg-white dark:bg-slate-900">
-                                          {h.fromStatus}
+                                        <span className="text-slate-400">
+                                          Status Change:
+                                        </span>
+                                        <Badge
+                                          variant="outline"
+                                          className="text-[9px] py-0 px-1 font-semibold uppercase bg-white dark:bg-slate-900"
+                                        >
+                                          {h.fromStatus === "pending" ? "DELIVERED" : h.fromStatus?.toUpperCase()}
                                         </Badge>
-                                        <span className="text-slate-400 font-bold">→</span>
-                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-bold uppercase bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
-                                          {h.toStatus}
+                                        <span className="text-slate-400 font-bold">
+                                          →
+                                        </span>
+                                        <Badge
+                                          variant="outline"
+                                          className="text-[9px] py-0 px-1 font-bold uppercase bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
+                                        >
+                                          {h.toStatus === "pending" ? "DELIVERED" : h.toStatus?.toUpperCase()}
                                         </Badge>
                                       </div>
                                     )}
 
                                     {/* Personnel & Details */}
                                     <div className="text-xs text-slate-600 dark:text-slate-400 space-y-0.5 pt-0.5">
-                                      {(h.action === "CREATED" || h.action === "PURCHASE") && (
+                                      {(h.action === "CREATED" ||
+                                        h.action === "PURCHASE") && (
                                         <>
                                           {selectedDc.deliveredBy && (
-                                            <div>Delivered by: <strong className="text-slate-800 dark:text-slate-200">{selectedDc.deliveredBy}</strong></div>
+                                            <div>
+                                              Delivered by:{" "}
+                                              <strong className="text-slate-800 dark:text-slate-200">
+                                                {selectedDc.deliveredBy}
+                                              </strong>
+                                            </div>
                                           )}
                                           {selectedDc.receivedBy && (
-                                            <div>Hospital Received by: <strong className="text-slate-800 dark:text-slate-200">{selectedDc.receivedBy}</strong></div>
+                                            <div>
+                                              Hospital Received by:{" "}
+                                              <strong className="text-slate-800 dark:text-slate-200">
+                                                {selectedDc.receivedBy}
+                                              </strong>
+                                            </div>
                                           )}
                                         </>
                                       )}
 
                                       {h.action === "MARK_RETURNED" && (
                                         <>
-                                          {((h.meta?.returnedBy as string) || selectedDc.returnedBy) && (
-                                            <div>Returned by: <strong className="text-slate-800 dark:text-slate-200">{(h.meta?.returnedBy as string) || selectedDc.returnedBy}</strong></div>
+                                          {((h.meta?.returnedBy as string) ||
+                                            selectedDc.returnedBy) && (
+                                            <div>
+                                              Returned by:{" "}
+                                              <strong className="text-slate-800 dark:text-slate-200">
+                                                {(h.meta
+                                                  ?.returnedBy as string) ||
+                                                  selectedDc.returnedBy}
+                                              </strong>
+                                            </div>
                                           )}
-                                          {((h.meta?.returnedRemarks as string) || (h.meta?.cleared as any)?.returnedRemarks) && (
-                                            <div className="italic text-slate-500">"{(h.meta?.returnedRemarks as string) || (h.meta?.cleared as any)?.returnedRemarks}"</div>
+                                          {((h.meta
+                                            ?.returnedRemarks as string) ||
+                                            (h.meta?.cleared as any)
+                                              ?.returnedRemarks) && (
+                                            <div className="italic text-slate-500">
+                                              "
+                                              {(h.meta
+                                                ?.returnedRemarks as string) ||
+                                                (h.meta?.cleared as any)
+                                                  ?.returnedRemarks}
+                                              "
+                                            </div>
                                           )}
                                         </>
                                       )}
 
                                       {h.action === "MOVE_TO_CASH" && (
                                         <div>
-                                          Expected Cash Receivable: <strong className="text-emerald-700 dark:text-emerald-400">₹{((h.meta?.cashAmount as number) || selectedDc.cashAmount || 0).toLocaleString('en-IN')}</strong>
+                                          Expected Cash Receivable:{" "}
+                                          <strong className="text-emerald-700 dark:text-emerald-400">
+                                            ₹
+                                            {(
+                                              (h.meta?.cashAmount as number) ||
+                                              selectedDc.cashAmount ||
+                                              0
+                                            ).toLocaleString("en-IN")}
+                                          </strong>
                                         </div>
                                       )}
 
-                                      {h.action === "MOVE_CASH_TO_COMPLETED" && (
+                                      {h.action ===
+                                        "MOVE_CASH_TO_COMPLETED" && (
                                         <div className="flex items-center gap-2 flex-wrap">
-                                          <span>Payment Mode: <strong className="text-slate-800 dark:text-slate-200">{(h.meta?.paymentMethod as string) || selectedDc.paymentMethod || 'cash'}</strong></span>
-                                          {((h.meta?.collectedBy as string) || selectedDc.collectedBy) && (
-                                            <span>• Collected by: <strong className="text-slate-800 dark:text-slate-200">{(h.meta?.collectedBy as string) || selectedDc.collectedBy}</strong></span>
+                                          <span>
+                                            Payment Mode:{" "}
+                                            <strong className="text-slate-800 dark:text-slate-200">
+                                              {(h.meta
+                                                ?.paymentMethod as string) ||
+                                                selectedDc.paymentMethod ||
+                                                "cash"}
+                                            </strong>
+                                          </span>
+                                          {((h.meta?.collectedBy as string) ||
+                                            selectedDc.collectedBy) && (
+                                            <span>
+                                              • Collected by:{" "}
+                                              <strong className="text-slate-800 dark:text-slate-200">
+                                                {(h.meta
+                                                  ?.collectedBy as string) ||
+                                                  selectedDc.collectedBy}
+                                              </strong>
+                                            </span>
                                           )}
-                                          <span>• Paid Amount: <strong className="text-emerald-700 dark:text-emerald-400">₹{((h.meta?.paidAmount as number) || selectedDc.cashAmount || 0).toLocaleString('en-IN')}</strong></span>
+                                          <span>
+                                            • Paid Amount:{" "}
+                                            <strong className="text-emerald-700 dark:text-emerald-400">
+                                              ₹
+                                              {(
+                                                (h.meta
+                                                  ?.paidAmount as number) ||
+                                                selectedDc.cashAmount ||
+                                                0
+                                              ).toLocaleString("en-IN")}
+                                            </strong>
+                                          </span>
                                         </div>
                                       )}
                                     </div>
 
                                     {/* Meta Attributes Table */}
-                                    {h.meta && Object.keys(h.meta).length > 0 && (
-                                      <div className="bg-white dark:bg-slate-900 rounded-lg p-2 border border-slate-200/60 dark:border-slate-800 mt-1">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
-                                          {Object.entries(h.meta).map(([key, val]) => {
-                                            if (typeof val === 'object' && val !== null) return null;
-                                            return (
-                                              <div key={key}>
-                                                <span className="text-slate-400 font-medium capitalize">{key.replace(/([A-Z])/g, ' $1')}:</span>{" "}
-                                                <span className="font-semibold text-slate-700 dark:text-slate-300">{String(val)}</span>
-                                              </div>
-                                            );
-                                          })}
+                                    {h.meta &&
+                                      Object.keys(h.meta).length > 0 && (
+                                        <div className="bg-white dark:bg-slate-900 rounded-lg p-2 border border-slate-200/60 dark:border-slate-800 mt-1">
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+                                            {Object.entries(h.meta).map(
+                                              ([key, val]) => {
+                                                if (
+                                                  typeof val === "object" &&
+                                                  val !== null
+                                                )
+                                                  return null;
+                                                return (
+                                                  <div key={key}>
+                                                    <span className="text-slate-400 font-medium capitalize">
+                                                      {key.replace(
+                                                        /([A-Z])/g,
+                                                        " $1",
+                                                      )}
+                                                      :
+                                                    </span>{" "}
+                                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                                      {String(val)}
+                                                    </span>
+                                                  </div>
+                                                );
+                                              },
+                                            )}
+                                          </div>
                                         </div>
-                                      </div>
-                                    )}
+                                      )}
                                   </div>
                                 </div>
                               );
@@ -5776,32 +7802,61 @@ const SavedDcs = () => {
                   <div className="space-y-3">
                     <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
                       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 bg-slate-50">
-                        <div className="text-xs font-semibold text-slate-700">Items</div>
-                        <Badge variant="outline" className="border-slate-300 text-slate-700">{getTotalQty(selectedDc)} qty</Badge>
+                        <div className="text-xs font-semibold text-slate-700">
+                          Items
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="border-slate-300 text-slate-700"
+                        >
+                          {getTotalQty(selectedDc)} qty
+                        </Badge>
                       </div>
                       <div className="max-h-[35vh] overflow-auto">
                         <table className="w-full text-sm border-separate border-spacing-0">
                           <thead className="sticky top-0 z-10">
                             <tr className="bg-slate-100 border-b border-slate-200">
-                              <th className="text-left px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">Item</th>
-                              <th className="text-left px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">Procedure</th>
-                              <th className="text-left px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">Sizes</th>
-                              <th className="text-right px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">Qty</th>
+                              <th className="text-left px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">
+                                Item
+                              </th>
+                              <th className="text-left px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">
+                                Procedure
+                              </th>
+                              <th className="text-left px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">
+                                Sizes
+                              </th>
+                              <th className="text-right px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">
+                                Qty
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
                             {selectedDc.items.map((item, idx) => {
-                              const itemQty = item.sizes.reduce((sum, size) => sum + size.qty, 0);
+                              const itemQty = item.sizes.reduce(
+                                (sum, size) => sum + size.qty,
+                                0,
+                              );
                               const sizeDetails = item.sizes
                                 .filter((size) => size.size)
                                 .map((size) => `${size.size} (${size.qty})`)
                                 .join(", ");
                               return (
-                                <tr key={idx} className="border-b border-slate-200">
-                                  <td className="px-3 py-2 font-medium text-slate-900">{item.name}</td>
-                                  <td className="px-3 py-2 text-slate-600">{item.procedure}</td>
-                                  <td className="px-3 py-2 text-slate-600">{sizeDetails || "-"}</td>
-                                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{itemQty}</td>
+                                <tr
+                                  key={idx}
+                                  className="border-b border-slate-200"
+                                >
+                                  <td className="px-3 py-2 font-medium text-slate-900">
+                                    {item.name}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-600">
+                                    {item.procedure}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-600">
+                                    {sizeDetails || "-"}
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                                    {itemQty}
+                                  </td>
                                 </tr>
                               );
                             })}
@@ -5812,15 +7867,23 @@ const SavedDcs = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="rounded-md border border-slate-200 bg-white p-3">
-                        <div className="text-xs font-semibold text-slate-700 mb-2">Instruments</div>
+                        <div className="text-xs font-semibold text-slate-700 mb-2">
+                          Instruments
+                        </div>
                         <div className="text-sm bg-slate-50 border border-slate-200 rounded px-2 py-2 min-h-[60px]">
-                          {selectedDc.instruments?.length ? selectedDc.instruments.join(", ") : "-"}
+                          {selectedDc.instruments?.length
+                            ? selectedDc.instruments.join(", ")
+                            : "-"}
                         </div>
                       </div>
                       <div className="rounded-md border border-slate-200 bg-white p-3">
-                        <div className="text-xs font-semibold text-slate-700 mb-2">Box Numbers</div>
+                        <div className="text-xs font-semibold text-slate-700 mb-2">
+                          Box Numbers
+                        </div>
                         <div className="text-sm bg-slate-50 border border-slate-200 rounded px-2 py-2 min-h-[60px]">
-                          {selectedDc.boxNumbers?.length ? selectedDc.boxNumbers.join(", ") : "-"}
+                          {selectedDc.boxNumbers?.length
+                            ? selectedDc.boxNumbers.join(", ")
+                            : "-"}
                         </div>
                       </div>
                     </div>
@@ -5830,63 +7893,46 @@ const SavedDcs = () => {
                 <TabsContent value="notes" className="mt-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-2">Initial Remarks</div>
+                      <div className="text-xs font-semibold text-slate-700 mb-2">
+                        Initial Remarks
+                      </div>
                       <div className="text-sm bg-slate-50 border border-slate-200 rounded px-2 py-2 min-h-[72px]">
                         {selectedDc.remarks || "-"}
                       </div>
                     </div>
                     <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-2">Return Remarks</div>
+                      <div className="text-xs font-semibold text-slate-700 mb-2">
+                        Return Remarks
+                      </div>
                       <div className="text-sm bg-slate-50 border border-slate-200 rounded px-2 py-2 min-h-[72px]">
                         {selectedDc.returnedRemarks || "-"}
                       </div>
                     </div>
                     <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-2">Invoice Remarks</div>
+                      <div className="text-xs font-semibold text-slate-700 mb-2">
+                        Invoice Remarks
+                      </div>
                       <div className="text-sm bg-slate-50 border border-slate-200 rounded px-2 py-2 min-h-[72px]">
                         {selectedDc.invoiceRemarks || "-"}
                       </div>
                     </div>
                     <div className="rounded-md border border-slate-200 bg-white p-3">
-                      <div className="text-xs font-semibold text-slate-700 mb-2">Cash Remarks</div>
+                      <div className="text-xs font-semibold text-slate-700 mb-2">
+                        Cash Remarks
+                      </div>
                       <div className="text-sm bg-slate-50 border border-slate-200 rounded px-2 py-2 min-h-[72px]">
                         {selectedDc.cashRemarks || "-"}
                       </div>
                     </div>
                     {selectedDc.status === "cancelled" && (
                       <div className="rounded-md border border-slate-200 bg-orange-50 p-3 md:col-span-2">
-                        <div className="text-xs font-semibold text-orange-700 mb-2">Cancellation Remarks</div>
+                        <div className="text-xs font-semibold text-orange-700 mb-2">
+                          Cancellation Remarks
+                        </div>
                         <div className="text-sm bg-white border border-orange-200 rounded px-2 py-2 min-h-[72px] text-orange-900 font-medium">
                           {selectedDc.cancelledRemarks || "No reason provided."}
                         </div>
                       </div>
-                    )}
-                  </div>
-
-                  <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
-                    <div className="text-xs font-semibold text-slate-700 mb-2">History</div>
-                    {selectedDc.history?.length ? (
-                      <div className="space-y-2">
-                        {[...selectedDc.history]
-                          .slice(-12)
-                          .reverse()
-                          .map((h: SavedDcHistoryEvent, idx: number) => (
-                            <div key={`${h.at}-${idx}`} className="flex items-start justify-between gap-3 text-xs">
-                              <div className="min-w-0">
-                                <div className="font-medium text-slate-900">
-                                  {h.action.replace(/_/g, " ")}
-                                </div>
-                                <div className="text-slate-600">
-                                  {h.fromStatus ? `${h.fromStatus.toUpperCase()} → ` : ""}
-                                  {h.toStatus.toUpperCase()}
-                                </div>
-                              </div>
-                              <div className="text-slate-500 whitespace-nowrap">{formatDateTime(h.at)}</div>
-                            </div>
-                          ))}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-slate-600">No history yet.</div>
                     )}
                   </div>
                 </TabsContent>
@@ -5899,11 +7945,13 @@ const SavedDcs = () => {
       {/* Protected Delete Dialog */}
       <Dialog
         open={deleteDialog.open}
-        onOpenChange={(open) => setDeleteDialog({ open, dc: open ? deleteDialog.dc : null })}
+        onOpenChange={(open) =>
+          setDeleteDialog({ open, dc: open ? deleteDialog.dc : null })
+        }
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[440px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="sm:max-w-[500px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Confirm Delete</DialogTitle>
@@ -5912,170 +7960,304 @@ const SavedDcs = () => {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Top Header */}
-          <div className="bg-gradient-to-r from-rose-50 via-red-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200/80 shadow-xs">
-                  <Trash2 className="w-5 h-5" />
+          {deleteDialog.dc && (
+            <>
+              {/* Top Header */}
+              <div className="bg-slate-50/80 dark:bg-slate-900/80 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800 rounded-t-2xl">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0 border border-rose-200/80 dark:border-rose-800">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                      <span>Delete Delivery Challan</span>
+                      <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700">
+                        DC #{deleteDialog.dc.dcNo}
+                      </span>
+                    </h3>
+                    {(deleteDialog.dc.doctorName || deleteDialog.dc.patientName) && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                        {deleteDialog.dc.doctorName ? `Dr. ${deleteDialog.dc.doctorName}` : ""}
+                        {deleteDialog.dc.doctorName && deleteDialog.dc.patientName ? ` • ` : ""}
+                        {deleteDialog.dc.patientName ? `Pt: ${deleteDialog.dc.patientName}` : ""}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300">
-                      DC #{deleteDialog.dc?.dcNo}
-                    </span>
-                    <span className="text-[10px] font-bold text-rose-800 bg-rose-100/80 border border-rose-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                      Protected Action
+              </div>
+
+              {/* Dispatch Info Summary */}
+              <div className="px-5 pt-3.5 pb-1">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3.5 text-xs space-y-2.5">
+                  {/* Hospital Header */}
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-bold">
+                    <Building2 className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="text-xs truncate">
+                      {deleteDialog.dc.hospitalName || deleteDialog.dc.partyName || "Hospital Record"}
                     </span>
                   </div>
-                  <h3 className="text-base font-bold text-slate-900 tracking-tight leading-snug">
-                    Delete Delivery Challan
-                  </h3>
+
+                  {/* Structured 2-Column Details Grid */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {/* Delivered By */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      {getTransportMode(deleteDialog.dc.deliveredBy) ? (
+                        renderTransportIcon(getTransportMode(deleteDialog.dc.deliveredBy)?.iconName, "w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5")
+                      ) : (
+                        <Truck className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Delivered By</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {normalizePersonnelName(deleteDialog.dc.deliveredBy) || deleteDialog.dc.deliveredBy || "Standard Dispatch"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Challan Status</div>
+                        <div className="font-semibold text-rose-700 dark:text-rose-300 uppercase truncate">
+                          {deleteDialog.dc.status}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Total Items */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Package className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Total Items</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {getTotalQty(deleteDialog.dc)} <span className="text-[11px] font-normal text-slate-500">({deleteDialog.dc.items?.length || 0} types)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Instruments */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Wrench className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Instruments</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {deleteDialog.dc.instruments?.length || 0} Sets / Trays
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-            <p className="text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200/60 truncate">
-              {deleteDialog.dc?.hospitalName} {deleteDialog.dc?.doctorName ? `• Dr. ${deleteDialog.dc.doctorName}` : ''}
-            </p>
-          </div>
 
-          {/* Top Info Card */}
-          <div className="px-5 pt-4 pb-1">
-            <div className="rounded-xl border border-rose-200/90 dark:border-rose-900/40 bg-rose-50/70 dark:bg-rose-950/20 p-3.5 space-y-1.5 text-xs text-rose-950 dark:text-rose-300">
-              <div className="flex items-center gap-1.5 font-bold text-rose-900 dark:text-rose-200">
-                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                <span>Admin Authorization Required</span>
+              {/* Admin Authorization Notice */}
+              <div className="px-5 py-2.5">
+                <div className="rounded-xl border border-rose-200/90 dark:border-rose-900/40 bg-rose-50/70 dark:bg-rose-950/20 p-3 space-y-1 text-xs text-rose-950 dark:text-rose-300">
+                  <div className="flex items-center gap-1.5 font-bold text-rose-900 dark:text-rose-200">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>Admin Authorization Required</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    Deleting a{" "}
+                    <span className="font-bold uppercase tracking-wider underline">
+                      {deleteDialog.dc.status}
+                    </span>{" "}
+                    challan is a protected action. Please enter the manager password.
+                  </p>
+                </div>
               </div>
-              <p className="leading-relaxed">
-                Deleting a <span className="font-bold uppercase tracking-wider underline">{deleteDialog.dc?.status}</span> challan is a protected action. Please enter the manager password.
-              </p>
-            </div>
-          </div>
 
-          {/* Bottom Form */}
-          <div className="px-5 py-3.5 space-y-3.5">
-            <div>
-              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Admin Password *</Label>
-              <Input
-                type="password"
-                autoComplete="off"
-                data-lpignore="true"
-                data-1p-ignore="true"
-                data-bwignore="true"
-                data-form-type="other"
-                value={deletePassword}
-                onChange={(e) => setDeletePassword(e.target.value)}
-                placeholder="Enter password to authorize deletion..."
-                className="mt-1.5 h-10 rounded-xl border-slate-300 dark:border-slate-700 text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmProtectedDelete();
-                }}
-              />
-            </div>
-          </div>
+              {/* Bottom Form */}
+              <div className="px-5 py-2 space-y-3">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Admin Password *
+                  </Label>
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-bwignore="true"
+                    data-form-type="other"
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    placeholder="Enter password to authorize deletion..."
+                    className="mt-1.5 h-9 rounded-xl border-slate-300 dark:border-slate-700 text-xs font-medium"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") confirmProtectedDelete();
+                    }}
+                  />
+                </div>
+              </div>
 
-          {/* Footer */}
-          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteDialog({ open: false, dc: null })}
-              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmProtectedDelete}
-              className="rounded-xl h-10 px-5 text-xs font-bold gap-2 min-w-[130px] bg-rose-600 hover:bg-rose-700 text-white"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Confirm Delete</span>
-            </Button>
-          </div>
+              {/* Footer */}
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteDialog({ open: false, dc: null })}
+                  className="rounded-xl h-9 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={confirmProtectedDelete}
+                  className="rounded-xl h-9 px-5 text-xs font-bold gap-1.5 min-w-[130px] bg-rose-600 hover:bg-rose-700 text-white shadow-none"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Confirm Delete</span>
+                </Button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
-      {/* Confirm Move Back to Pending Dialog */}
+      {/* Confirm Move Back to Delivered Dialog */}
       <Dialog
         open={moveToPendingDialog.open}
-        onOpenChange={(open) => setMoveToPendingDialog({ open, dc: open ? moveToPendingDialog.dc : null })}
+        onOpenChange={(open) =>
+          setMoveToPendingDialog({
+            open,
+            dc: open ? moveToPendingDialog.dc : null,
+          })
+        }
       >
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[420px] p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="sm:max-w-[500px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>Move Back to Pending</DialogTitle>
+            <DialogTitle>Move Back to Delivered</DialogTitle>
             <DialogDescription>
-              Confirm moving DC {moveToPendingDialog.dc?.dcNo} back to pending.
+              Confirm moving DC {moveToPendingDialog.dc?.dcNo} back to delivered.
             </DialogDescription>
           </DialogHeader>
 
-          {/* 1. TOP HEADER */}
-          <div className="bg-slate-50/90 dark:bg-slate-850 border-b border-slate-200/80 dark:border-slate-800 px-5 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                    DC #{moveToPendingDialog.dc?.dcNo}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 bg-slate-200/70 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                    Currently Returned
-                  </span>
-                </div>
-                <div className="flex items-center gap-2.5 mt-1">
-                  <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-700/60">
-                    <RotateCcw className="w-4 h-4" />
+          {moveToPendingDialog.dc && (
+            <>
+              {/* Top Header */}
+              <div className="bg-slate-50/80 dark:bg-slate-900/80 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800 rounded-t-2xl">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 border border-amber-200/80 dark:border-amber-800">
+                    <RotateCcw className="w-5 h-5" />
                   </div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-                    Move Back to Pending?
-                  </h3>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                      <span>Move Back to Delivered?</span>
+                      <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                        DC #{moveToPendingDialog.dc.dcNo}
+                      </span>
+                    </h3>
+                    {(moveToPendingDialog.dc.doctorName || moveToPendingDialog.dc.patientName) && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                        {moveToPendingDialog.dc.doctorName ? `Dr. ${moveToPendingDialog.dc.doctorName}` : ""}
+                        {moveToPendingDialog.dc.doctorName && moveToPendingDialog.dc.patientName ? ` • ` : ""}
+                        {moveToPendingDialog.dc.patientName ? `Pt: ${moveToPendingDialog.dc.patientName}` : ""}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* 2. BODY / INFO BOTTOM */}
-          <div className="p-5 space-y-3">
-            <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1 bg-slate-50 dark:bg-slate-850/60 p-3 rounded-xl border border-slate-200/70 dark:border-slate-800">
-              <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate">
-                <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>{moveToPendingDialog.dc?.hospitalName || moveToPendingDialog.dc?.partyName || "Hospital Record"}</span>
-              </div>
-              {moveToPendingDialog.dc?.doctorName && (
-                <div className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5 truncate pl-5">
-                  <span>Dr. {moveToPendingDialog.dc.doctorName}</span>
+              {/* Dispatch Info Summary */}
+              <div className="px-5 pt-3.5 pb-1">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3.5 text-xs space-y-2.5">
+                  {/* Hospital Header */}
+                  <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-bold">
+                    <Building2 className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="text-xs truncate">
+                      {moveToPendingDialog.dc.hospitalName || moveToPendingDialog.dc.partyName || "Hospital Record"}
+                    </span>
+                  </div>
+
+                  {/* Structured 2-Column Details Grid */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {/* Delivered By */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      {getTransportMode(moveToPendingDialog.dc.deliveredBy) ? (
+                        renderTransportIcon(getTransportMode(moveToPendingDialog.dc.deliveredBy)?.iconName, "w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5")
+                      ) : (
+                        <Truck className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Delivered By</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {normalizePersonnelName(moveToPendingDialog.dc.deliveredBy) || moveToPendingDialog.dc.deliveredBy || "Standard Dispatch"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Received By */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <UserCheck className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Received By</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {normalizePersonnelName(moveToPendingDialog.dc.receivedBy) || moveToPendingDialog.dc.receivedBy || "Hospital Receiver"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Total Items */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Package className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Total Items</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {getTotalQty(moveToPendingDialog.dc)} <span className="text-[11px] font-normal text-slate-500">({moveToPendingDialog.dc.items?.length || 0} types)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Instruments */}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Wrench className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Instruments</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {moveToPendingDialog.dc.instruments?.length || 0} Sets / Trays
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+              </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed px-1">
-              This will clear the returned status and move DC #{moveToPendingDialog.dc?.dcNo} back into the active pending list.
-            </p>
-          </div>
+              {/* Notice Box */}
+              <div className="px-5 py-3">
+                <div className="rounded-xl border border-amber-200/90 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-950/20 p-3.5 space-y-1">
+                  <p className="text-xs text-amber-950 dark:text-amber-300 leading-relaxed font-medium">
+                    This will clear the returned status and move DC #{moveToPendingDialog.dc.dcNo} back into the active pending list.
+                  </p>
+                </div>
+              </div>
 
-          {/* 3. FOOTER */}
-          <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
-            <Button
-              variant="outline"
-              onClick={() => setMoveToPendingDialog({ open: false, dc: null })}
-              className="rounded-xl h-10 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={async () => {
-                const dc = moveToPendingDialog.dc;
-                if (!dc) return;
-                setMoveToPendingDialog({ open: false, dc: null });
-                await cancelReturnToPending(dc);
-              }}
-              className="rounded-xl h-10 px-5 text-xs font-bold gap-1.5 bg-amber-600 hover:bg-amber-700 text-white shadow-xs"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Confirm &amp; Move</span>
-            </Button>
-          </div>
+              {/* Action Footer */}
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-end gap-2.5">
+                <Button
+                  variant="outline"
+                  onClick={() => setMoveToPendingDialog({ open: false, dc: null })}
+                  className="rounded-xl h-9 px-4 text-xs font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const dc = moveToPendingDialog.dc;
+                    if (!dc) return;
+                    setMoveToPendingDialog({ open: false, dc: null });
+                    await cancelReturnToPending(dc);
+                  }}
+                  className="rounded-xl h-9 px-5 text-xs font-bold gap-1.5 bg-amber-600 hover:bg-amber-700 text-white shadow-none"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Move Back to Delivered</span>
+                </Button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -6093,10 +8275,10 @@ const SavedDcs = () => {
           </DialogHeader>
 
           {/* Top Header */}
-          <div className="bg-gradient-to-r from-indigo-50 via-blue-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
+          <div className="bg-background from-indigo-50 via-blue-50/60 to-slate-50/50 px-5 py-4 border-b border-slate-200/80">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 border border-indigo-200/80 shadow-xs">
+                <div className="h-10 w-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 border border-indigo-200/80 shadow-none">
                   <Lock className="w-5 h-5" />
                 </div>
                 <div>
@@ -6127,7 +8309,8 @@ const SavedDcs = () => {
                 <span>Protected Management Tools</span>
               </div>
               <p className="leading-relaxed text-slate-600 dark:text-slate-400">
-                Enter your administrative key to manage system settings, registers, and audit options.
+                Enter your administrative key to manage system settings,
+                registers, and audit options.
               </p>
             </div>
           </div>
@@ -6135,7 +8318,12 @@ const SavedDcs = () => {
           {/* Bottom Form */}
           <div className="px-5 py-3.5 space-y-3.5">
             <div>
-              <Label htmlFor="admin-pass" className="text-xs font-bold text-slate-800 dark:text-slate-200">Manager Password *</Label>
+              <Label
+                htmlFor="admin-pass"
+                className="text-xs font-bold text-slate-800 dark:text-slate-200"
+              >
+                Manager Password *
+              </Label>
               <Input
                 id="admin-pass"
                 type="password"
@@ -6149,7 +8337,7 @@ const SavedDcs = () => {
                 placeholder="Enter password..."
                 className="mt-1.5 h-10 rounded-xl border-slate-300 dark:border-slate-700 text-sm"
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmAdminAccess();
+                  if (e.key === "Enter") confirmAdminAccess();
                 }}
               />
             </div>
@@ -6166,7 +8354,7 @@ const SavedDcs = () => {
             </Button>
             <Button
               onClick={confirmAdminAccess}
-              className="rounded-xl h-10 px-5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm min-w-[130px]"
+              className="rounded-xl h-10 px-5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-none min-w-[130px]"
             >
               Enter Admin Panel
             </Button>
@@ -6187,7 +8375,7 @@ const SavedDcs = () => {
           }
         }}
       >
-        <DialogContent 
+        <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
           className="sm:max-w-4xl lg:max-w-5xl w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
@@ -6199,58 +8387,117 @@ const SavedDcs = () => {
           </DialogHeader>
 
           {/* 1. TOP HEADER */}
-          <div className="bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200/80 dark:border-slate-800 px-5 py-4">
-            <div className="flex items-start justify-between gap-3 pr-6">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200">
-                    DC #{paymentDialog.dc?.dcNo}
-                  </span>
-                  {paymentDialog.dc?.invoiceRef && (
-                    <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      Memo #{paymentDialog.dc.invoiceRef}
-                    </span>
-                  )}
-                  <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                    Awaiting Settlement
-                  </span>
+          {paymentDialog.dc && (
+            <div className="bg-slate-50/80 dark:bg-slate-900/80 px-5 py-4 border-b border-slate-200/80 dark:border-slate-800 rounded-t-2xl">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0 border border-emerald-200/80 dark:border-emerald-800">
+                  <CreditCard className="w-5 h-5" />
                 </div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-                  Record Payment Collection
-                </h3>
-                <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-400 mt-1 flex-wrap">
-                  <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                    <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    {paymentDialog.dc?.hospitalName || "Hospital Record"}
-                  </span>
-                  {paymentDialog.dc?.doctorName && (
-                    <span className="flex items-center gap-1">
-                      <Stethoscope className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      Dr. {paymentDialog.dc.doctorName}
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2 flex-wrap">
+                    <span>Record Payment Collection</span>
+                    <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700">
+                      DC #{paymentDialog.dc.dcNo}
                     </span>
-                  )}
-                  {paymentDialog.dc?.patientName && (
-                    <span className="flex items-center gap-1">
-                      <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                      Pt: {paymentDialog.dc.patientName}
-                    </span>
+                    {paymentDialog.dc.invoiceRef && (
+                      <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                        Memo #{paymentDialog.dc.invoiceRef}
+                      </span>
+                    )}
+                  </h3>
+                  {(paymentDialog.dc.doctorName || paymentDialog.dc.patientName) && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                      {paymentDialog.dc.doctorName ? `Dr. ${paymentDialog.dc.doctorName}` : ""}
+                      {paymentDialog.dc.doctorName && paymentDialog.dc.patientName ? ` • ` : ""}
+                      {paymentDialog.dc.patientName ? `Pt: ${paymentDialog.dc.patientName}` : ""}
+                    </p>
                   )}
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* 2. BODY CONTENT (2-COLUMN RESPONSIVE LAYOUT) */}
-          <div className="p-5 max-h-[78vh] overflow-y-auto">
+          <div className="p-5 max-h-[78vh] overflow-y-auto space-y-4">
+            {/* Dispatch Info Summary */}
+            {paymentDialog.dc && (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3.5 text-xs space-y-2.5">
+                {/* Hospital Header */}
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 font-bold">
+                  <Building2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="text-xs truncate">
+                    {paymentDialog.dc.hospitalName || paymentDialog.dc.partyName || "Hospital Record"}
+                  </span>
+                </div>
+
+                {/* Structured 4-Column Details Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5">
+                  {/* Delivered By */}
+                  <div className="flex items-start gap-2 min-w-0">
+                    {getTransportMode(paymentDialog.dc.deliveredBy) ? (
+                      renderTransportIcon(getTransportMode(paymentDialog.dc.deliveredBy)?.iconName, "w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5")
+                    ) : (
+                      <Truck className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Delivered By</div>
+                      <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {normalizePersonnelName(paymentDialog.dc.deliveredBy) || paymentDialog.dc.deliveredBy || "Standard Dispatch"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  <div className="flex items-start gap-2 min-w-0">
+                    <CreditCard className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Status</div>
+                      <div className="font-semibold text-amber-700 dark:text-amber-300 uppercase truncate">
+                        Awaiting Settlement
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Total Items */}
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Package className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Total Items</div>
+                      <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {getTotalQty(paymentDialog.dc)} <span className="text-[11px] font-normal text-slate-500">({paymentDialog.dc.items?.length || 0} types)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Instruments */}
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Wrench className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">Instruments</div>
+                      <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {paymentDialog.dc.instruments?.length || 0} Sets / Trays
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
               {/* LEFT COLUMN: RECEIVABLE DETAILS & PAYMENT INPUTS */}
-              <div className={`${paymentMethod === "bank_transfer" ? "lg:col-span-5" : "lg:col-span-12 max-w-xl mx-auto w-full"} space-y-4`}>
+              <div
+                className={`${paymentMethod === "bank_transfer" ? "lg:col-span-5" : "lg:col-span-12 max-w-xl mx-auto w-full"} space-y-4`}
+              >
                 {/* Financial Receivable Banner */}
-                {Boolean(paymentDialog.dc?.billedAmount && paymentDialog.dc.billedAmount > (paymentDialog.dc.cashAmount || 0)) ? (
+                {Boolean(
+                  paymentDialog.dc?.billedAmount &&
+                  paymentDialog.dc.billedAmount >
+                    (paymentDialog.dc.cashAmount || 0),
+                ) ? (
                   <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                        <Receipt className="w-3.5 h-3.5 text-amber-600" />
+                        <Receipt className="w-3.5 h-3.5 text-slate-600" />
                         Hiked Bill Settlement
                       </span>
                       <span className="text-[10px] bg-amber-200/70 dark:bg-amber-900/60 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
@@ -6259,21 +8506,38 @@ const SavedDcs = () => {
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-amber-200/60 dark:border-amber-900/30">
                       <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
-                        <span className="block text-[10px] text-slate-500 uppercase font-semibold">Printed Bill</span>
+                        <span className="block text-[10px] text-slate-500 uppercase font-semibold">
+                          Printed Bill
+                        </span>
                         <span className="font-bold text-slate-700 dark:text-slate-300">
-                          ₹{paymentDialog.dc?.billedAmount?.toLocaleString('en-IN')}
+                          ₹
+                          {paymentDialog.dc?.billedAmount?.toLocaleString(
+                            "en-IN",
+                          )}
                         </span>
                       </div>
                       <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
-                        <span className="block text-[10px] text-amber-700 dark:text-amber-400 uppercase font-semibold">Hospital Cut</span>
+                        <span className="block text-[10px] text-amber-700 dark:text-amber-400 uppercase font-semibold">
+                          Hospital Cut
+                        </span>
                         <span className="font-bold text-amber-800 dark:text-amber-300">
-                          -₹{(paymentDialog.dc?.hospitalMargin || (paymentDialog.dc!.billedAmount! - (paymentDialog.dc!.cashAmount || 0))).toLocaleString('en-IN')}
+                          -₹
+                          {(
+                            paymentDialog.dc?.hospitalMargin ||
+                            paymentDialog.dc!.billedAmount! -
+                              (paymentDialog.dc!.cashAmount || 0)
+                          ).toLocaleString("en-IN")}
                         </span>
                       </div>
                       <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-900/30 text-center">
-                        <span className="block text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold">Net Due</span>
+                        <span className="block text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold">
+                          Net Due
+                        </span>
                         <span className="font-black text-emerald-800 dark:text-emerald-300">
-                          ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
+                          ₹
+                          {(paymentDialog.dc?.cashAmount || 0).toLocaleString(
+                            "en-IN",
+                          )}
                         </span>
                       </div>
                     </div>
@@ -6290,77 +8554,207 @@ const SavedDcs = () => {
                     </div>
                     <div className="text-right">
                       <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono">
-                        ₹{(paymentDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
+                        ₹
+                        {(paymentDialog.dc?.cashAmount || 0).toLocaleString(
+                          "en-IN",
+                        )}
                       </span>
                     </div>
                   </div>
                 )}
 
                 {/* Collapsible History of Prior Part Payments (if any exist) */}
-                {paymentDialog.dc?.partPayments && paymentDialog.dc.partPayments.length > 0 && (
-                  <div className="rounded-xl border border-amber-300 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 p-3 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsRecordPartPaymentsOpen(!isRecordPartPaymentsOpen)}
-                      className="w-full flex items-center justify-between text-xs font-bold text-amber-950 dark:text-amber-100 hover:text-amber-800 transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Banknote className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                        <span>Previous Installments Collected ({paymentDialog.dc.partPayments.length})</span>
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px] text-amber-800 dark:text-amber-200 bg-amber-200/70 dark:bg-amber-900/80 px-2 py-0.5 rounded-full border border-amber-300">
-                        {isRecordPartPaymentsOpen ? "Hide Breakdown" : "View Breakdown"}
-                        {isRecordPartPaymentsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                      </span>
-                    </button>
+                {paymentDialog.dc?.partPayments &&
+                  paymentDialog.dc.partPayments.length > 0 && (
+                    <div className="rounded-xl border border-amber-300 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 p-3 space-y-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setIsRecordPartPaymentsOpen(!isRecordPartPaymentsOpen)
+                        }
+                        className="w-full flex items-center justify-between text-xs font-bold text-amber-950 dark:text-amber-100 hover:text-amber-800 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Banknote className="w-4 h-4 text-slate-600 dark:text-amber-400" />
+                          <span>
+                            Previous Installments Collected (
+                            {paymentDialog.dc.partPayments.length})
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] text-amber-800 dark:text-amber-200 bg-amber-200/70 dark:bg-amber-900/80 px-2 py-0.5 rounded-full border border-amber-300">
+                          {isRecordPartPaymentsOpen
+                            ? "Hide Breakdown"
+                            : "View Breakdown"}
+                          {isRecordPartPaymentsOpen ? (
+                            <ChevronUp className="w-3 h-3" />
+                          ) : (
+                            <ChevronDown className="w-3 h-3" />
+                          )}
+                        </span>
+                      </button>
 
-                    {isRecordPartPaymentsOpen && (
-                      <div className="mt-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                        {paymentDialog.dc.partPayments.map((inst, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-amber-200 dark:border-amber-800 text-xs flex items-center justify-between gap-2 shadow-2xs"
-                          >
-                            <div className="space-y-0.5">
-                              <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                                <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 text-[9px] px-1.5 py-0 border-amber-300">
-                                  #{idx + 1}
-                                </Badge>
-                                <span>Installment #{idx + 1} ({inst.paymentMethod === 'bank_transfer' ? '🏦 Bank Transfer' : '💵 Cash'})</span>
-                              </div>
-                              <div className="text-[10px] text-slate-500 flex items-center gap-2">
-                                <span>{formatDate(inst.at)}</span>
-                                {inst.collectedBy && <span>• Collected by {inst.collectedBy}</span>}
-                                {inst.utrNo && <span>• UTR: {inst.utrNo}</span>}
-                              </div>
-                              {inst.remarks && (
-                                <div className="text-[10px] italic text-slate-600 dark:text-slate-400">
-                                  "{inst.remarks}"
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="font-extrabold font-mono text-emerald-700 dark:text-emerald-400 text-xs">
-                                +₹{inst.amount.toLocaleString('en-IN')}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePartPaymentInstallment(paymentDialog.dc!, idx);
-                                }}
-                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                                title={`Delete wrong installment #${idx + 1} (+₹${inst.amount.toLocaleString('en-IN')})`}
+                      {isRecordPartPaymentsOpen && (
+                        <div className="mt-2 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                          {paymentDialog.dc.partPayments.map((inst, idx) => {
+                            const isExp =
+                              expandedInstallmentIdx === idx ||
+                              expandedInstallmentIdx === -1;
+                            return (
+                              <div
+                                key={idx}
+                                className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 text-xs space-y-2 shadow-sm"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="space-y-0.5 min-w-0">
+                                    <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
+                                      <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 text-[9px] px-1.5 py-0 border-amber-300 font-extrabold">
+                                        #{idx + 1}
+                                      </Badge>
+                                      <span>
+                                        Installment #{idx + 1} (
+                                        {inst.paymentMethod === "bank_transfer"
+                                          ? "🏦 Bank Transfer"
+                                          : "💵 Cash"}
+                                        )
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 flex items-center gap-2 flex-wrap">
+                                      <span>{formatDate(inst.at)}</span>
+                                      {inst.collectedBy && (
+                                        <span>• Collected by {inst.collectedBy}</span>
+                                      )}
+                                      {inst.utrNo && (
+                                        <span>• UTR: {inst.utrNo}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="font-extrabold font-mono text-emerald-700 dark:text-emerald-400 text-xs">
+                                      +₹{inst.amount.toLocaleString("en-IN")}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setExpandedInstallmentIdx(
+                                          isExp ? null : idx,
+                                        )
+                                      }
+                                      className="px-2 py-0.5 text-[10px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:text-amber-200 rounded border border-amber-300 flex items-center gap-1 cursor-pointer"
+                                      title="View Payment Information"
+                                    >
+                                      <span>
+                                        {isExp ? "Hide Info" : "Payment Info"}
+                                      </span>
+                                      {isExp ? (
+                                        <ChevronUp className="w-3 h-3" />
+                                      ) : (
+                                        <ChevronDown className="w-3 h-3" />
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeletePartPaymentInstallment(
+                                          paymentDialog.dc!,
+                                          idx,
+                                        );
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                      title={`Delete wrong installment #${idx + 1} (+₹${inst.amount.toLocaleString("en-IN")})`}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {isExp && (
+                                  <div className="p-2.5 rounded-md bg-amber-50/80 dark:bg-slate-850 border border-amber-300 dark:border-amber-900/60 text-[11px] space-y-1.5 animate-in fade-in duration-150">
+                                    <div className="font-extrabold text-amber-900 dark:text-amber-300 uppercase tracking-wider text-[10px] flex items-center gap-1">
+                                      <Landmark className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                                      Installment #{idx + 1} Payment Information
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-amber-200/80 dark:border-amber-900/50">
+                                      <div>
+                                        <span className="text-[10px] text-slate-500 font-bold uppercase block">
+                                          Payment Mode
+                                        </span>
+                                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                          {inst.paymentMethod === "bank_transfer"
+                                            ? "🏦 Bank Transfer / UPI"
+                                            : "💵 Physical Cash (Hand Collected)"}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-[10px] text-slate-500 font-bold uppercase block">
+                                          Settlement Date
+                                        </span>
+                                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                          {formatDate(inst.at)}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-[10px] text-slate-500 font-bold uppercase block">
+                                          UTR / Ref #
+                                        </span>
+                                        {inst.utrNo ? (
+                                          <div className="flex items-center gap-1">
+                                            <code className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-700 text-[10px]">
+                                              {inst.utrNo}
+                                            </code>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                navigator.clipboard.writeText(
+                                                  inst.utrNo || "",
+                                                );
+                                                toast({
+                                                  title: "Copied UTR #",
+                                                  description: inst.utrNo,
+                                                });
+                                              }}
+                                              className="text-amber-700 hover:text-amber-900 cursor-pointer"
+                                              title="Copy UTR"
+                                            >
+                                              <Copy className="w-3 h-3 text-amber-700" />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <span className="text-slate-400">
+                                            N/A
+                                          </span>
+                                        )}
+                                      </div>
+                                      {inst.collectedBy && (
+                                        <div>
+                                          <span className="text-[10px] text-slate-500 font-bold uppercase block">
+                                            Collected By
+                                          </span>
+                                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                            {inst.collectedBy}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {inst.remarks && (
+                                        <div className="sm:col-span-2">
+                                          <span className="text-[10px] text-slate-500 font-bold uppercase block">
+                                            Remarks / Notes
+                                          </span>
+                                          <span className="italic text-slate-700 dark:text-slate-300">
+                                            "{inst.remarks}"
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 {/* Payment Mode Selector */}
                 <div className="space-y-1.5">
@@ -6384,13 +8778,17 @@ const SavedDcs = () => {
                       }}
                       className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMethod === "cash"
-                          ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-xs"
+                          ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-none"
                           : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                       }`}
                     >
-                      <Banknote className={`w-4 h-4 shrink-0 ${paymentMethod === "cash" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`} />
+                      <Banknote
+                        className={`w-4 h-4 shrink-0 ${paymentMethod === "cash" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}
+                      />
                       <span>Cash Payment</span>
-                      {paymentMethod === "cash" && <Check className="w-3.5 h-3.5 ml-auto text-emerald-600" />}
+                      {paymentMethod === "cash" && (
+                        <Check className="w-3.5 h-3.5 ml-auto text-emerald-600" />
+                      )}
                     </button>
                     <button
                       type="button"
@@ -6407,18 +8805,20 @@ const SavedDcs = () => {
                       }}
                       className={`flex items-center justify-center gap-2 h-10 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                         paymentMethod === "bank_transfer"
-                          ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-xs"
+                          ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20 shadow-none"
                           : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                       }`}
                     >
-                      <Landmark className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
+                      <Landmark
+                        className={`w-4 h-4 shrink-0 ${paymentMethod === "bank_transfer" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`}
+                      />
                       <span>Bank / UPI</span>
-                      {paymentMethod === "bank_transfer" && <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />}
+                      {paymentMethod === "bank_transfer" && (
+                        <Check className="w-3.5 h-3.5 ml-auto text-indigo-600" />
+                      )}
                     </button>
                   </div>
                 </div>
-
-
 
                 {/* Cash Collector Selection (Only when Cash is selected) */}
                 {paymentMethod === "cash" && (
@@ -6440,13 +8840,15 @@ const SavedDcs = () => {
                     />
                     {/* Clean Quick Picks */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                      <span className="text-[11px] font-medium text-slate-400 mr-0.5">Quick:</span>
+                      <span className="text-[11px] font-medium text-slate-400 mr-0.5">
+                        Quick:
+                      </span>
                       <button
                         type="button"
                         onClick={() => setPaymentCollectedBy("Self")}
                         className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                           paymentCollectedBy.trim().toLowerCase() === "self"
-                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-none"
                             : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
                         }`}
                       >
@@ -6457,28 +8859,42 @@ const SavedDcs = () => {
                         onClick={() => setPaymentCollectedBy("Office")}
                         className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                           paymentCollectedBy.trim().toLowerCase() === "office"
-                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-none"
                             : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
                         }`}
                       >
                         Office
                       </button>
-                      {paymentDialog.dc?.deliveredBy && !isDisallowedPersonnel(paymentDialog.dc.deliveredBy) && (
-                        <button
-                          type="button"
-                          onClick={() => setPaymentCollectedBy(paymentDialog.dc?.deliveredBy || "")}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                            paymentCollectedBy.trim().toLowerCase() === (paymentDialog.dc?.deliveredBy || "").toLowerCase()
-                              ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
-                          }`}
-                        >
-                          <UserCheck className="w-3 h-3 text-teal-600" />
-                          <span>Delivery: {paymentDialog.dc.deliveredBy}</span>
-                        </button>
-                      )}
+                      {paymentDialog.dc?.deliveredBy &&
+                        !isDisallowedPersonnel(
+                          paymentDialog.dc.deliveredBy,
+                        ) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPaymentCollectedBy(
+                                paymentDialog.dc?.deliveredBy || "",
+                              )
+                            }
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              paymentCollectedBy.trim().toLowerCase() ===
+                              (
+                                paymentDialog.dc?.deliveredBy || ""
+                              ).toLowerCase()
+                                ? "bg-emerald-600 text-white border-emerald-600 shadow-none"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                            }`}
+                          >
+                            <UserCheck className="w-3 h-3 text-blue-600" />
+                            <span>
+                              Delivery: {paymentDialog.dc.deliveredBy}
+                            </span>
+                          </button>
+                        )}
                       {topReturnPersons.slice(0, 4).map((p) => {
-                        const isSelected = paymentCollectedBy.trim().toLowerCase() === p.name.toLowerCase();
+                        const isSelected =
+                          paymentCollectedBy.trim().toLowerCase() ===
+                          p.name.toLowerCase();
                         return (
                           <button
                             key={p.name}
@@ -6486,11 +8902,13 @@ const SavedDcs = () => {
                             onClick={() => setPaymentCollectedBy(p.name)}
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                               isSelected
-                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                ? "bg-emerald-600 text-white border-emerald-600 shadow-none"
                                 : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
                             }`}
                           >
-                            <User className={`w-3 h-3 ${isSelected ? "text-white" : "text-emerald-600"}`} />
+                            <User
+                              className={`w-3 h-3 ${isSelected ? "text-white" : "text-emerald-600"}`}
+                            />
                             <span>{p.name}</span>
                           </button>
                         );
@@ -6504,16 +8922,24 @@ const SavedDcs = () => {
                   {/* Paid Amount */}
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="payment-amount" className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      <Label
+                        htmlFor="payment-amount"
+                        className="text-xs font-bold text-slate-700 dark:text-slate-300"
+                      >
                         Amount Received *
                       </Label>
                       {paymentDialog.dc?.cashAmount && (
                         <button
                           type="button"
-                          onClick={() => setPaymentAmountInput(String(paymentDialog.dc?.cashAmount || ''))}
+                          onClick={() =>
+                            setPaymentAmountInput(
+                              String(paymentDialog.dc?.cashAmount || ""),
+                            )
+                          }
                           className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-bold cursor-pointer"
                         >
-                          Full Due (₹{paymentDialog.dc.cashAmount.toLocaleString('en-IN')})
+                          Full Due (₹
+                          {paymentDialog.dc.cashAmount.toLocaleString("en-IN")})
                         </button>
                       )}
                     </div>
@@ -6526,7 +8952,11 @@ const SavedDcs = () => {
                         type="number"
                         value={paymentAmountInput}
                         onChange={(e) => setPaymentAmountInput(e.target.value)}
-                        placeholder={paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "0"}
+                        placeholder={
+                          paymentDialog.dc?.cashAmount
+                            ? String(paymentDialog.dc.cashAmount)
+                            : "0"
+                        }
                         className="pl-7 h-10 font-bold text-sm bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
                       />
                     </div>
@@ -6534,15 +8964,25 @@ const SavedDcs = () => {
 
                   {/* Payment Remarks */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="payment-remarks" className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Notes / Ref <span className="font-normal text-slate-400">(Optional)</span>
+                    <Label
+                      htmlFor="payment-remarks"
+                      className="text-xs font-bold text-slate-700 dark:text-slate-300"
+                    >
+                      Notes / Ref{" "}
+                      <span className="font-normal text-slate-400">
+                        (Optional)
+                      </span>
                     </Label>
                     <Input
                       id="payment-remarks"
                       type="text"
                       value={paymentRemarksInput}
                       onChange={(e) => setPaymentRemarksInput(e.target.value)}
-                      placeholder={paymentMethod === "cash" ? "e.g. Received at hospital billing" : "e.g. UTR / NEFT Ref"}
+                      placeholder={
+                        paymentMethod === "cash"
+                          ? "e.g. Received at hospital billing"
+                          : "e.g. UTR / NEFT Ref"
+                      }
                       className="h-10 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
                     />
                   </div>
@@ -6557,24 +8997,35 @@ const SavedDcs = () => {
                       <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                       Mandatory Bank Credit Link & Match *
                     </Label>
-                    <Badge variant="outline" className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200"
+                    >
                       {availableBankCredits.length} Statement Credits
                     </Badge>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Select matching credit deposit from bank statement or select "Not Found" to link later:
+                    Select matching credit deposit from bank statement or select
+                    "Not Found" to link later:
                   </p>
 
                   {/* Executive Account Card Selector Tabs ("Go with something else") */}
                   <div className="space-y-1 my-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Select Account Statement:</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Select Account Statement:
+                    </span>
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
                       {/* 1. BANK ACCOUNTS TABS (1538 ALWAYS FIRST ON THE LEFT!) */}
                       {sortedBankAccounts.map((acc) => {
                         const isSelected = selectedBankAccountId === acc.id;
-                        const count = availableBankCredits.filter((t) => t.accountId === acc.id).length;
-                        const accSuffix = acc.accountNumber ? acc.accountNumber.slice(-4) : (acc.accountName.match(/\d{4}/)?.[0] || '');
-                        const is1538 = accSuffix === '1538' || acc.id.includes('1538');
+                        const count = availableBankCredits.filter(
+                          (t) => t.accountId === acc.id,
+                        ).length;
+                        const accSuffix = acc.accountNumber
+                          ? acc.accountNumber.slice(-4)
+                          : acc.accountName.match(/\d{4}/)?.[0] || "";
+                        const is1538 =
+                          accSuffix === "1538" || acc.id.includes("1538");
 
                         return (
                           <button
@@ -6583,24 +9034,35 @@ const SavedDcs = () => {
                             onClick={() => setSelectedBankAccountId(acc.id)}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
                               isSelected
-                                ? is1538 
-                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/20"
-                                  : "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20"
+                                ? is1538
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-none ring-2 ring-emerald-500/20"
+                                  : "bg-indigo-600 text-white border-indigo-600 shadow-none ring-2 ring-indigo-500/20"
                                 : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
                             }`}
                           >
                             <Building2 className="w-3.5 h-3.5" />
-                            <span>{acc.bankName || acc.accountName.split('(')[0].trim()}</span>
+                            <span>
+                              {acc.bankName ||
+                                acc.accountName.split("(")[0].trim()}
+                            </span>
                             {accSuffix && (
-                              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
-                                isSelected ? "bg-black/20 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                              }`}>
+                              <span
+                                className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                                  isSelected
+                                    ? "bg-black/20 text-white"
+                                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                }`}
+                              >
                                 ({accSuffix})
                               </span>
                             )}
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                              isSelected ? "bg-black/20 text-white" : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
-                            }`}>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                                isSelected
+                                  ? "bg-black/20 text-white"
+                                  : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+                              }`}
+                            >
                               {count}
                             </span>
                           </button>
@@ -6613,15 +9075,19 @@ const SavedDcs = () => {
                         onClick={() => setSelectedBankAccountId("all")}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
                           selectedBankAccountId === "all"
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20"
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-none ring-2 ring-indigo-500/20"
                             : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
                         }`}
                       >
                         <Landmark className="w-3.5 h-3.5" />
                         <span>All Accounts</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                          selectedBankAccountId === "all" ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                        }`}>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                            selectedBankAccountId === "all"
+                              ? "bg-indigo-700 text-white"
+                              : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          }`}
+                        >
                           {availableBankCredits.length}
                         </span>
                       </button>
@@ -6637,10 +9103,16 @@ const SavedDcs = () => {
                     <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                       {filteredBankCredits.map((tx) => {
                         const isSelected = selectedCreditTxId === tx.id;
-                        const dcAmount = paymentDialog.dc?.cashAmount || paymentDialog.dc?.billedAmount || 0;
-                        const isAmountMatch = Math.abs(tx.amount - dcAmount) < 10;
-                        const dcHosp = (paymentDialog.dc?.hospitalName || '').toLowerCase().trim();
-                        const desc = (tx.description || '').toLowerCase();
+                        const dcAmount =
+                          paymentDialog.dc?.cashAmount ||
+                          paymentDialog.dc?.billedAmount ||
+                          0;
+                        const isAmountMatch =
+                          Math.abs(tx.amount - dcAmount) < 10;
+                        const dcHosp = (paymentDialog.dc?.hospitalName || "")
+                          .toLowerCase()
+                          .trim();
+                        const desc = (tx.description || "").toLowerCase();
                         const isHospMatch = dcHosp && desc.includes(dcHosp);
                         const isMatch = isAmountMatch || isHospMatch;
 
@@ -6649,32 +9121,40 @@ const SavedDcs = () => {
                             key={tx.id}
                             onClick={() => {
                               setSelectedCreditTxId(tx.id);
-                              if (tx.amount) setPaymentAmountInput(String(tx.amount));
+                              if (tx.amount)
+                                setPaymentAmountInput(String(tx.amount));
                             }}
                             className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
                               isSelected
-                                ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-500/20 shadow-xs"
+                                ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-500/20 shadow-none"
                                 : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex items-center gap-2.5">
-                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}>
-                                  {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                <div
+                                  className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300"}`}
+                                >
+                                  {isSelected && (
+                                    <Check className="w-3 h-3 stroke-[3]" />
+                                  )}
                                 </div>
                                 <div>
                                   <span className="font-bold text-slate-800 dark:text-slate-100 block">
                                     {tx.description || "Bank Credit Deposit"}
                                   </span>
                                   <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-mono mt-0.5">
-                                    {tx.date} {tx.time ? `• ${tx.time}` : ""} {tx.referenceNumber ? `• Ref: ${tx.referenceNumber}` : ""}
+                                    {tx.date} {tx.time ? `• ${tx.time}` : ""}{" "}
+                                    {tx.referenceNumber
+                                      ? `• Ref: ${tx.referenceNumber}`
+                                      : ""}
                                   </span>
                                 </div>
                               </div>
                               <div className="text-right shrink-0 flex flex-col items-end gap-1">
                                 <div className="flex items-center gap-1.5">
                                   <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm font-mono block">
-                                    +₹{tx.amount.toLocaleString('en-IN')}
+                                    +₹{tx.amount.toLocaleString("en-IN")}
                                   </span>
                                   <button
                                     type="button"
@@ -6682,7 +9162,7 @@ const SavedDcs = () => {
                                       e.stopPropagation();
                                       setViewingTxDetails(tx);
                                     }}
-                                    className="p-1 rounded-md text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                    className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
                                     title="View Email & Verification Details"
                                   >
                                     <Eye className="w-3.5 h-3.5" />
@@ -6704,22 +9184,27 @@ const SavedDcs = () => {
                         onClick={() => setSelectedCreditTxId("not_found")}
                         className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
                           selectedCreditTxId === "not_found"
-                            ? "border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-500/20 shadow-xs"
+                            ? "border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-500/20 shadow-none"
                             : "border-slate-200 bg-slate-50 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-850"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2.5">
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedCreditTxId === "not_found" ? "border-amber-600 bg-amber-600 text-white" : "border-slate-300"}`}>
-                              {selectedCreditTxId === "not_found" && <Check className="w-3 h-3 stroke-[3]" />}
+                            <div
+                              className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedCreditTxId === "not_found" ? "border-amber-600 bg-amber-600 text-white" : "border-slate-300"}`}
+                            >
+                              {selectedCreditTxId === "not_found" && (
+                                <Check className="w-3 h-3 stroke-[3]" />
+                              )}
                             </div>
                             <div>
                               <span className="font-bold text-amber-900 dark:text-amber-300 block flex items-center gap-1">
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <AlertCircle className="w-3.5 h-3.5 text-slate-600 dark:text-amber-400 shrink-0" />
                                 Not Found in Bank Statement Yet (Link Later)
                               </span>
                               <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                                Statement update pending. You can link this later from Bank Treasury.
+                                Statement update pending. You can link this
+                                later from Bank Treasury.
                               </span>
                             </div>
                           </div>
@@ -6733,17 +9218,30 @@ const SavedDcs = () => {
           </div>
 
           {/* FIXED BOTTOM FOOTER & LIVE CONFIRMATION BANNER */}
-          <div className="shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 py-3 space-y-2.5 z-30 shadow-lg">
+          <div className="shrink-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 py-3 space-y-2.5 z-30 shadow-none">
             {/* Live Part Payment Banner */}
             {(() => {
               const prevPaid = paymentDialog.dc?.paidAmount || 0;
-              const origAmt = paymentDialog.dc?.originalInvoiceTotal || paymentDialog.dc?.cashAmount || (paymentDialog.dc?.billedAmount ? paymentDialog.dc.billedAmount - (paymentDialog.dc.hospitalMargin || 0) : 0) || 0;
+              const origAmt =
+                paymentDialog.dc?.originalInvoiceTotal ||
+                paymentDialog.dc?.cashAmount ||
+                (paymentDialog.dc?.billedAmount
+                  ? paymentDialog.dc.billedAmount -
+                    (paymentDialog.dc.hospitalMargin || 0)
+                  : 0) ||
+                0;
               const remainingBalance = Math.max(0, origAmt - prevPaid);
               const currentInstallment = parseFloat(paymentAmountInput) || 0;
               const totalCollectedAfter = prevPaid + currentInstallment;
-              const remainingDueAfter = Math.max(0, origAmt - totalCollectedAfter);
+              const remainingDueAfter = Math.max(
+                0,
+                origAmt - totalCollectedAfter,
+              );
               // Show part payment options ONLY if entered amount is less than remaining balance
-              const isPart = origAmt > 0 && currentInstallment > 0 && currentInstallment < remainingBalance;
+              const isPart =
+                origAmt > 0 &&
+                currentInstallment > 0 &&
+                currentInstallment < remainingBalance;
 
               if (isPart) {
                 return (
@@ -6751,8 +9249,10 @@ const SavedDcs = () => {
                     {/* Header */}
                     <div className="flex items-center justify-between px-3 py-2 bg-amber-100/80 dark:bg-amber-900/40 border-b border-amber-200 dark:border-amber-800">
                       <span className="flex items-center gap-1.5 text-amber-900 dark:text-amber-100 text-xs font-bold">
-                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        Part Payment — ₹{remainingDueAfter.toLocaleString("en-IN")} still outstanding
+                        <AlertCircle className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                        Part Payment — ₹
+                        {remainingDueAfter.toLocaleString("en-IN")} still
+                        outstanding
                       </span>
                       <Badge className="bg-amber-500 text-white text-[9px] font-extrabold px-1.5 py-0 uppercase tracking-wide">
                         Action Required
@@ -6762,26 +9262,44 @@ const SavedDcs = () => {
                     {/* Compact Metrics Strip */}
                     <div className="grid grid-cols-4 divide-x divide-amber-200 dark:divide-amber-800 text-center text-[10px]">
                       <div className="py-1.5 px-2">
-                        <div className="text-slate-500 font-medium uppercase tracking-wide text-[9px]">Invoice</div>
-                        <div className="font-extrabold text-slate-800 dark:text-slate-100 font-mono text-xs">₹{origAmt.toLocaleString("en-IN")}</div>
+                        <div className="text-slate-500 font-medium uppercase tracking-wide text-[9px]">
+                          Invoice
+                        </div>
+                        <div className="font-extrabold text-slate-800 dark:text-slate-100 font-mono text-xs">
+                          ₹{origAmt.toLocaleString("en-IN")}
+                        </div>
                       </div>
                       <div className="py-1.5 px-2 bg-blue-50/60 dark:bg-blue-950/30">
-                        <div className="text-blue-600 font-medium uppercase tracking-wide text-[9px]">Prev. Paid</div>
-                        <div className="font-extrabold text-blue-700 dark:text-blue-400 font-mono text-xs">₹{prevPaid.toLocaleString("en-IN")}</div>
+                        <div className="text-blue-600 font-medium uppercase tracking-wide text-[9px]">
+                          Prev. Paid
+                        </div>
+                        <div className="font-extrabold text-blue-700 dark:text-blue-400 font-mono text-xs">
+                          ₹{prevPaid.toLocaleString("en-IN")}
+                        </div>
                       </div>
                       <div className="py-1.5 px-2 bg-emerald-50/60 dark:bg-emerald-950/30">
-                        <div className="text-emerald-700 font-medium uppercase tracking-wide text-[9px]">Now</div>
-                        <div className="font-extrabold text-emerald-700 dark:text-emerald-400 font-mono text-xs">₹{currentInstallment.toLocaleString("en-IN")}</div>
+                        <div className="text-emerald-700 font-medium uppercase tracking-wide text-[9px]">
+                          Now
+                        </div>
+                        <div className="font-extrabold text-emerald-700 dark:text-emerald-400 font-mono text-xs">
+                          ₹{currentInstallment.toLocaleString("en-IN")}
+                        </div>
                       </div>
                       <div className="py-1.5 px-2 bg-rose-50/60 dark:bg-rose-950/30">
-                        <div className="text-rose-600 font-medium uppercase tracking-wide text-[9px]">Remaining</div>
-                        <div className="font-extrabold text-rose-700 dark:text-rose-400 font-mono text-xs">₹{remainingDueAfter.toLocaleString("en-IN")}</div>
+                        <div className="text-rose-600 font-medium uppercase tracking-wide text-[9px]">
+                          Remaining
+                        </div>
+                        <div className="font-extrabold text-rose-700 dark:text-rose-400 font-mono text-xs">
+                          ₹{remainingDueAfter.toLocaleString("en-IN")}
+                        </div>
                       </div>
                     </div>
 
                     {/* Settlement Action */}
                     <div className="px-3 py-2.5 space-y-2">
-                      <p className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">How should we record this?</p>
+                      <p className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                        How should we record this?
+                      </p>
                       <div className="grid grid-cols-2 gap-2">
                         {/* Option 1: Keep in Cash Queue */}
                         <button
@@ -6794,20 +9312,29 @@ const SavedDcs = () => {
                           }`}
                         >
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${partialSettlementType === "pay_more" ? "border-amber-500 bg-amber-500" : "border-slate-300"}`}>
-                              {partialSettlementType === "pay_more" && <Check className="w-2 h-2 text-white stroke-[4]" />}
+                            <div
+                              className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${partialSettlementType === "pay_more" ? "border-amber-500 bg-amber-500" : "border-slate-300"}`}
+                            >
+                              {partialSettlementType === "pay_more" && (
+                                <Check className="w-2 h-2 text-white stroke-[4]" />
+                              )}
                             </div>
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Keep in Cash Queue</span>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                              Keep in Cash Queue
+                            </span>
                           </div>
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug pl-5">
-                            Mark as <strong>Part Paid</strong>. Patient owes ₹{remainingDueAfter.toLocaleString("en-IN")} more.
+                            Mark as <strong>Part Paid</strong>. Patient owes ₹
+                            {remainingDueAfter.toLocaleString("en-IN")} more.
                           </p>
                         </button>
 
                         {/* Option 2: Final Settlement */}
                         <button
                           type="button"
-                          onClick={() => setPartialSettlementType("final_settlement")}
+                          onClick={() =>
+                            setPartialSettlementType("final_settlement")
+                          }
                           className={`text-left p-2.5 rounded-lg border-2 transition-all ${
                             partialSettlementType === "final_settlement"
                               ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 ring-1 ring-emerald-400/30"
@@ -6815,13 +9342,21 @@ const SavedDcs = () => {
                           }`}
                         >
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${partialSettlementType === "final_settlement" ? "border-emerald-500 bg-emerald-500" : "border-slate-300"}`}>
-                              {partialSettlementType === "final_settlement" && <Check className="w-2 h-2 text-white stroke-[4]" />}
+                            <div
+                              className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${partialSettlementType === "final_settlement" ? "border-emerald-500 bg-emerald-500" : "border-slate-300"}`}
+                            >
+                              {partialSettlementType === "final_settlement" && (
+                                <Check className="w-2 h-2 text-white stroke-[4]" />
+                              )}
                             </div>
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Final Settlement</span>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                              Final Settlement
+                            </span>
                           </div>
                           <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug pl-5">
-                            Accept ₹{totalCollectedAfter.toLocaleString("en-IN")} as full & final. Move to <strong>Completed</strong>.
+                            Accept ₹
+                            {totalCollectedAfter.toLocaleString("en-IN")} as
+                            full & final. Move to <strong>Completed</strong>.
                           </p>
                         </button>
                       </div>
@@ -6829,10 +9364,22 @@ const SavedDcs = () => {
                       {/* Reason sub-form — only for Final Settlement */}
                       {partialSettlementType === "final_settlement" && (
                         <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-                          <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Reason for shortfall</p>
+                          <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                            Reason for shortfall
+                          </p>
                           <div className="flex gap-1.5">
-                            {(["discount", "doctor_commission", "hospital_commission"] as const).map((r) => {
-                              const labels: Record<string, string> = { discount: "Discount", doctor_commission: "Dr. Commission", hospital_commission: "Hospital Cut" };
+                            {(
+                              [
+                                "discount",
+                                "doctor_commission",
+                                "hospital_commission",
+                              ] as const
+                            ).map((r) => {
+                              const labels: Record<string, string> = {
+                                discount: "Discount",
+                                doctor_commission: "Dr. Commission",
+                                hospital_commission: "Hospital Cut",
+                              };
                               return (
                                 <button
                                   key={r}
@@ -6854,11 +9401,19 @@ const SavedDcs = () => {
                               <Input
                                 type="text"
                                 value={settlementDoctorName}
-                                onChange={(e) => setSettlementDoctorName(e.target.value)}
-                                placeholder={paymentDialog.dc?.doctorName ? `Dr. ${paymentDialog.dc.doctorName}` : "Doctor name (or N/A)"}
+                                onChange={(e) =>
+                                  setSettlementDoctorName(e.target.value)
+                                }
+                                placeholder={
+                                  paymentDialog.dc?.doctorName
+                                    ? `Dr. ${paymentDialog.dc.doctorName}`
+                                    : "Doctor name (or N/A)"
+                                }
                                 className="h-7 text-xs flex-1 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 rounded"
                               />
-                              <span className="text-[9px] text-slate-400 shrink-0">Leave blank = N/A</span>
+                              <span className="text-[9px] text-slate-400 shrink-0">
+                                Leave blank = N/A
+                              </span>
                             </div>
                           )}
                         </div>
@@ -6874,30 +9429,33 @@ const SavedDcs = () => {
             <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
               <div className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
                 {paymentMethod === "bank_transfer" ? (
-                  <span>Select bank deposit credit or choose "Not Found" to link later</span>
+                  <span>
+                    Select bank deposit credit or choose "Not Found" to link
+                    later
+                  </span>
                 ) : (
                   <span>Collect physical cash payment into treasury</span>
                 )}
               </div>
 
               <div className="flex items-center gap-3 ml-auto w-full sm:w-auto justify-end">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setPaymentDialog({ open: false, dc: null });
                     setPaymentAmountInput("");
                     setPaymentRemarksInput("");
                     setPaymentMethod("cash");
                     setPaymentCollectedBy("");
-                  }} 
+                  }}
                   className="rounded-xl h-11 px-5 text-sm font-semibold border-slate-300 hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:border-slate-700 cursor-pointer"
                   disabled={isActionLoading}
                 >
                   Cancel
                 </Button>
-                <Button 
-                  onClick={handleQuickRecordPayment} 
-                  className="rounded-xl h-11 px-6 text-sm font-extrabold gap-2 shadow-md min-w-[200px] cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white"
+                <Button
+                  onClick={handleQuickRecordPayment}
+                  className="rounded-xl h-11 px-6 text-sm font-extrabold gap-2 shadow-none min-w-[200px] cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white"
                   disabled={isActionLoading}
                 >
                   {isActionLoading ? (
@@ -6930,15 +9488,16 @@ const SavedDcs = () => {
         <DialogContent className="sm:max-w-md w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0">
           <DialogHeader className="p-5 bg-amber-50/70 dark:bg-amber-950/40 border-b border-amber-200/80 dark:border-amber-900/40">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 flex items-center justify-center text-amber-800 dark:text-amber-200 shrink-0 shadow-xs">
-                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 flex items-center justify-center text-amber-800 dark:text-amber-200 shrink-0 shadow-none">
+                <AlertCircle className="w-5 h-5 text-slate-600 dark:text-amber-400" />
               </div>
               <div>
                 <DialogTitle className="text-base font-bold text-amber-950 dark:text-amber-100">
                   Delink Payment &amp; Reset Status
                 </DialogTitle>
                 <DialogDescription className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
-                  Confirm delinking payment details for DC #{delinkConfirmDialog.dc?.dcNo}
+                  Confirm delinking payment details for DC #
+                  {delinkConfirmDialog.dc?.dcNo}
                 </DialogDescription>
               </div>
             </div>
@@ -6952,11 +9511,16 @@ const SavedDcs = () => {
                   DC #{delinkConfirmDialog.dc?.dcNo}
                 </span>
                 <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-200">
-                  Paid ₹{(delinkConfirmDialog.dc?.cashAmount || 0).toLocaleString('en-IN')}
+                  Paid ₹
+                  {(delinkConfirmDialog.dc?.cashAmount || 0).toLocaleString(
+                    "en-IN",
+                  )}
                 </span>
               </div>
               <div className="text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-2 flex-wrap">
-                <span className="font-semibold">{delinkConfirmDialog.dc?.hospitalName}</span>
+                <span className="font-semibold">
+                  {delinkConfirmDialog.dc?.hospitalName}
+                </span>
                 {delinkConfirmDialog.dc?.utrNo && (
                   <span className="font-mono bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-[10px]">
                     Ref: {delinkConfirmDialog.dc.utrNo}
@@ -6972,18 +9536,38 @@ const SavedDcs = () => {
               </span>
               <ul className="space-y-2 text-slate-600 dark:text-slate-300">
                 <li className="flex items-start gap-2">
-                  <span className="text-amber-600 font-bold shrink-0">1.</span>
-                  <span><strong>Payment metadata cleared:</strong> Paid timestamp, payment method, collector name, and payment remarks will be deleted.</span>
+                  <span className="text-slate-600 font-bold shrink-0">1.</span>
+                  <span>
+                    <strong>Payment metadata cleared:</strong> Paid timestamp,
+                    payment method, collector name, and payment remarks will be
+                    deleted.
+                  </span>
                 </li>
                 {delinkConfirmDialog.dc?.utrNo && (
                   <li className="flex items-start gap-2">
-                    <span className="text-amber-600 font-bold shrink-0">2.</span>
-                    <span><strong>Bank credit unlinked:</strong> Bank transaction matching UTR <code className="font-mono bg-amber-100 dark:bg-amber-950 px-1 rounded">{delinkConfirmDialog.dc.utrNo}</code> will be unlinked and returned to available treasury credits.</span>
+                    <span className="text-slate-600 font-bold shrink-0">
+                      2.
+                    </span>
+                    <span>
+                      <strong>Bank credit unlinked:</strong> Bank transaction
+                      matching UTR{" "}
+                      <code className="font-mono bg-amber-100 dark:bg-amber-950 px-1 rounded">
+                        {delinkConfirmDialog.dc.utrNo}
+                      </code>{" "}
+                      will be unlinked and returned to available treasury
+                      credits.
+                    </span>
                   </li>
                 )}
                 <li className="flex items-start gap-2">
-                  <span className="text-amber-600 font-bold shrink-0">{delinkConfirmDialog.dc?.utrNo ? "3." : "2."}</span>
-                  <span><strong>Status moved:</strong> Choose destination below: move to <strong>Cash Queue</strong> (to re-record payment) OR <strong>Returned Queue</strong> (to reset billing path).</span>
+                  <span className="text-slate-600 font-bold shrink-0">
+                    {delinkConfirmDialog.dc?.utrNo ? "3." : "2."}
+                  </span>
+                  <span>
+                    <strong>Status moved:</strong> Choose destination below:
+                    move to <strong>Cash Queue</strong> (to re-record payment)
+                    OR <strong>Returned Queue</strong> (to reset billing path).
+                  </span>
                 </li>
               </ul>
             </div>
@@ -6996,9 +9580,12 @@ const SavedDcs = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <Button
                   type="button"
-                  onClick={() => delinkConfirmDialog.dc && executeDelinkPayment(delinkConfirmDialog.dc, "cash")}
+                  onClick={() =>
+                    delinkConfirmDialog.dc &&
+                    executeDelinkPayment(delinkConfirmDialog.dc, "cash")
+                  }
                   disabled={isActionLoading}
-                  className="w-full bg-amber-600 hover:bg-amber-700 text-white rounded-xl h-11 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white rounded-xl h-11 text-xs font-bold flex items-center justify-center gap-1.5 shadow-none cursor-pointer"
                 >
                   {isActionLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -7012,9 +9599,12 @@ const SavedDcs = () => {
 
                 <Button
                   type="button"
-                  onClick={() => delinkConfirmDialog.dc && executeDelinkPayment(delinkConfirmDialog.dc, "returned")}
+                  onClick={() =>
+                    delinkConfirmDialog.dc &&
+                    executeDelinkPayment(delinkConfirmDialog.dc, "returned")
+                  }
                   disabled={isActionLoading}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-11 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl h-11 text-xs font-bold flex items-center justify-center gap-1.5 shadow-none cursor-pointer"
                 >
                   {isActionLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -7043,7 +9633,10 @@ const SavedDcs = () => {
       </Dialog>
 
       {/* MODAL: EMAIL CONTENT */}
-      <Dialog open={Boolean(viewingTxDetails)} onOpenChange={(open) => !open && setViewingTxDetails(null)}>
+      <Dialog
+        open={Boolean(viewingTxDetails)}
+        onOpenChange={(open) => !open && setViewingTxDetails(null)}
+      >
         <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-5">
           <DialogHeader>
             <div className="flex items-center justify-between pr-6">
@@ -7053,7 +9646,7 @@ const SavedDcs = () => {
               </DialogTitle>
               {viewingTxDetails && (
                 <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">
-                  +₹{viewingTxDetails.amount?.toLocaleString('en-IN')}
+                  +₹{viewingTxDetails.amount?.toLocaleString("en-IN")}
                 </span>
               )}
             </div>
@@ -7069,8 +9662,8 @@ const SavedDcs = () => {
               <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
                 {viewingTxDetails.rawEmailBody
                   ? viewingTxDetails.rawEmailBody
-                      .replace(/<https?:\/\/[^>]+>/gi, '')
-                      .replace(/\n{3,}/g, '\n\n')
+                      .replace(/<https?:\/\/[^>]+>/gi, "")
+                      .replace(/\n{3,}/g, "\n\n")
                       .trim()
                   : viewingTxDetails.rawAlert || viewingTxDetails.description}
               </div>
@@ -7091,9 +9684,12 @@ const SavedDcs = () => {
       </Dialog>
 
       {/* View Hospital Contacts Modal */}
-      <Dialog open={viewContactModalOpen} onOpenChange={setViewContactModalOpen}>
+      <Dialog
+        open={viewContactModalOpen}
+        onOpenChange={setViewContactModalOpen}
+      >
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 gap-0 rounded-2xl bg-white shadow-2xl border-0">
-          <div className="bg-gradient-to-r from-teal-800 via-teal-900 to-slate-900 text-white p-5 rounded-t-2xl relative">
+          <div className="bg-background from-teal-800 via-teal-900 to-slate-900 text-white p-5 rounded-t-2xl relative">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center shrink-0 text-teal-300">
@@ -7101,7 +9697,8 @@ const SavedDcs = () => {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white tracking-tight line-clamp-1">
-                    {selectedHospitalForContact?.hospitalName || "Hospital Contacts"}
+                    {selectedHospitalForContact?.hospitalName ||
+                      "Hospital Contacts"}
                   </h3>
                   {selectedHospitalForContact?.customer?.address ? (
                     <p className="text-xs text-teal-200/80 flex items-center gap-1 mt-0.5 line-clamp-1">
@@ -7119,7 +9716,9 @@ const SavedDcs = () => {
 
             {selectedHospitalForContact?.dc && (
               <div className="mt-3 pt-3 border-t border-teal-700/50 flex flex-wrap items-center gap-3 text-xs text-teal-100/90">
-                <span className="font-semibold text-white">DC: #{selectedHospitalForContact.dc.dcNo}</span>
+                <span className="font-semibold text-white">
+                  DC: #{selectedHospitalForContact.dc.dcNo}
+                </span>
                 {selectedHospitalForContact.dc.doctorName && (
                   <span className="flex items-center gap-1">
                     <Stethoscope className="w-3 h-3 text-teal-300" />
@@ -7150,13 +9749,34 @@ const SavedDcs = () => {
               }
 
               // Fallbacks from legacy/direct fields if not already in contacts
-              if (cust?.otNumber && !allContacts.some(c => c.phone === cust.otNumber)) {
-                allContacts.unshift({ id: "ot", role: "OT Person", name: "OT Desk / Incharge", phone: cust.otNumber });
+              if (
+                cust?.otNumber &&
+                !allContacts.some((c) => c.phone === cust.otNumber)
+              ) {
+                allContacts.unshift({
+                  id: "ot",
+                  role: "OT Person",
+                  name: "OT Desk / Incharge",
+                  phone: cust.otNumber,
+                });
               }
-              if (cust?.hospitalNumber && !allContacts.some(c => c.phone === cust.hospitalNumber)) {
-                allContacts.push({ id: "hosp", role: "Reception", name: "Hospital Reception", phone: cust.hospitalNumber });
+              if (
+                cust?.hospitalNumber &&
+                !allContacts.some((c) => c.phone === cust.hospitalNumber)
+              ) {
+                allContacts.push({
+                  id: "hosp",
+                  role: "Reception",
+                  name: "Hospital Reception",
+                  phone: cust.hospitalNumber,
+                });
               }
-              if ((cust?.personalNumber || cust?.mobile) && !allContacts.some(c => c.phone === (cust.personalNumber || cust.mobile))) {
+              if (
+                (cust?.personalNumber || cust?.mobile) &&
+                !allContacts.some(
+                  (c) => c.phone === (cust.personalNumber || cust.mobile),
+                )
+              ) {
                 allContacts.push({
                   id: "doc",
                   role: "Doctor",
@@ -7169,8 +9789,11 @@ const SavedDcs = () => {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
                     <span className="flex items-center gap-1.5">
-                      <PhoneCall className="w-3.5 h-3.5 text-teal-600" />
-                      Hospital Contacts {allContacts.length > 0 ? `(${allContacts.length})` : "(None)"}
+                      <PhoneCall className="w-3.5 h-3.5 text-blue-600" />
+                      Hospital Contacts{" "}
+                      {allContacts.length > 0
+                        ? `(${allContacts.length})`
+                        : "(None)"}
                     </span>
                     {!isAddingContact && (
                       <Button
@@ -7190,23 +9813,53 @@ const SavedDcs = () => {
                   {allContacts.length > 0 && (
                     <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                       {allContacts.map((contact, idx) => {
-                        const roleColors: Record<string, { badge: string; border: string; bg: string }> = {
-                          "OT Person": { badge: "bg-emerald-100 text-emerald-800 border-emerald-200", border: "border-emerald-200", bg: "bg-emerald-50/40" },
-                          "Accounts": { badge: "bg-amber-100 text-amber-800 border-amber-200", border: "border-amber-200", bg: "bg-amber-50/40" },
-                          "Reception": { badge: "bg-sky-100 text-sky-800 border-sky-200", border: "border-sky-200", bg: "bg-sky-50/40" },
-                          "Doctor": { badge: "bg-purple-100 text-purple-800 border-purple-200", border: "border-purple-200", bg: "bg-purple-50/40" },
-                          "Others": { badge: "bg-slate-100 text-slate-800 border-slate-200", border: "border-slate-200", bg: "bg-slate-50/40" },
+                        const roleColors: Record<
+                          string,
+                          { badge: string; border: string; bg: string }
+                        > = {
+                          "OT Person": {
+                            badge:
+                              "bg-emerald-100 text-emerald-800 border-emerald-200",
+                            border: "border-emerald-200",
+                            bg: "bg-emerald-50/40",
+                          },
+                          Accounts: {
+                            badge:
+                              "bg-amber-100 text-amber-800 border-amber-200",
+                            border: "border-amber-200",
+                            bg: "bg-amber-50/40",
+                          },
+                          Reception: {
+                            badge: "bg-sky-100 text-sky-800 border-sky-200",
+                            border: "border-sky-200",
+                            bg: "bg-sky-50/40",
+                          },
+                          Doctor: {
+                            badge:
+                              "bg-purple-100 text-purple-800 border-purple-200",
+                            border: "border-purple-200",
+                            bg: "bg-purple-50/40",
+                          },
+                          Others: {
+                            badge:
+                              "bg-slate-100 text-slate-800 border-slate-200",
+                            border: "border-slate-200",
+                            bg: "bg-slate-50/40",
+                          },
                         };
-                        const style = roleColors[contact.role] || roleColors["Others"];
+                        const style =
+                          roleColors[contact.role] || roleColors["Others"];
 
                         return (
                           <div
                             key={contact.id || idx}
-                            className={`p-3 rounded-xl border ${style.border} ${style.bg} hover:shadow-xs transition-all flex items-center justify-between gap-2`}
+                            className={`p-3 rounded-xl border ${style.border} ${style.bg} hover:shadow-none transition-all flex items-center justify-between gap-2`}
                           >
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${style.badge}`}>
+                                <span
+                                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${style.badge}`}
+                                >
                                   {contact.role}
                                 </span>
                                 <span className="text-xs font-bold text-slate-900 truncate">
@@ -7214,7 +9867,11 @@ const SavedDcs = () => {
                                 </span>
                               </div>
                               <div className="text-sm font-bold text-slate-900 font-mono mt-1">
-                                {contact.phone || <span className="text-xs font-normal text-slate-400 italic">No number</span>}
+                                {contact.phone || (
+                                  <span className="text-xs font-normal text-slate-400 italic">
+                                    No number
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -7222,14 +9879,14 @@ const SavedDcs = () => {
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <a
                                   href={`tel:${contact.phone.replace(/[^\d+]/g, "")}`}
-                                  className="h-8 px-2.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg inline-flex items-center gap-1 shadow-2xs transition-colors"
+                                  className="h-8 px-2.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg inline-flex items-center gap-1 shadow-none transition-colors"
                                   title={`Call ${contact.name || contact.role}`}
                                 >
                                   <Phone className="w-3 h-3" />
                                   <span>Call</span>
                                 </a>
                                 <a
-                                  href={`https://wa.me/${contact.phone.replace(/\D/g, "").length === 10 ? '91' + contact.phone.replace(/\D/g, "") : contact.phone.replace(/\D/g, "")}`}
+                                  href={`https://wa.me/${contact.phone.replace(/\D/g, "").length === 10 ? "91" + contact.phone.replace(/\D/g, "") : contact.phone.replace(/\D/g, "")}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="h-8 w-8 text-emerald-700 hover:text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg inline-flex items-center justify-center transition-colors"
@@ -7259,7 +9916,7 @@ const SavedDcs = () => {
 
                   {/* Inline Add Contact Form (visible when blank or when user clicks Add Number) */}
                   {isAddingContact && (
-                    <div className="p-4 rounded-xl border-2 border-teal-500/70 bg-teal-50/60 dark:bg-teal-950/40 shadow-sm space-y-3 mt-2">
+                    <div className="p-4 rounded-xl border-2 border-teal-500/70 bg-teal-50/60 dark:bg-teal-950/40 shadow-none space-y-3 mt-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="w-6 h-6 rounded-md bg-teal-600 text-white flex items-center justify-center shrink-0">
@@ -7267,10 +9924,12 @@ const SavedDcs = () => {
                           </div>
                           <div>
                             <h4 className="text-xs font-bold text-teal-950 dark:text-teal-100">
-                              {allContacts.length === 0 ? "Add Hospital Contact Number" : "Add Another Contact Number"}
+                              {allContacts.length === 0
+                                ? "Add Hospital Contact Number"
+                                : "Add Another Contact Number"}
                             </h4>
                             <p className="text-[10px] text-muted-foreground">
-                              {allContacts.length === 0 
+                              {allContacts.length === 0
                                 ? "No number saved yet for this hospital. Enter below to save directly:"
                                 : "Add an additional direct department line or surgeon number"}
                             </p>
@@ -7294,9 +9953,17 @@ const SavedDcs = () => {
                         </span>
                         <div className="flex flex-wrap gap-1.5 pt-0.5">
                           {[
-                            { role: "OT Person", label: "OT Person", icon: "🩺" },
+                            {
+                              role: "OT Person",
+                              label: "OT Person",
+                              icon: "🩺",
+                            },
                             { role: "Doctor", label: "Doctor", icon: "👨‍⚕️" },
-                            { role: "Reception", label: "Reception", icon: "🏥" },
+                            {
+                              role: "Reception",
+                              label: "Reception",
+                              icon: "🏥",
+                            },
                             { role: "Accounts", label: "Accounts", icon: "💳" },
                             { role: "Others", label: "Others", icon: "📋" },
                           ].map((item) => {
@@ -7308,7 +9975,7 @@ const SavedDcs = () => {
                                 onClick={() => setNewContactRole(item.role)}
                                 className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center gap-1 ${
                                   isSelected
-                                    ? "bg-teal-700 text-white border-teal-700 shadow-xs"
+                                    ? "bg-teal-700 text-white border-teal-700 shadow-none"
                                     : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
                                 }`}
                               >
@@ -7324,8 +9991,13 @@ const SavedDcs = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                         <div className="space-y-1">
                           <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                            <span>Phone Number <span className="text-red-500">*</span></span>
-                            <span className="text-[10px] text-muted-foreground font-normal">Mobile / Landline</span>
+                            <span>
+                              Phone Number{" "}
+                              <span className="text-red-500">*</span>
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-normal">
+                              Mobile / Landline
+                            </span>
                           </label>
                           <Input
                             type="tel"
@@ -7346,7 +10018,9 @@ const SavedDcs = () => {
                         <div className="space-y-1">
                           <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                             <span>Contact Person Name</span>
-                            <span className="text-[10px] text-muted-foreground font-normal">Optional</span>
+                            <span className="text-[10px] text-muted-foreground font-normal">
+                              Optional
+                            </span>
                           </label>
                           <Input
                             placeholder="e.g. Sister Sujatha / Dr. Rao"
@@ -7366,9 +10040,12 @@ const SavedDcs = () => {
                       <div className="flex items-center justify-end gap-2 pt-1">
                         <Button
                           type="button"
-                          disabled={isSavingContact || (!newContactPhone.trim() && !newContactName.trim())}
+                          disabled={
+                            isSavingContact ||
+                            (!newContactPhone.trim() && !newContactName.trim())
+                          }
                           onClick={handleSaveInlineContact}
-                          className="h-9 px-5 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white gap-1.5 shadow-sm"
+                          className="h-9 px-5 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white gap-1.5 shadow-none"
                         >
                           {isSavingContact ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -7415,9 +10092,9 @@ const SavedDcs = () => {
 
       {/* Edit DC Details Modal */}
       <Dialog open={editDcModalOpen} onOpenChange={setEditDcModalOpen}>
-        <DialogContent 
+        <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-[540px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="sm:max-w-[540px] p-0 border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Edit DC Details</DialogTitle>
@@ -7427,9 +10104,9 @@ const SavedDcs = () => {
           </DialogHeader>
 
           {/* Clean Light Header */}
-          <div className="bg-gradient-to-r from-teal-50 via-emerald-50/60 to-slate-50/50 dark:from-slate-850 dark:via-teal-950/30 dark:to-slate-900 border-b border-teal-100 dark:border-slate-800 px-5 py-4">
+          <div className="bg-background from-teal-50 via-emerald-50/60 to-slate-50/50 dark:from-slate-850 dark:via-teal-950/30 dark:to-slate-900 border-b border-teal-100 dark:border-slate-800 px-5 py-4 rounded-t-2xl">
             <div className="flex items-start gap-3.5">
-              <div className="h-10 w-10 rounded-xl bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 border border-teal-200/80 shadow-xs">
+              <div className="h-10 w-10 rounded-xl bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 border border-teal-200/80 shadow-none">
                 <Edit className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -7445,10 +10122,12 @@ const SavedDcs = () => {
                   Edit Delivery Challan Details
                 </h3>
                 <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-400 mt-1 flex-wrap">
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{editingDcTarget?.hospitalName || "Hospital"}</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                    {editingDcTarget?.hospitalName || "Hospital"}
+                  </span>
                   {editingDcTarget?.doctorName && (
                     <span className="flex items-center gap-1">
-                      <Stethoscope className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                      <Stethoscope className="w-3.5 h-3.5 text-blue-600 dark:text-teal-400 shrink-0" />
                       Dr. {editingDcTarget.doctorName}
                     </span>
                   )}
@@ -7461,7 +10140,7 @@ const SavedDcs = () => {
           <div className="px-5 pt-4 pb-1">
             <div className="rounded-xl border border-teal-200/80 dark:border-teal-900/40 bg-teal-50/60 dark:bg-teal-950/20 p-3 space-y-1 text-xs text-teal-950 dark:text-teal-200">
               <div className="flex items-center gap-1.5 font-bold text-teal-900 dark:text-teal-200">
-                <Edit className="w-3.5 h-3.5 text-teal-600" />
+                <Edit className="w-3.5 h-3.5 text-blue-600" />
                 <span>Active Register Update</span>
               </div>
               <p className="leading-relaxed text-slate-600 dark:text-slate-400">
@@ -7474,7 +10153,8 @@ const SavedDcs = () => {
           <div className="px-5 py-3.5 space-y-3 max-h-[60vh] overflow-y-auto">
             <div>
               <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Hospital / Customer Name <span className="text-rose-500">*</span>
+                Hospital / Customer Name{" "}
+                <span className="text-rose-500">*</span>
               </Label>
               <div className="mt-1.5">
                 <HospitalSelect
@@ -7488,7 +10168,9 @@ const SavedDcs = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Doctor Name</Label>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Doctor Name
+                </Label>
                 <div className="mt-1.5">
                   <DoctorSelect
                     value={editDoctorName}
@@ -7523,7 +10205,9 @@ const SavedDcs = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">DC Date</Label>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  DC Date
+                </Label>
                 <Input
                   type="date"
                   value={editDcDate}
@@ -7533,7 +10217,9 @@ const SavedDcs = () => {
               </div>
 
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Material Type</Label>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Material Type
+                </Label>
                 <select
                   value={editMaterialType}
                   onChange={(e) => setEditMaterialType(e.target.value)}
@@ -7548,7 +10234,9 @@ const SavedDcs = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Delivered By</Label>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Delivered By
+                </Label>
                 <div className="mt-1.5">
                   <PersonnelSelect
                     role="delivery"
@@ -7560,7 +10248,9 @@ const SavedDcs = () => {
               </div>
 
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Received By</Label>
+                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Received By
+                </Label>
                 <Input
                   value={editReceivedBy}
                   onChange={(e) => setEditReceivedBy(e.target.value)}
@@ -7571,7 +10261,9 @@ const SavedDcs = () => {
             </div>
 
             <div>
-              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">Remarks / Notes</Label>
+              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Remarks / Notes
+              </Label>
               <Textarea
                 value={editRemarks}
                 onChange={(e) => setEditRemarks(e.target.value)}
@@ -7595,7 +10287,7 @@ const SavedDcs = () => {
               type="button"
               disabled={isSavingDcEdit}
               onClick={handleSaveDcEdit}
-              className="rounded-xl h-10 px-5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-sm gap-2 min-w-[130px]"
+              className="rounded-xl h-10 px-5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-none gap-2 min-w-[130px]"
             >
               {isSavingDcEdit ? (
                 <>
@@ -7609,6 +10301,62 @@ const SavedDcs = () => {
                 </>
               )}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Queue Transition Animated Progress Dialog */}
+      <Dialog
+        open={queueTransitionState.open}
+        onOpenChange={() => {
+          /* prevent closing manually while transition progress is active */
+        }}
+      >
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="sm:max-w-[400px] p-0 overflow-hidden border border-slate-200/90 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Moving Queue</DialogTitle>
+            <DialogDescription>
+              Transaction moving to {queueTransitionState.targetQueueName}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 text-center space-y-4">
+            {/* Animated Icon Tile */}
+            <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0">
+              <RefreshCw className="w-7 h-7 animate-spin text-teal-600 dark:text-teal-400" />
+            </div>
+
+            {/* Title & DC Badge */}
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <span className="font-mono font-bold text-teal-700 dark:text-teal-300">
+                  DC #{queueTransitionState.dcNo}
+                </span>
+                <span>→</span>
+                <span className="font-bold text-slate-900 dark:text-slate-100">
+                  {queueTransitionState.targetQueueName}
+                </span>
+              </div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight pt-1">
+                Moving Transaction...
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                {queueTransitionState.message || "Please wait while we update queue records."}
+              </p>
+            </div>
+
+            {/* Smooth Progress Bar */}
+            <div className="pt-2 px-2">
+              <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-700">
+                <div
+                  className="h-full bg-gradient-to-r from-teal-500 via-indigo-500 to-amber-500 rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${queueTransitionState.progress || 60}%` }}
+                />
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

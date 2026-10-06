@@ -1,20 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Bike, Car, Check, ChevronsUpDown, Flame, Package, Sparkles, Trash2, Truck, User, UserPlus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+import { Bike, Car, Check, ChevronDown, Package, Sparkles, Trash2, Truck, User, UserPlus, X } from "lucide-react";
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger,
+  PopoverAnchor,
 } from "@/components/ui/popover";
-import { Badge } from "@/components/ui/badge";
 import {
   Personnel,
   getSavedPersonnel,
@@ -24,7 +14,7 @@ import {
   isDisallowedPersonnel,
   isTransportLogisticsName,
   getPersonnelUsageStats,
-  PersonnelUsageStats,
+  toTitleCase,
 } from "@/lib/personnelStorage";
 import { loadSavedDcs, SavedDc } from "@/lib/savedDcStorage";
 import { useToast } from "@/hooks/use-toast";
@@ -62,7 +52,7 @@ export const getTransportMode = (val?: string): TransportModeOption | null => {
   return null;
 };
 
-export const renderTransportIcon = (iconName?: string, className = "w-3.5 h-3.5 text-teal-600 shrink-0") => {
+export const renderTransportIcon = (iconName?: string, className = "w-4 h-4 text-teal-600 shrink-0") => {
   switch (iconName) {
     case "bike":
       return <Bike className={className} />;
@@ -100,7 +90,7 @@ interface PersonnelSelectProps {
 export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
   value,
   onChange,
-  placeholder = "Select or enter personnel...",
+  placeholder = "Select or type personnel name...",
   disabled = false,
   className = "",
   id,
@@ -108,28 +98,24 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
 }) => {
   const { toast } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const [open, setOpen] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [personnelList, setPersonnelList] = useState<Personnel[]>(getSavedPersonnel);
   const [historicalNames, setHistoricalNames] = useState<string[]>([]);
   const [dcs, setDcs] = useState<SavedDc[]>([]);
-  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
-  // Detect enclosing dialog container to avoid react-remove-scroll locking
+  // Sync search input with value prop when blurred
   useEffect(() => {
-    if (containerRef.current) {
-      const dialogEl =
-        containerRef.current.closest<HTMLElement>('[role="dialog"]') ||
-        containerRef.current.closest<HTMLElement>('[data-radix-dialog-content]');
-      if (dialogEl) {
-        setPortalContainer(dialogEl);
-      }
+    if (!isFocused) {
+      setSearchValue(value ? toTitleCase(value) : "");
     }
-  }, [open]);
+  }, [value, isFocused]);
 
-  // Fix: Prevent wheel and touch events on CommandList from being canceled by document scroll-lock
+  // Prevent wheel/touch events on list from canceling document scroll
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
@@ -150,7 +136,7 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     };
   }, [open]);
 
-  // Load registered personnel and historical DC names
+  // Load personnel roster and historical DC names
   useEffect(() => {
     const updateList = () => {
       setPersonnelList(getSavedPersonnel());
@@ -159,7 +145,6 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     updateList();
     window.addEventListener("srrortho:personnel_updated", updateList);
 
-    // Gather names & usage frequencies from saved DCs
     loadSavedDcs()
       .then((loadedDcs: SavedDc[]) => {
         setDcs(loadedDcs);
@@ -183,16 +168,13 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     };
   }, []);
 
-  // Compute personnel usage frequencies from DC history
   const usageStatsMap = useMemo(() => {
     return getPersonnelUsageStats(dcs);
   }, [dcs]);
 
-  // Combined suggestions: Max-used people ranked at the top!
   const suggestions = useMemo<PersonnelSuggestion[]>(() => {
     const map = new Map<string, PersonnelSuggestion>();
 
-    // 1. Official registered personnel
     personnelList.forEach((p) => {
       const canonical = normalizePersonnelName(p.name);
       if (p.active && canonical && !isDisallowedPersonnel(canonical) && !isTransportLogisticsName(canonical)) {
@@ -210,7 +192,6 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
       }
     });
 
-    // 2. Historical DC names
     historicalNames.forEach((name) => {
       const canonical = normalizePersonnelName(name);
       if (!canonical || isDisallowedPersonnel(canonical) || isTransportLogisticsName(canonical)) return;
@@ -235,10 +216,6 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
       }
     });
 
-    // Sort order:
-    // 1. Maximum usage count first (most used at the very top!)
-    // 2. Official personnel before unregistered
-    // 3. Alphabetical for equal frequency
     return Array.from(map.values()).sort((a, b) => {
       if (b.totalUsage !== a.totalUsage) {
         return b.totalUsage - a.totalUsage;
@@ -249,28 +226,51 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     });
   }, [personnelList, historicalNames, usageStatsMap]);
 
-  // Extract top recommended / most frequently used personnel
+  const filteredSuggestions = useMemo(() => {
+    const term = searchValue.trim().toLowerCase();
+    if (!term) return suggestions;
+    return suggestions.filter(
+      (s) =>
+        s.name.toLowerCase().includes(term) ||
+        (s.role && s.role.toLowerCase().includes(term))
+    );
+  }, [suggestions, searchValue]);
+
+  const filteredTransportModes = useMemo(() => {
+    const term = searchValue.trim().toLowerCase();
+    if (!term) return TRANSPORT_MODES;
+    return TRANSPORT_MODES.filter(
+      (m) =>
+        m.name.toLowerCase().includes(term) ||
+        m.keywords.toLowerCase().includes(term)
+    );
+  }, [searchValue]);
+
   const topRecommendations = useMemo(() => {
     return suggestions.filter((s) => s.totalUsage > 0).slice(0, 4);
   }, [suggestions]);
 
-  const handleSelect = (name: string) => {
-    onChange(name);
+  const handleSelect = (rawName: string) => {
+    const formattedName = toTitleCase(rawName);
+    onChange(formattedName);
+    setSearchValue(formattedName);
     setOpen(false);
-    setSearchValue("");
+    setIsFocused(false);
   };
 
-  const handleAddNew = (newName: string) => {
-    const trimmed = newName.trim();
+  const handleAddNew = (rawName: string) => {
+    const trimmed = rawName.trim();
     if (!trimmed || isDisallowedPersonnel(trimmed) || isTransportLogisticsName(trimmed)) return;
+    const titleCased = toTitleCase(trimmed);
     try {
-      addPersonnel(trimmed, { role: "Delivery Executive" });
-      onChange(trimmed);
+      addPersonnel(titleCased, { role: "Delivery Executive" });
+      onChange(titleCased);
+      setSearchValue(titleCased);
       setOpen(false);
-      setSearchValue("");
+      setIsFocused(false);
       toast({
         title: "Personnel Added",
-        description: `"${trimmed}" saved to delivery roster.`,
+        description: `"${titleCased}" saved to delivery roster.`,
       });
     } catch (e: any) {
       toast({
@@ -286,6 +286,7 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
     deletePersonnel(item.id || item.name);
     if (value.toLowerCase() === item.name.toLowerCase()) {
       onChange("");
+      setSearchValue("");
     }
     toast({
       title: "Removed Personnel",
@@ -298,203 +299,242 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
   }, [value]);
 
   const isExactMatch = useMemo(() => {
-    if (!searchValue.trim()) return false;
-    const lower = searchValue.trim().toLowerCase();
-    if (TRANSPORT_MODES.some((m) => m.name.toLowerCase() === lower)) return true;
-    return suggestions.some((s) => s.name.toLowerCase() === lower);
+    const term = searchValue.trim().toLowerCase();
+    if (!term) return false;
+    if (TRANSPORT_MODES.some((m) => m.name.toLowerCase() === term)) return true;
+    return suggestions.some((s) => s.name.toLowerCase() === term);
   }, [searchValue, suggestions]);
 
+  const displayInputValue = isFocused ? searchValue : (value ? toTitleCase(value) : "");
+
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`}>
+    <div ref={containerRef} className={`ui fluid search selection dropdown relative w-full ${className}`}>
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            id={id}
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            disabled={disabled}
-            className={`w-full justify-between h-9 px-3 text-left font-normal bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all ${
-              !value ? "text-muted-foreground" : "text-slate-900 dark:text-slate-100 font-semibold"
-            }`}
+        <PopoverAnchor asChild>
+          <div
+            onClick={() => {
+              if (!disabled && inputRef.current) {
+                inputRef.current.focus();
+                setOpen(true);
+              }
+            }}
+            className={`flex items-center w-full h-9 px-3 rounded-lg border bg-white dark:bg-slate-950 transition-all cursor-text shadow-2xs ${
+              open
+                ? "border-teal-500 ring-2 ring-teal-500/20 dark:border-teal-500"
+                : "border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600"
+            } ${disabled ? "opacity-60 cursor-not-allowed bg-slate-50 dark:bg-slate-900" : ""}`}
           >
-            <div className="flex items-center gap-2 truncate">
+            {/* Left Icon */}
+            <div className="shrink-0 mr-2 flex items-center pointer-events-none text-slate-500 dark:text-slate-400">
               {matchedTransport ? (
                 renderTransportIcon(matchedTransport.iconName)
               ) : (
-                <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                <User className="w-4 h-4 text-teal-600 shrink-0" />
               )}
-              <span className="truncate">{value || placeholder}</span>
             </div>
-            <div className="flex items-center gap-1 shrink-0 ml-1">
+
+            {/* Direct Inline Search Input */}
+            <input
+              id={id}
+              ref={inputRef}
+              disabled={disabled}
+              value={displayInputValue}
+              placeholder={placeholder}
+              onFocus={() => {
+                setIsFocused(true);
+                setSearchValue(value ? toTitleCase(value) : "");
+                setOpen(true);
+              }}
+              onBlur={() => {
+                setTimeout(() => {
+                  setIsFocused(false);
+                }, 200);
+              }}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchValue(val);
+                if (!open) setOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchValue.trim()) {
+                  e.preventDefault();
+                  const term = searchValue.trim();
+                  const match = suggestions.find((s) => s.name.toLowerCase() === term.toLowerCase());
+                  if (match) {
+                    handleSelect(match.name);
+                  } else if (!isExactMatch && !isDisallowedPersonnel(term) && !isTransportLogisticsName(term)) {
+                    handleAddNew(term);
+                  }
+                } else if (e.key === "Escape") {
+                  setOpen(false);
+                }
+              }}
+              className="w-full h-full bg-transparent border-0 outline-none ring-0 text-xs font-semibold text-slate-900 dark:text-slate-100 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-0 p-0"
+            />
+
+            {/* Right Action Icons */}
+            <div className="shrink-0 ml-1.5 flex items-center gap-1">
               {value && (
-                <span
-                  role="button"
-                  tabIndex={0}
+                <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onChange("");
+                    setSearchValue("");
+                    if (inputRef.current) inputRef.current.focus();
                   }}
-                  className="p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
-                  title="Clear"
+                  className="p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-colors"
+                  title="Clear selection"
                 >
-                  <X className="w-3 h-3" />
-                </span>
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
-              <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400" />
+              <ChevronDown
+                className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
+                  open ? "rotate-180 text-teal-600" : ""
+                }`}
+              />
             </div>
-          </Button>
-        </PopoverTrigger>
+          </div>
+        </PopoverAnchor>
 
         <PopoverContent
-          container={portalContainer}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
           onWheel={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
-          className="w-[var(--radix-popover-trigger-width)] min-w-[320px] max-w-[420px] p-0 z-[150] shadow-2xl border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900"
+          className="w-[var(--radix-popover-trigger-width)] min-w-[320px] max-w-[420px] p-0 z-[99999] shadow-2xl border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden bg-white dark:bg-slate-900"
           align="start"
           sideOffset={4}
         >
-          <Command shouldFilter={true} className="w-full">
-            <CommandInput
-              placeholder="Search staff, top picks or Courier..."
-              value={searchValue}
-              onValueChange={setSearchValue}
-              className="h-9 text-xs"
-            />
-            <CommandList
-              ref={listRef}
-              onWheel={(e) => e.stopPropagation()}
-              onTouchMove={(e) => e.stopPropagation()}
-              className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/40 overscroll-contain touch-pan-y"
-              style={{
-                maxHeight: "260px",
-                overflowY: "auto",
-                overscrollBehavior: "contain",
-                WebkitOverflowScrolling: "touch",
-              }}
-            >
-              <CommandEmpty className="py-3 px-3 text-xs text-center text-muted-foreground">
-                No personnel matching "{searchValue}"
-              </CommandEmpty>
-
-              {/* 1. Recommended (Top Frequent Personnel) - Simple, clean, NO numbers */}
-              {topRecommendations.length > 0 && !searchValue.trim() && (
-                <CommandGroup heading="Frequent Staff">
-                  {topRecommendations.map((item) => {
-                    const isSelected = value?.trim().toLowerCase() === item.name.toLowerCase();
-                    return (
-                      <CommandItem
-                        key={`rec_${item.name}`}
-                        value={`${item.name} frequent`}
-                        onSelect={() => handleSelect(item.name)}
-                        className="flex items-center justify-between py-2 px-3 text-xs cursor-pointer hover:bg-teal-50/60 dark:hover:bg-slate-800 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                          <span className="font-bold text-slate-900 dark:text-slate-100 truncate">
-                            {item.name}
-                          </span>
-                        </div>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-teal-600 shrink-0" />}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              )}
-
-              {/* 2. Delivery / Transport Mode: Courier */}
-              <CommandGroup heading="Transport & Logistics">
-                {TRANSPORT_MODES.map((mode) => {
+          <div
+            ref={listRef}
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/50 overscroll-contain touch-pan-y"
+            style={{
+              maxHeight: "260px",
+              overflowY: "auto",
+              overscrollBehavior: "contain",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {/* 1. Transport & Logistics */}
+            {filteredTransportModes.length > 0 && (
+              <div className="py-1">
+                <div className="px-3 py-1 text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                  Transport & Logistics
+                </div>
+                {filteredTransportModes.map((mode) => {
                   const isSelected = value?.trim().toLowerCase() === mode.name.toLowerCase();
                   return (
-                    <CommandItem
+                    <div
                       key={mode.name}
-                      value={`${mode.name} ${mode.category} ${mode.badge} ${mode.keywords}`}
-                      onSelect={() => handleSelect(mode.name)}
-                      className="flex items-center justify-between py-2 px-3 text-xs cursor-pointer hover:bg-teal-50/60 dark:hover:bg-slate-800 transition-colors"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSelect(mode.name);
+                      }}
+                      className="flex items-center justify-between py-2 px-3 text-xs cursor-pointer hover:bg-teal-50/70 dark:hover:bg-slate-800 transition-colors"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         {renderTransportIcon(mode.iconName)}
                         <span className="font-semibold text-slate-800 dark:text-slate-100">{mode.name}</span>
                       </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-teal-600 shrink-0" />}
-                    </CommandItem>
+                      {isSelected && <Check className="w-4 h-4 text-teal-600 shrink-0" />}
+                    </div>
                   );
                 })}
-              </CommandGroup>
+              </div>
+            )}
 
-              {/* 3. Add typed name if not matching */}
-              {searchValue.trim() && !isExactMatch && !isDisallowedPersonnel(searchValue.trim()) && !isTransportLogisticsName(searchValue.trim()) && (
-                <CommandGroup heading="New Entry">
-                  <CommandItem
-                    value={`add_${searchValue.trim()}`}
-                    onSelect={() => handleAddNew(searchValue)}
-                    className="cursor-pointer text-xs font-semibold text-teal-700 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-950/30 hover:bg-teal-100 flex items-center gap-2 py-2 px-3"
-                  >
-                    <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">Add & Select: "{searchValue.trim()}"</span>
-                  </CommandItem>
-                </CommandGroup>
-              )}
+            {/* 2. Add typed name if not matching */}
+            {searchValue.trim() && !isExactMatch && !isDisallowedPersonnel(searchValue.trim()) && !isTransportLogisticsName(searchValue.trim()) && (
+              <div className="py-1">
+                <div
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleAddNew(searchValue);
+                  }}
+                  className="cursor-pointer text-xs font-semibold text-teal-700 dark:text-teal-400 bg-teal-50/60 dark:bg-teal-950/40 hover:bg-teal-100 flex items-center gap-2 py-2 px-3 transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Add & Select: "{toTitleCase(searchValue.trim())}"</span>
+                </div>
+              </div>
+            )}
 
-              {/* 4. Full Personnel List (ranked by frequency, then alphabetical, NO numbers) */}
-              <CommandGroup heading="All Team Members">
-                {suggestions.map((item) => {
-                  const isSelected = value?.trim().toLowerCase() === item.name.toLowerCase();
+            {/* 3. Team Members */}
+            <div className="py-1">
+              <div className="px-3 py-1 text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                Team Members
+              </div>
+              {filteredSuggestions.length === 0 ? (
+                <div className="py-3 px-3 text-xs text-center text-muted-foreground">
+                  No personnel matching "{searchValue}"
+                </div>
+              ) : (
+                filteredSuggestions.map((item) => {
+                  const titleName = toTitleCase(item.name);
+                  const isSelected = value?.trim().toLowerCase() === titleName.toLowerCase();
                   return (
-                    <CommandItem
+                    <div
                       key={item.name}
-                      value={`${item.name} ${item.role || ''}`}
-                      onSelect={() => handleSelect(item.name)}
-                      className="group flex items-center justify-between py-2 px-3 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSelect(titleName);
+                      }}
+                      className="group flex items-center justify-between py-2 px-3 text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
-                          {item.name}
+                          {titleName}
                         </span>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-teal-600 shrink-0 ml-auto mr-1" />}
+                        {isSelected && <Check className="w-4 h-4 text-teal-600 shrink-0 ml-auto mr-1" />}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={(e) => handleDeleteItem(e, item)}
                           className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-100 dark:hover:bg-rose-950/60 rounded text-slate-400 hover:text-rose-600 transition-opacity"
-                          title={`Delete "${item.name}"`}
+                          title={`Delete "${titleName}"`}
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
-                    </CommandItem>
+                    </div>
                   );
-                })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+                })
+              )}
+            </div>
+          </div>
         </PopoverContent>
       </Popover>
 
-      {/* Quick Recommendation Chips (under input when unselected) - NO NUMBERS */}
+      {/* Quick Recommendation Chips (under input when unselected) */}
       {showQuickPicks && topRecommendations.length > 0 && !value && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
           <span className="text-[10.5px] text-slate-500 dark:text-slate-400 font-semibold flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-teal-600 shrink-0" />
             Quick:
           </span>
-          {topRecommendations.map((person) => (
-            <button
-              key={person.name}
-              type="button"
-              onClick={() => handleSelect(person.name)}
-              className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-teal-50 text-slate-700 hover:text-teal-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-teal-300 font-medium text-[11.5px] transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <User className="w-3 h-3 text-teal-600 shrink-0" />
-              <span>{person.name}</span>
-            </button>
-          ))}
+          {topRecommendations.map((person) => {
+            const titleName = toTitleCase(person.name);
+            return (
+              <button
+                key={person.name}
+                type="button"
+                onClick={() => handleSelect(titleName)}
+                className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-teal-50 text-slate-700 hover:text-teal-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-teal-300 font-medium text-[11.5px] transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <User className="w-3 h-3 text-teal-600 shrink-0" />
+                <span>{titleName}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
   );
 };
-

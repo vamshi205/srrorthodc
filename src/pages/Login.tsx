@@ -94,7 +94,7 @@ const Login = () => {
                 <Shield className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="font-display text-lg font-bold text-slate-900 leading-none">Sign In</h2>
+                <h2 className="font-sans text-lg font-bold text-slate-900 leading-none">Sign In</h2>
                 <span className="text-xs text-slate-500 font-medium">Access your workspace</span>
               </div>
             </div>
