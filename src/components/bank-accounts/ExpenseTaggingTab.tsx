@@ -34,6 +34,8 @@ import {
   ShieldCheck,
   Zap,
   AlertTriangle,
+  MapPin,
+  Navigation,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,7 +88,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<Map<string, ExpenseTagSuggestion>>(new Map());
 
-  // Default Bank Account to 1538 account (No "All" filter)
+  // Default Bank Account to 1538 account
   const defaultAccId = useMemo(() => {
     const acc1538 = accounts.find((a) =>
       a.accountNumber?.includes("1538") || a.accountName?.includes("1538") || a.id.includes("1538")
@@ -95,12 +97,26 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   }, [accounts]);
 
   const [selectedAccountId, setSelectedAccountId] = useState<string>(defaultAccId);
+  const [dateRangeFilter, setDateRangeFilter] = useState<"today" | "week" | "month" | "all">("today");
 
+  // Always force 1538 account and 'today' filter whenever tab is loaded/mounted
   React.useEffect(() => {
-    if (defaultAccId && (!selectedAccountId || selectedAccountId === "all")) {
+    if (defaultAccId) {
       setSelectedAccountId(defaultAccId);
     }
+    setDateRangeFilter("today");
   }, [defaultAccId]);
+
+  const handleAccountChange = (newAccId: string) => {
+    const isTarget1538 = newAccId === defaultAccId || newAccId.includes("1538");
+    if (!isTarget1538) {
+      toast.warning("Caution: Daily UPI delivery expenses are primarily tracked from HDFC 1538 Account!", {
+        description: "Showing debits for selected account. Be sure to verify statement before tagging.",
+        duration: 4500,
+      });
+    }
+    setSelectedAccountId(newAccId);
+  };
 
   const selectedAccountObj = useMemo(
     () => accounts.find((a) => a.id === selectedAccountId),
@@ -122,6 +138,49 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   const [manualPersonnel, setManualPersonnel] = useState("");
   const [manualCategory, setManualCategory] = useState<ExpenseCategory>("Fuel / Petrol");
   const [manualNotes, setManualNotes] = useState("");
+
+  // Travel Route & Purpose Modal State
+  const [isRouteModalOpen, setIsRouteModalOpen] = useState(false);
+  const [editingTxForRoute, setEditingTxForRoute] = useState<BankTransaction | null>(null);
+  const [routeFrom, setRouteFrom] = useState("SRR Warehouse (Kalyan Nagar)");
+  const [routeTo, setRouteTo] = useState("");
+  const [routeDistance, setRouteDistance] = useState("");
+  const [routePurpose, setRoutePurpose] = useState("");
+
+  const handleOpenRouteModal = (tx: BankTransaction) => {
+    setEditingTxForRoute(tx);
+    setRouteFrom(tx.travelFromLocation || "SRR Warehouse (Kalyan Nagar)");
+    setRouteTo(tx.travelToLocation || "");
+    setRouteDistance(tx.travelDistanceKm ? String(tx.travelDistanceKm) : "");
+    setRoutePurpose(tx.travelPurposeNote || "");
+    setIsRouteModalOpen(true);
+  };
+
+  const handleSaveTravelRoute = async () => {
+    if (!editingTxForRoute) return;
+    setIsSaving(true);
+    try {
+      const distNum = parseFloat(routeDistance);
+      const updated: BankTransaction = {
+        ...editingTxForRoute,
+        travelFromLocation: routeFrom.trim() || "SRR Warehouse (Kalyan Nagar)",
+        travelToLocation: routeTo.trim(),
+        travelDistanceKm: !isNaN(distNum) && distNum > 0 ? distNum : undefined,
+        travelPurposeNote: routePurpose.trim(),
+        isExpenseTagged: true,
+        taggedAt: new Date().toISOString(),
+      };
+      await saveBankTransactionToFirestore(updated, false);
+      toast.success(`Saved Travel Route (${routeFrom} ➔ ${routeTo || 'Destination'}${distNum ? `, ${distNum} km` : ''}) for ${editingTxForRoute.expensePersonnelName || 'Executive'}`);
+      setIsRouteModalOpen(false);
+      setEditingTxForRoute(null);
+      onRefresh();
+    } catch (err) {
+      toast.error("Failed to save travel route details");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const personnelNames = useMemo(() => getDeliveryTeamPersonnelNames(), []);
 
@@ -251,6 +310,26 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   // Filtered Debit Transactions List
   const filteredDebits = useMemo(() => {
     return debitTransactions.filter((tx) => {
+      // Date Range Filter
+      if (dateRangeFilter !== "all") {
+        const [y, m, d] = (tx.date || "").split("-").map(Number);
+        const txDate = y && m && d ? new Date(y, m - 1, d) : new Date(tx.date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        if (dateRangeFilter === "today") {
+          if (txDate.toDateString() !== today.toDateString()) return false;
+        } else if (dateRangeFilter === "week") {
+          const weekAgo = new Date(today);
+          weekAgo.setDate(today.getDate() - 7);
+          if (txDate < weekAgo) return false;
+        } else if (dateRangeFilter === "month") {
+          const monthAgo = new Date(today);
+          monthAgo.setDate(today.getDate() - 30);
+          if (txDate < monthAgo) return false;
+        }
+      }
+
       // Personnel Filter
       if (selectedPersonnel !== "all") {
         if (selectedPersonnel === "untagged") {
@@ -282,7 +361,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
 
       return true;
     });
-  }, [debitTransactions, selectedPersonnel, statusFilter, selectedCategoryFilter, searchQuery]);
+  }, [debitTransactions, dateRangeFilter, selectedPersonnel, statusFilter, selectedCategoryFilter, searchQuery]);
 
   // Expense Stats Breakdown
   const stats = useMemo(() => {
@@ -401,7 +480,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
       {/* 2. Action Bar & Filter Toolbar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
         {/* Search Input */}
-        <div className="relative w-full sm:w-80">
+        <div className="relative w-full sm:w-96">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
@@ -412,8 +491,68 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
           />
         </div>
 
-        {/* AI Auto-Tag & Spot Expense Buttons */}
+        {/* Filters & Actions */}
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+          {/* Account Selector */}
+          <Select value={selectedAccountId} onValueChange={handleAccountChange}>
+            <SelectTrigger className="h-8 text-xs font-semibold w-auto min-w-[150px] rounded-md">
+              <Building2 className="w-3.5 h-3.5 mr-1 text-teal-600" />
+              <SelectValue placeholder="Select Account" />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((acc) => (
+                <SelectItem key={acc.id} value={acc.id} className="text-xs">
+                  {acc.accountName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Date Filter Pills */}
+          <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg border border-border text-xs">
+            <button
+              onClick={() => setDateRangeFilter("today")}
+              className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
+                dateRangeFilter === "today"
+                  ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => setDateRangeFilter("week")}
+              className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
+                dateRangeFilter === "week"
+                  ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              This Week
+            </button>
+            <button
+              onClick={() => setDateRangeFilter("month")}
+              className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
+                dateRangeFilter === "month"
+                  ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              This Month
+            </button>
+            <button
+              onClick={() => setDateRangeFilter("all")}
+              className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
+                dateRangeFilter === "all"
+                  ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              All Time
+            </button>
+          </div>
+
+          {/* AI Auto-Tag & Spot Expense Buttons */}
           <Button
             size="sm"
             onClick={handleRunAiEngine}
@@ -572,6 +711,31 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                             <span>AI Suggestion: {suggestion.suggestedPersonnelName} ({suggestion.suggestedCategory})</span>
                           </div>
                         )}
+                        {/* Route & Purpose Justification Action / Badge */}
+                        <div className="mt-1">
+                          {tx.travelFromLocation || tx.travelToLocation || tx.travelDistanceKm ? (
+                            <button
+                              onClick={() => handleOpenRouteModal(tx)}
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-800 px-2 py-0.5 rounded-md hover:bg-teal-100"
+                              title="Click to edit travel route details"
+                            >
+                              <MapPin className="w-3 h-3 text-teal-600" />
+                              <span>
+                                {tx.travelFromLocation || "SRR Warehouse"} ➔ {tx.travelToLocation || "Hospital"}
+                                {tx.travelDistanceKm ? ` (${tx.travelDistanceKm} km)` : ''}
+                              </span>
+                            </button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleOpenRouteModal(tx)}
+                              className="h-6 px-2 text-[10px] font-semibold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 rounded-md"
+                            >
+                              <MapPin className="w-3 h-3" /> Add Travel Route
+                            </Button>
+                          )}
+                        </div>
                       </td>
 
                       {/* Debit Amount */}
@@ -643,6 +807,106 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
           </table>
         </div>
       </Card>
+
+      {/* Travel Route & Purpose Modal */}
+      <Dialog open={isRouteModalOpen} onOpenChange={setIsRouteModalOpen}>
+        <DialogContent className="w-[94vw] max-w-[94vw] sm:max-w-md p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0">
+          <DialogHeader className="p-5 bg-teal-50 dark:bg-teal-950/40 border-b border-teal-200/80 dark:border-teal-900/40">
+            <DialogTitle className="text-base font-bold text-teal-950 dark:text-teal-100 flex items-center gap-2">
+              <Navigation className="w-4 h-4 text-teal-600" />
+              <span>Log Travel Route &amp; Transfer Justification</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-teal-800 dark:text-teal-300 mt-0.5">
+              Specify where the delivery person travelled (From ➔ To) and the trip purpose for ₹{editingTxForRoute?.amount?.toLocaleString("en-IN")}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-5 space-y-4 text-xs">
+            <div>
+              <Label className="text-xs font-semibold">From Location (Start Point)</Label>
+              <Input
+                value={routeFrom}
+                onChange={(e) => setRouteFrom(e.target.value)}
+                placeholder="e.g. SRR Kalyan Nagar Office"
+                className="mt-1 h-9 text-xs rounded-xl"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold">To Location (Destination Hospital / Location)</Label>
+              <Input
+                value={routeTo}
+                onChange={(e) => setRouteTo(e.target.value)}
+                placeholder="e.g. NIMS Hospital, Panjagutta"
+                className="mt-1 h-9 text-xs rounded-xl"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold">Travel Distance in Kilometers (Km)</Label>
+              <Input
+                type="number"
+                step="0.1"
+                value={routeDistance}
+                onChange={(e) => setRouteDistance(e.target.value)}
+                placeholder="e.g. 18.5"
+                className="mt-1 h-9 text-xs rounded-xl"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold">Quick Purpose / Justification Note</Label>
+              <div className="flex flex-wrap gap-1.5 mt-1.5 mb-2">
+                {[
+                  "Emergency Implant Delivery",
+                  "Instrument Tray Return",
+                  "Regular Fuel Allowance",
+                  "Multiple Hospital Trips",
+                  "Counter Cash Deposit",
+                ].map((pill) => (
+                  <button
+                    key={pill}
+                    type="button"
+                    onClick={() => setRoutePurpose(pill)}
+                    className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
+                      routePurpose === pill
+                        ? "bg-teal-700 text-white border-teal-700"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {pill}
+                  </button>
+                ))}
+              </div>
+              <Textarea
+                value={routePurpose}
+                onChange={(e) => setRoutePurpose(e.target.value)}
+                placeholder="e.g. Travelled to NIMS for Knee set delivery + Tray return pickup..."
+                className="text-xs rounded-xl resize-none"
+                rows={2}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsRouteModalOpen(false)}
+              disabled={isSaving}
+              className="h-9 text-xs rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveTravelRoute}
+              disabled={isSaving}
+              className="h-9 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
+            >
+              {isSaving ? "Saving..." : "Save Route & Justification"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Manual Spot Expense Payout Modal */}
       <Dialog open={isManualModalOpen} onOpenChange={setIsManualModalOpen}>

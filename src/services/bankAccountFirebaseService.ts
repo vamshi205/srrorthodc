@@ -72,6 +72,12 @@ export interface BankTransaction {
   isExpenseTagged?: boolean;
   taggedAt?: string;
   autoTagConfidence?: number;
+  // Travel Route & Purpose Justification Fields
+  travelFromLocation?: string;
+  travelToLocation?: string;
+  travelDistanceKm?: number;
+  linkedDcNumbers?: string[];
+  travelPurposeNote?: string;
   createdAt: number;
   updatedAt: number;
 }

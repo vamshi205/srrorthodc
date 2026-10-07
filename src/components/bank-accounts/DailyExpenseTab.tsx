@@ -36,6 +36,7 @@ import {
   TrendingUp,
   AlertTriangle,
   Building2,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -223,7 +224,7 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
       {/* 2. Control Toolbar & Filters */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-xs">
         {/* Search */}
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full sm:w-96">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
@@ -388,74 +389,191 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
                   </div>
                 )}
 
-                {/* Expandable Detailed Transaction History Table */}
+                {/* Expandable Detailed Transaction History & Daily Route Timeline */}
                 {isExpanded && (
-                  <div className="border-t border-border bg-slate-50 dark:bg-slate-950/80 p-4 space-y-3 animate-in fade-in duration-200">
-                    <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <Layers className="w-4 h-4 text-teal-600" />
-                      <span>Itemized Transaction Log for {person.personnelName}</span>
-                    </h4>
+                  <div className="border-t border-border bg-slate-50 dark:bg-slate-950/80 p-4 space-y-4 animate-in fade-in duration-200">
+                    {/* Daily Route Chain Timeline Grouped by Date */}
+                    {(() => {
+                      // Group transactions by date
+                      const dateGroups = new Map<string, BankTransaction[]>();
+                      person.transactions.forEach((tx) => {
+                        const dateKey = tx.date || "Unknown Date";
+                        if (!dateGroups.has(dateKey)) {
+                          dateGroups.set(dateKey, []);
+                        }
+                        dateGroups.get(dateKey)!.push(tx);
+                      });
 
-                    {person.transactions.length === 0 ? (
-                      <p className="text-xs text-muted-foreground italic py-2">
-                        No transactions recorded for this executive in the selected time period.
-                      </p>
-                    ) : (
-                      <div className="overflow-x-auto rounded-lg border border-border bg-card">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">
-                              <th className="p-2.5 text-left">Date & Time</th>
-                              <th className="p-2.5 text-left">Account</th>
-                              <th className="p-2.5 text-left">Payee / Narration / UTR</th>
-                              <th className="p-2.5 text-left">Category</th>
-                              <th className="p-2.5 text-right">Amount (₹)</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {person.transactions.map((tx) => {
-                              const acc = accounts.find((a) => a.id === tx.accountId);
-                              return (
-                                <tr key={tx.id} className="hover:bg-muted/20">
-                                  <td className="p-2.5 whitespace-nowrap">
-                                    <div className="font-bold text-foreground">
-                                      {new Date(tx.date).toLocaleDateString("en-IN", {
-                                        day: "2-digit",
-                                        month: "short",
-                                        year: "numeric",
-                                      })}
-                                    </div>
-                                    {tx.time && <div className="text-[10px] text-muted-foreground">{tx.time}</div>}
-                                  </td>
-                                  <td className="p-2.5 whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">
-                                    {acc?.accountName || "Bank Account"}
-                                  </td>
-                                  <td className="p-2.5">
-                                    <div className="font-medium text-foreground">
-                                      {tx.description}
-                                    </div>
-                                    {tx.referenceNumber && (
-                                      <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                                        Ref: {tx.referenceNumber}
+                      const sortedDates = Array.from(dateGroups.keys()).sort((a, b) => b.localeCompare(a));
+
+                      return (
+                        <div className="bg-card p-3.5 rounded-xl border border-border shadow-2xs space-y-3">
+                          <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <MapPin className="w-4 h-4 text-teal-600" />
+                            <span>Daily Travel Route Timeline &amp; Full Day Chain</span>
+                          </h4>
+
+                          {sortedDates.length === 0 ? (
+                            <p className="text-xs text-muted-foreground italic">No routes recorded for this period.</p>
+                          ) : (
+                            <div className="space-y-2.5">
+                              {sortedDates.map((dateKey) => {
+                                const dayTxs = dateGroups.get(dateKey) || [];
+                                const totalDaySpent = dayTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+                                const totalDayDistance = dayTxs.reduce((sum, t) => sum + (t.travelDistanceKm || 0), 0);
+
+                                // Collect stops in chronological order
+                                const stops: string[] = [];
+                                dayTxs.forEach((t) => {
+                                  const fromLoc = t.travelFromLocation || "SRR Warehouse";
+                                  const toLoc = t.travelToLocation || (t.expenseNotes ? `Destination (${t.expenseNotes})` : "Hospital / Site");
+
+                                  if (stops.length === 0) {
+                                    stops.push(fromLoc);
+                                  }
+                                  if (toLoc && stops[stops.length - 1] !== toLoc) {
+                                    stops.push(toLoc);
+                                  }
+                                });
+
+                                return (
+                                  <div
+                                    key={dateKey}
+                                    className="p-3 bg-muted/40 rounded-lg border border-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                                  >
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <Badge className="bg-teal-700 text-white font-mono text-[10px] px-2 py-0.5 rounded-md">
+                                          {new Date(dateKey).toLocaleDateString("en-IN", {
+                                            weekday: "short",
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric",
+                                          })}
+                                        </Badge>
+                                        <span className="text-muted-foreground text-[11px]">
+                                          ({dayTxs.length} transfer{dayTxs.length > 1 ? "s" : ""})
+                                        </span>
+                                        {totalDayDistance > 0 && (
+                                          <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 font-mono text-[10px]">
+                                            Total Distance: {totalDayDistance.toFixed(1)} km
+                                          </Badge>
+                                        )}
                                       </div>
-                                    )}
-                                  </td>
-                                  <td className="p-2.5 whitespace-nowrap">
-                                    <Badge variant="outline" className="text-[10px] font-semibold bg-slate-50 text-slate-800 border-slate-300 gap-1">
-                                      {CATEGORY_ICONS[tx.expenseCategory || ""] || <Tag className="w-3 h-3 text-teal-600" />}
-                                      <span>{tx.expenseCategory || "General"}</span>
-                                    </Badge>
-                                  </td>
-                                  <td className="p-2.5 text-right whitespace-nowrap font-mono font-bold text-sm text-rose-600 dark:text-rose-400">
-                                    -₹{tx.amount.toLocaleString("en-IN")}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+
+                                      {/* Chained Route Sequence */}
+                                      <div className="flex flex-wrap items-center gap-1 mt-1 text-xs font-semibold text-foreground">
+                                        <span className="text-muted-foreground font-bold mr-1">Day Route Chain:</span>
+                                        {stops.map((stop, idx) => (
+                                          <React.Fragment key={idx}>
+                                            <span className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md text-teal-800 dark:text-teal-300 font-bold">
+                                              {stop}
+                                            </span>
+                                            {idx < stops.length - 1 && (
+                                              <span className="text-teal-600 font-extrabold text-sm">➔</span>
+                                            )}
+                                          </React.Fragment>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    <div className="text-left sm:text-right shrink-0">
+                                      <div className="text-[10px] font-semibold text-muted-foreground uppercase">
+                                        Day Total Spent
+                                      </div>
+                                      <div className="text-sm font-mono font-extrabold text-teal-700 dark:text-teal-400">
+                                        ₹{totalDaySpent.toLocaleString("en-IN")}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Itemized Transaction Log Table */}
+                    <div>
+                      <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5 mb-2">
+                        <Layers className="w-4 h-4 text-teal-600" />
+                        <span>Itemized Transaction Log for {person.personnelName}</span>
+                      </h4>
+
+                      {person.transactions.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic py-2">
+                          No transactions recorded for this executive in the selected time period.
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">
+                                <th className="p-2.5 text-left">Date &amp; Time</th>
+                                <th className="p-2.5 text-left">Account</th>
+                                <th className="p-2.5 text-left">Payee / Narration / UTR</th>
+                                <th className="p-2.5 text-left">Category</th>
+                                <th className="p-2.5 text-right">Amount (₹)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {person.transactions.map((tx) => {
+                                const acc = accounts.find((a) => a.id === tx.accountId);
+                                return (
+                                  <tr key={tx.id} className="hover:bg-muted/20">
+                                    <td className="p-2.5 whitespace-nowrap">
+                                      <div className="font-bold text-foreground">
+                                        {new Date(tx.date).toLocaleDateString("en-IN", {
+                                          day: "2-digit",
+                                          month: "short",
+                                          year: "numeric",
+                                        })}
+                                      </div>
+                                      {tx.time && <div className="text-[10px] text-muted-foreground">{tx.time}</div>}
+                                    </td>
+                                    <td className="p-2.5 whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">
+                                      {acc?.accountName || "Bank Account"}
+                                    </td>
+                                    <td className="p-2.5">
+                                      <div className="font-medium text-foreground">
+                                        {tx.description}
+                                      </div>
+                                      {tx.referenceNumber && (
+                                        <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                                          Ref: {tx.referenceNumber}
+                                        </div>
+                                      )}
+                                      {(tx.travelFromLocation || tx.travelToLocation || tx.travelDistanceKm) && (
+                                        <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 px-2 py-0.5 rounded-md inline-flex">
+                                          <MapPin className="w-3 h-3 text-teal-600 shrink-0" />
+                                          <span>
+                                            Route: {tx.travelFromLocation || "SRR Warehouse"} ➔ {tx.travelToLocation || "Hospital"}
+                                            {tx.travelDistanceKm ? ` (${tx.travelDistanceKm} km)` : ''}
+                                          </span>
+                                          {tx.travelPurposeNote && (
+                                            <span className="text-slate-500 font-normal">({tx.travelPurposeNote})</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5 whitespace-nowrap">
+                                      <Badge variant="outline" className="text-[10px] font-semibold bg-slate-50 text-slate-800 border-slate-300 gap-1">
+                                        {CATEGORY_ICONS[tx.expenseCategory || ""] || <Tag className="w-3 h-3 text-teal-600" />}
+                                        <span>{tx.expenseCategory || "General"}</span>
+                                      </Badge>
+                                    </td>
+                                    <td className="p-2.5 text-right whitespace-nowrap font-mono font-bold text-sm text-rose-600 dark:text-rose-400">
+                                      -₹{tx.amount.toLocaleString("en-IN")}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </Card>

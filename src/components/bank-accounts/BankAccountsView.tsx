@@ -2091,15 +2091,15 @@ export const BankAccountsView: React.FC = () => {
               </TabsTrigger>
               <TabsTrigger 
                 value="expense_tag" 
-                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/20"
+                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
               >
-                <Tag className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" /> Auto Expense Tag
+                <Tag className="w-3.5 h-3.5" /> Auto Expense Tag
               </TabsTrigger>
               <TabsTrigger 
                 value="daily_expense" 
-                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap bg-purple-500/10 text-purple-800 dark:text-purple-300 border border-purple-500/30 hover:bg-purple-500/20"
+                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
               >
-                <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" /> Daily Expense Analytics
+                <Sparkles className="w-3.5 h-3.5" /> Daily Expense Analytics
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -2114,7 +2114,7 @@ export const BankAccountsView: React.FC = () => {
           {/* Action Toolbar */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
             {/* Search Input */}
-            <div className="relative w-full sm:w-80">
+            <div className="relative w-full sm:w-96">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground pointer-events-none" />
               <Input
                 type="search"
