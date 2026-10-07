@@ -36,6 +36,8 @@ import {
   AlertTriangle,
   MapPin,
   Navigation,
+  Mail,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,6 +149,9 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   const [routeDistance, setRouteDistance] = useState("");
   const [routePurpose, setRoutePurpose] = useState("");
 
+  // Email Alert Details Modal State
+  const [viewEmailTx, setViewEmailTx] = useState<BankTransaction | null>(null);
+
   const handleOpenRouteModal = (tx: BankTransaction) => {
     setEditingTxForRoute(tx);
     setRouteFrom(tx.travelFromLocation || "SRR Warehouse (Kalyan Nagar)");
@@ -182,7 +187,15 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     }
   };
 
-  const personnelNames = useMemo(() => getDeliveryTeamPersonnelNames(), []);
+  const [personnelNames, setPersonnelNames] = useState<string[]>(getDeliveryTeamPersonnelNames);
+
+  React.useEffect(() => {
+    const handleUpdate = () => {
+      setPersonnelNames(getDeliveryTeamPersonnelNames());
+    };
+    window.addEventListener("srrortho:personnel_updated", handleUpdate);
+    return () => window.removeEventListener("srrortho:personnel_updated", handleUpdate);
+  }, []);
 
   // Filter for Debit Transactions (Restricted to selected Bank Account, defaulting to 1538)
   const debitTransactions = useMemo(() => {
@@ -191,11 +204,15 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     );
   }, [transactions, selectedAccountId]);
 
-  // Run AI Engine on Untagged Debits
+  // Auto-compute AI Suggestions across all debit transactions (incorporating historical records)
+  const liveSuggestionsMap = useMemo(() => {
+    return runAutoExpenseTagRules(transactions);
+  }, [transactions]);
+
+  // Run AI Engine manually (to trigger toast feedback)
   const handleRunAiEngine = () => {
-    const suggestions = runAutoExpenseTagRules(debitTransactions);
-    setAiSuggestions(suggestions);
-    toast.success(`🤖 AI Pattern Engine scanned ${debitTransactions.length} debits & found ${suggestions.size} suggestions!`);
+    setAiSuggestions(liveSuggestionsMap);
+    toast.success(`🤖 AI Pattern Engine scanned ${debitTransactions.length} debits & found ${liveSuggestionsMap.size} suggestions!`);
   };
 
   // Batch Apply All AI Suggestions
@@ -239,6 +256,19 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     category: ExpenseCategory
   ) => {
     try {
+      if (personnelName === "__UNTAGGED__") {
+        const updated: BankTransaction = {
+          ...tx,
+          expensePersonnelName: undefined,
+          isExpenseTagged: false,
+          taggedAt: undefined,
+        };
+        await saveBankTransactionToFirestore(updated, false);
+        toast.info(`Reset transaction ₹${tx.amount.toLocaleString("en-IN")} to Untagged`);
+        onRefresh();
+        return;
+      }
+
       const cleanName = normalizePersonnelName(personnelName) || personnelName;
       const updated: BankTransaction = {
         ...tx,
@@ -307,6 +337,58 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     }
   };
 
+  // Export Filtered Expense Debits to Excel / CSV
+  const handleExportExcel = () => {
+    if (filteredDebits.length === 0) {
+      toast.info("No expense transactions to export.");
+      return;
+    }
+
+    const headers = [
+      "Date",
+      "Time",
+      "Account",
+      "Description / Payee",
+      "Reference #",
+      "Debit Amount (INR)",
+      "Tagged Executive",
+      "Expense Category",
+      "Route From",
+      "Route To",
+      "Distance (km)",
+      "Status",
+    ];
+
+    const rows = filteredDebits.map((tx) => {
+      const acc = accounts.find((a) => a.id === tx.accountId);
+      return [
+        `"${tx.date}"`,
+        `"${tx.time || ""}"`,
+        `"${acc?.accountName || tx.accountId || ""}"`,
+        `"${(tx.description || "").replace(/"/g, '""')}"`,
+        `"${tx.referenceNumber || ""}"`,
+        tx.amount || 0,
+        `"${tx.expensePersonnelName || "Untagged"}"`,
+        `"${tx.expenseCategory || ""}"`,
+        `"${tx.travelFromLocation || ""}"`,
+        `"${tx.travelToLocation || ""}"`,
+        tx.travelDistanceKm || "",
+        `"${tx.isExpenseTagged ? "Tagged" : "Untagged"}"`,
+      ];
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Expense_Report_${dateRangeFilter}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success(`Exported ${filteredDebits.length} expense transactions to Excel CSV!`);
+  };
+
   // Filtered Debit Transactions List
   const filteredDebits = useMemo(() => {
     return debitTransactions.filter((tx) => {
@@ -363,7 +445,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     });
   }, [debitTransactions, dateRangeFilter, selectedPersonnel, statusFilter, selectedCategoryFilter, searchQuery]);
 
-  // Expense Stats Breakdown
+  // Expense Stats Breakdown (Dynamically calculated based on filtered debits)
   const stats = useMemo(() => {
     let totalTaggedExpense = 0;
     let totalUntaggedAmount = 0;
@@ -372,7 +454,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
 
     const personTotalsMap = new Map<string, number>();
 
-    debitTransactions.forEach((t) => {
+    filteredDebits.forEach((t) => {
       if (t.isExpenseTagged) {
         totalTaggedExpense += t.amount || 0;
         taggedCount++;
@@ -402,7 +484,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
       topPerson,
       topPersonAmount,
     };
-  }, [debitTransactions]);
+  }, [filteredDebits]);
 
   return (
     <div className="space-y-4 font-sans text-foreground">
@@ -478,38 +560,39 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
       </div>
 
       {/* 2. Action Bar & Filter Toolbar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
-        {/* Search Input */}
-        <div className="relative w-full sm:w-96">
-          <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground pointer-events-none" />
-          <Input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search payee, fuel, narration, UTR #..."
-            className="pl-9 text-xs h-9 rounded-md"
-          />
-        </div>
+      <div className="flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
+        {/* Search Bar & Account Selector */}
+        <div className="flex flex-wrap items-center gap-2 flex-1">
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground pointer-events-none" />
+            <Input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search payee, fuel, narration, UTR #..."
+              className="pl-9 text-xs h-9 rounded-md w-full"
+            />
+          </div>
 
-        {/* Filters & Actions */}
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
-          {/* Account Selector */}
           <Select value={selectedAccountId} onValueChange={handleAccountChange}>
-            <SelectTrigger className="h-8 text-xs font-semibold w-auto min-w-[150px] rounded-md">
+            <SelectTrigger className="h-9 text-xs font-semibold w-auto min-w-[160px] rounded-md">
               <Building2 className="w-3.5 h-3.5 mr-1 text-teal-600" />
               <SelectValue placeholder="Select Account" />
             </SelectTrigger>
             <SelectContent>
               {accounts.map((acc) => (
-                <SelectItem key={acc.id} value={acc.id} className="text-xs">
+                <SelectItem key={acc.id} value={acc.id} className="text-xs font-medium">
                   {acc.accountName}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
 
-          {/* Date Filter Pills */}
-          <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg border border-border text-xs">
+        {/* Date Filter Pills & Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          {/* Date Range Selector Pills */}
+          <div className="flex items-center gap-0.5 bg-muted/60 p-1 rounded-lg border border-border text-xs">
             <button
               onClick={() => setDateRangeFilter("today")}
               className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
@@ -552,11 +635,11 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
             </button>
           </div>
 
-          {/* AI Auto-Tag & Spot Expense Buttons */}
+          {/* Action Buttons */}
           <Button
             size="sm"
             onClick={handleRunAiEngine}
-            className="h-8 px-3 text-xs font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-md shadow-xs gap-1.5"
+            className="h-9 px-3 text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-md shadow-xs gap-1.5"
           >
             <Sparkles className="w-3.5 h-3.5 text-purple-200 animate-pulse" />
             <span>Run AI Auto-Tag</span>
@@ -567,7 +650,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
               size="sm"
               onClick={handleBatchApplyAi}
               disabled={isSaving}
-              className="h-8 px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs gap-1.5"
+              className="h-9 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs gap-1.5"
             >
               {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
               <span>Apply {aiSuggestions.size} AI Tags</span>
@@ -577,9 +660,20 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
           <Button
             size="sm"
             onClick={() => setIsManualModalOpen(true)}
-            className="h-8 px-3 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs gap-1"
+            className="h-9 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs gap-1"
           >
             <Plus className="w-3.5 h-3.5" /> Record Spot Expense
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportExcel}
+            className="h-9 px-3 text-xs font-bold border-slate-300 text-slate-700 dark:text-slate-200 hover:bg-slate-100 rounded-md gap-1.5"
+            title="Download active expenses as Excel CSV report"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Export Excel</span>
           </Button>
         </div>
       </div>
@@ -672,12 +766,22 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
               ) : (
                 filteredDebits.map((tx) => {
                   const acc = accounts.find((a) => a.id === tx.accountId);
-                  const suggestion = aiSuggestions.get(tx.id);
-                  const currentPersonnel = tx.expensePersonnelName || suggestion?.suggestedPersonnelName || "";
+                  const suggestion = aiSuggestions.get(tx.id) || liveSuggestionsMap.get(tx.id);
+                  // ONLY use saved expensePersonnelName for actual tagged status. Untagged stays empty until user confirms.
+                  const currentPersonnel = tx.expensePersonnelName || "";
                   const currentCategory = tx.expenseCategory || suggestion?.suggestedCategory || "Fuel / Petrol";
 
+                  const isUntagged = !tx.isExpenseTagged && !currentPersonnel;
+
                   return (
-                    <tr key={tx.id} className="hover:bg-muted/20">
+                    <tr
+                      key={tx.id}
+                      className={`transition-colors hover:bg-muted/30 ${
+                        isUntagged
+                          ? "bg-[radial-gradient(#f59e0b_0.75px,transparent_0.75px)] [background-size:8px_8px] bg-amber-50/40 dark:bg-amber-950/20"
+                          : "hover:bg-muted/20"
+                      }`}
+                    >
                       {/* Date */}
                       <td className="p-3 whitespace-nowrap">
                         <div className="font-bold text-foreground">
@@ -705,14 +809,32 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                             Ref: {tx.referenceNumber}
                           </div>
                         )}
-                        {suggestion && !tx.isExpenseTagged && (
-                          <div className="mt-1 text-[10px] font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1">
-                            <Sparkles className="w-3 h-3 shrink-0" />
-                            <span>AI Suggestion: {suggestion.suggestedPersonnelName} ({suggestion.suggestedCategory})</span>
-                          </div>
-                        )}
-                        {/* Route & Purpose Justification Action / Badge */}
-                        <div className="mt-1">
+
+                        {/* Delivery Exec Match & Route Badge */}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          {/* Saved Tag vs Recommendation Prompt */}
+                          {tx.isExpenseTagged && currentPersonnel ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-2 py-0.5 rounded-md">
+                              <UserCheck className="w-3 h-3 text-emerald-600" />
+                              <span>Tagged to <strong>{currentPersonnel}</strong></span>
+                            </span>
+                          ) : suggestion?.suggestedPersonnelName ? (
+                            <button
+                              onClick={() => handleTagTransaction(tx, suggestion.suggestedPersonnelName!, currentCategory)}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-900 dark:text-purple-200 bg-purple-50 dark:bg-purple-950/70 border border-purple-300 dark:border-purple-700 px-2 py-0.5 rounded-md hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors"
+                              title="Click to apply recommended person"
+                            >
+                              <Sparkles className="w-3 h-3 text-purple-600 animate-pulse" />
+                              <span>Recommendation: <strong>{suggestion.suggestedPersonnelName}</strong></span>
+                              <span className="text-[9px] bg-purple-200 dark:bg-purple-800 text-purple-900 dark:text-purple-100 px-1 rounded font-normal">Apply</span>
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 px-2 py-0.5 rounded-md">
+                              <span>Untagged - Select Person</span>
+                            </span>
+                          )}
+
+                          {/* Route & Purpose Justification Action / Badge */}
                           {tx.travelFromLocation || tx.travelToLocation || tx.travelDistanceKm ? (
                             <button
                               onClick={() => handleOpenRouteModal(tx)}
@@ -732,7 +854,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                               onClick={() => handleOpenRouteModal(tx)}
                               className="h-6 px-2 text-[10px] font-semibold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 rounded-md"
                             >
-                              <MapPin className="w-3 h-3" /> Add Travel Route
+                              <MapPin className="w-3 h-3" /> Add Route
                             </Button>
                           )}
                         </div>
@@ -749,17 +871,35 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                           value={currentPersonnel}
                           onValueChange={(val) => handleTagTransaction(tx, val, currentCategory)}
                         >
-                          <SelectTrigger className="h-8 text-xs font-semibold w-full min-w-[150px] bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-md">
+                          <SelectTrigger className={`h-8 text-xs font-semibold w-full min-w-[160px] rounded-md ${
+                            currentPersonnel 
+                              ? "bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200 font-bold"
+                              : "bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700"
+                          }`}>
                             <SelectValue placeholder="Select Delivery Exec">
-                              {currentPersonnel || <span className="text-slate-400 italic">Assign Person...</span>}
+                              {currentPersonnel ? (
+                                <span className="font-bold text-emerald-900 dark:text-emerald-200">
+                                  {currentPersonnel}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic">Select Exec...</span>
+                              )}
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {personnelNames.map((pName) => (
-                              <SelectItem key={pName} value={pName} className="text-xs">
-                                {pName}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="__UNTAGGED__" className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                              ❌ Reset to Untagged
+                            </SelectItem>
+                            <SelectItem value="Standard Dispatch" className="text-xs text-teal-800 dark:text-teal-300 font-bold border-b border-border pb-1 mb-1">
+                              📦 Standard Dispatch (General Operations)
+                            </SelectItem>
+                            {personnelNames
+                              .filter((p) => p !== "Standard Dispatch")
+                              .map((pName) => (
+                                <SelectItem key={pName} value={pName} className="text-xs">
+                                  {pName}
+                                </SelectItem>
+                              ))}
                           </SelectContent>
                         </Select>
                       </td>
@@ -783,21 +923,33 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                         </Select>
                       </td>
 
-                      {/* Status */}
+                      {/* Status & Email Alert Action */}
                       <td className="p-3 text-center whitespace-nowrap">
-                        {tx.isExpenseTagged ? (
-                          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 text-[10px] font-bold rounded-md gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> Tagged
-                          </Badge>
-                        ) : suggestion ? (
-                          <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300 text-[10px] font-bold rounded-md gap-1">
-                            <Sparkles className="w-3 h-3" /> AI Suggested
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-300 rounded-md">
-                            Untagged
-                          </Badge>
-                        )}
+                        <div className="flex items-center justify-center gap-1.5">
+                          {tx.isExpenseTagged ? (
+                            <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 text-[10px] font-bold rounded-md gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Tagged
+                            </Badge>
+                          ) : suggestion ? (
+                            <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300 text-[10px] font-bold rounded-md gap-1">
+                              <Sparkles className="w-3 h-3" /> AI Suggested
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-300 rounded-md">
+                              Untagged
+                            </Badge>
+                          )}
+
+                          {/* Email Alert Icon Button */}
+                          <button
+                            type="button"
+                            onClick={() => setViewEmailTx(tx)}
+                            className="p-1 rounded-md text-teal-700 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/60 dark:text-teal-300 dark:hover:bg-teal-900 border border-teal-200 dark:border-teal-800 transition-colors"
+                            title="View Email & Bank Verification Details"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1008,6 +1160,54 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
               className="h-9 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
             >
               {isSaving ? "Saving..." : "Record Expense"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bank Email Content Modal (Matched 100% to BankAccountsView) */}
+      <Dialog open={Boolean(viewEmailTx)} onOpenChange={(open) => !open && setViewEmailTx(null)}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-5">
+          <DialogHeader>
+            <div className="flex items-center justify-between pr-6">
+              <DialogTitle className="text-sm font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                <Mail className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <span>Email Content</span>
+              </DialogTitle>
+              {viewEmailTx && (
+                <span className="font-mono font-bold text-rose-600 dark:text-rose-400 text-sm">
+                  -₹{viewEmailTx.amount?.toLocaleString("en-IN")}
+                </span>
+              )}
+            </div>
+            {viewEmailTx?.emailSubject && (
+              <DialogDescription className="text-xs font-semibold text-slate-700 dark:text-slate-300 pt-1 text-left">
+                Subject: {viewEmailTx.emailSubject}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          {viewEmailTx && (
+            <div className="space-y-3 pt-2">
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-xs text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
+                {viewEmailTx.rawEmailBody
+                  ? viewEmailTx.rawEmailBody
+                      .replace(/<https?:\/\/[^>]+>/gi, "")
+                      .replace(/\n{3,}/g, "\n\n")
+                      .trim()
+                  : viewEmailTx.rawAlert || viewEmailTx.description}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setViewEmailTx(null)}
+              className="h-8 text-xs rounded-xl border-slate-300"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -35,6 +35,13 @@ export const TRANSPORT_MODES: TransportModeOption[] = [
     keywords: "courier rapido ola uber porter parcel logistics cab bike tempo dunzo delivery transport parcel runner pickup speedpost dhl bluedart dtdc",
     iconName: "truck",
   },
+  {
+    name: "Vendor / External Supplier",
+    badge: "Vendor Pickup / Delivery",
+    category: "Vendor & Supplier",
+    keywords: "vendor supplier external vendor delivery vendor person representative",
+    iconName: "package",
+  },
 ];
 
 export const getTransportMode = (val?: string): TransportModeOption | null => {
@@ -48,6 +55,12 @@ export const getTransportMode = (val?: string): TransportModeOption | null => {
     lower.includes("ola")
   ) {
     return TRANSPORT_MODES[0];
+  }
+  if (
+    lower.startsWith("vendor") ||
+    lower.includes("supplier")
+  ) {
+    return TRANSPORT_MODES[1];
   }
   return null;
 };
@@ -251,6 +264,15 @@ export const PersonnelSelect: React.FC<PersonnelSelectProps> = ({
   }, [suggestions]);
 
   const handleSelect = (rawName: string) => {
+    if (rawName.toLowerCase().startsWith("vendor")) {
+      const personName = window.prompt("Enter Vendor / Delivery Person Name (Optional):");
+      const finalVal = personName && personName.trim() ? `Vendor (${toTitleCase(personName.trim())})` : "Vendor";
+      onChange(finalVal);
+      setSearchValue(finalVal);
+      setOpen(false);
+      setIsFocused(false);
+      return;
+    }
     const formattedName = toTitleCase(rawName);
     onChange(formattedName);
     setSearchValue(formattedName);

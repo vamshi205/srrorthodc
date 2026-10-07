@@ -2280,39 +2280,18 @@ export const BankAccountsView: React.FC = () => {
                             )}
                           </td>
 
-                          {/* Account Selector Dropdown */}
+                          {/* Account Display (Static Text Badge) */}
                           <td className="p-3 whitespace-nowrap">
-                            <div className="flex flex-col gap-1 min-w-[145px]">
-                              <Select
-                                value={tx.accountId || (accounts[0]?.id || '')}
-                                onValueChange={(newAccId) => handleChangeTxAccount(tx, newAccId)}
-                              >
-                                <SelectTrigger className="h-7 text-[11px] font-semibold bg-teal-50/70 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 border-teal-300 dark:border-teal-800 rounded-md px-2 py-0.5">
-                                  <SelectValue placeholder="Select Account">
-                                    {acc ? (
-                                      <span className="truncate max-w-[120px] inline-block font-semibold">
-                                        {acc.accountName}
-                                      </span>
-                                    ) : (
-                                      <span className="text-amber-700 font-medium italic">⚠️ Select Account</span>
-                                    )}
-                                  </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {accounts.map((a) => (
-                                    <SelectItem key={a.id} value={a.id} className="text-xs">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="font-semibold">{a.accountName}</span>
-                                        {a.accountNumber && (
-                                          <span className="text-[10px] text-muted-foreground font-mono">
-                                            (..{a.accountNumber.replace(/[^0-9]/g, '').slice(-4)})
-                                          </span>
-                                        )}
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                            <div className="flex flex-col gap-0.5 min-w-[140px]">
+                              {acc ? (
+                                <span className="inline-flex items-center text-xs font-bold text-teal-900 dark:text-teal-200 bg-teal-50/80 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 px-2 py-1 rounded-md w-fit">
+                                  {acc.accountName}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md w-fit">
+                                  Unlinked Account
+                                </span>
+                              )}
                               {tx.accountSuffix && (
                                 <span className="text-[10px] font-mono text-muted-foreground pl-0.5">
                                   Alert A/c: **{tx.accountSuffix}

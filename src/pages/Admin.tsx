@@ -11,9 +11,11 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { CashInvoiceAdmin } from '@/components/admin/CashInvoiceAdmin';
 import Customers from '@/pages/Customers';
-import { FileText, ArrowLeft, Bell, Truck, Building2, IndianRupee, ShieldCheck, Lock, Sparkles, ChevronRight, Settings } from 'lucide-react';
+import { FileText, ArrowLeft, Bell, Truck, Building2, IndianRupee, ShieldCheck, Lock, Sparkles, ChevronRight, Settings, Download, Database } from 'lucide-react';
 import { NotificationSettingsAdmin } from '@/components/admin/NotificationSettingsAdmin';
 import { DeliveryPersonnelAdmin } from '@/components/admin/DeliveryPersonnelAdmin';
+import { downloadCompleteFirestoreBackup } from '@/services/firestoreBackupService';
+import { toast } from 'sonner';
 
 type AdminPanelType = 'dc' | 'customers' | 'cash' | 'quotation' | 'notifications' | 'personnel';
 
@@ -27,6 +29,24 @@ const Admin = () => {
   const [adminPassword, setAdminPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [isAdminAuthorized, setIsAdminAuthorized] = useState(false);
+  const [isExportingDb, setIsExportingDb] = useState(false);
+
+  const handleDownloadBackup = async () => {
+    setIsExportingDb(true);
+    toast.info("Preparing full Firestore DB backup JSON download...");
+    try {
+      const res = await downloadCompleteFirestoreBackup();
+      if (res.success) {
+        toast.success(`🎉 Downloaded full Firestore DB Backup (${res.count} documents across all collections)!`);
+      } else {
+        toast.error("Failed to generate Firestore backup export.");
+      }
+    } catch (err) {
+      toast.error("Backup download error");
+    } finally {
+      setIsExportingDb(false);
+    }
+  };
 
   const handleOpenPanelRequest = (panel: AdminPanelType) => {
     if (panel === 'customers' || isAdminAuthorized) {
@@ -91,83 +111,55 @@ const Admin = () => {
     badge: string;
     description: string;
     icon: React.ReactNode;
-    cardBorder: string;
-    cardBg: string;
-    cardHover: string;
     iconBg: string;
-    iconColor: string;
   }> = [
     {
       id: 'dc',
       title: 'DC System Admin',
       badge: 'Procedures',
       description: 'Add new orthopaedic procedures, customize default item quantities, and manage surgical instrument sets.',
-      icon: <FileText className="w-5 h-5 text-teal-300" />,
-      cardBorder: 'border-teal-500/40',
-      cardBg: 'bg-teal-950/20 dark:bg-teal-950/30',
-      cardHover: 'hover:border-teal-400 hover:shadow-teal-900/30',
-      iconBg: 'bg-teal-600',
-      iconColor: 'text-teal-400',
+      icon: <FileText className="w-5 h-5 text-teal-600 dark:text-teal-400" />,
+      iconBg: 'bg-teal-100 dark:bg-teal-950/80 border border-teal-300 dark:border-teal-800',
     },
     {
       id: 'customers',
       title: 'Customer Directory',
       badge: 'Open Access',
       description: 'Maintain hospital profiles, OT contact numbers, surgeon personal lines, and auto-deduplicate records.',
-      icon: <Building2 className="w-5 h-5 text-emerald-300" />,
-      cardBorder: 'border-emerald-500/40',
-      cardBg: 'bg-emerald-950/20 dark:bg-emerald-950/30',
-      cardHover: 'hover:border-emerald-400 hover:shadow-emerald-900/30',
-      iconBg: 'bg-emerald-600',
-      iconColor: 'text-emerald-400',
+      icon: <Building2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />,
+      iconBg: 'bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800',
     },
     {
       id: 'cash',
       title: 'Cash Invoice Admin',
       badge: 'Invoices',
       description: 'Upload price catalog spreadsheets, set default bank and UPI details, and manage payment rules.',
-      icon: <IndianRupee className="w-5 h-5 text-purple-300" />,
-      cardBorder: 'border-purple-500/40',
-      cardBg: 'bg-purple-950/20 dark:bg-purple-950/30',
-      cardHover: 'hover:border-purple-400 hover:shadow-purple-900/30',
-      iconBg: 'bg-purple-600',
-      iconColor: 'text-purple-400',
+      icon: <IndianRupee className="w-5 h-5 text-purple-600 dark:text-purple-400" />,
+      iconBg: 'bg-purple-100 dark:bg-purple-950/80 border border-purple-300 dark:border-purple-800',
     },
     {
       id: 'quotation',
       title: 'Quotation Settings',
       badge: 'Branding',
       description: 'Configure official letterhead details, company address, authorized signatory, and quotation templates.',
-      icon: <FileText className="w-5 h-5 text-blue-300" />,
-      cardBorder: 'border-blue-500/40',
-      cardBg: 'bg-blue-950/20 dark:bg-blue-950/30',
-      cardHover: 'hover:border-blue-400 hover:shadow-blue-900/30',
-      iconBg: 'bg-blue-600',
-      iconColor: 'text-blue-400',
+      icon: <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />,
+      iconBg: 'bg-blue-100 dark:bg-blue-950/80 border border-blue-300 dark:border-blue-800',
     },
     {
       id: 'notifications',
       title: 'Notifications & Alerts',
       badge: 'Reminders',
       description: 'Customize payment reminder frequencies, return item cutoff thresholds, login popups, and live ticker bar.',
-      icon: <Bell className="w-5 h-5 text-amber-300" />,
-      cardBorder: 'border-amber-500/40',
-      cardBg: 'bg-amber-950/20 dark:bg-amber-950/30',
-      cardHover: 'hover:border-amber-400 hover:shadow-amber-900/30',
-      iconBg: 'bg-amber-500 text-slate-950',
-      iconColor: 'text-amber-400',
+      icon: <Bell className="w-5 h-5 text-amber-600 dark:text-amber-400" />,
+      iconBg: 'bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-800',
     },
     {
       id: 'personnel',
       title: 'Delivery & Personnel',
       badge: 'Analytics',
       description: 'View delivery leaderboards, item breakdowns per staff member, duplicate cleanup, and pending returns.',
-      icon: <Truck className="w-5 h-5 text-sky-300" />,
-      cardBorder: 'border-sky-500/40',
-      cardBg: 'bg-sky-950/20 dark:bg-sky-950/30',
-      cardHover: 'hover:border-sky-400 hover:shadow-sky-900/30',
-      iconBg: 'bg-sky-600',
-      iconColor: 'text-sky-400',
+      icon: <Truck className="w-5 h-5 text-sky-600 dark:text-sky-400" />,
+      iconBg: 'bg-sky-100 dark:bg-sky-950/80 border border-sky-300 dark:border-sky-800',
     },
   ];
 
@@ -216,26 +208,40 @@ const Admin = () => {
             </div>
           </div>
 
-          {isAdminAuthorized && (
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBackToChoice}
-                className="h-9 text-xs font-bold gap-1.5 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white"
-              >
-                All Modules
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLockAdminSession}
-                className="h-9 text-xs font-bold gap-1.5 border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:text-white"
-              >
-                <Lock className="w-3.5 h-3.5" /> Lock Session
-              </Button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadBackup}
+              disabled={isExportingDb}
+              className="h-9 text-xs font-bold gap-1.5 border-teal-500/40 bg-teal-950/40 text-teal-300 hover:bg-teal-900/60 hover:text-white shadow-xs"
+              title="Download all Firestore collections (Bank accounts, transactions, DCs, customers, procedures) as full JSON backup"
+            >
+              <Database className="w-3.5 h-3.5 text-teal-400" />
+              <span>{isExportingDb ? "Exporting DB..." : "Download DB Backup"}</span>
+            </Button>
+
+            {isAdminAuthorized && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBackToChoice}
+                  className="h-9 text-xs font-bold gap-1.5 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white"
+                >
+                  All Modules
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLockAdminSession}
+                  className="h-9 text-xs font-bold gap-1.5 border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:text-white"
+                >
+                  <Lock className="w-3.5 h-3.5" /> Lock Session
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Module Switcher Bar when Authorized */}
@@ -271,20 +277,20 @@ const Admin = () => {
                 <button
                   key={mod.id}
                   onClick={() => handleOpenPanelRequest(mod.id)}
-                  className={`group p-5 rounded-2xl border ${mod.cardBorder} ${mod.cardBg} ${mod.cardHover} transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-lg backdrop-blur-sm cursor-pointer relative overflow-hidden`}
+                  className="group p-5 rounded-2xl border border-border bg-card hover:bg-accent/40 hover:border-teal-500/50 transition-all duration-200 text-left flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md cursor-pointer relative overflow-hidden"
                 >
                   <div className="flex items-center justify-between">
-                    <div className={`w-11 h-11 rounded-xl ${mod.iconBg} flex items-center justify-center shadow-md group-hover:scale-110 transition-transform`}>
+                    <div className={`w-11 h-11 rounded-xl ${mod.iconBg} flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform`}>
                       {mod.icon}
                     </div>
-                    <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-wider bg-white/5 border-white/20 text-slate-300">
+                    <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider">
                       {mod.badge}
                     </Badge>
                   </div>
                   <div className="space-y-1.5">
-                    <h3 className={`font-black text-lg text-slate-900 dark:text-slate-100 group-hover:${mod.iconColor} flex items-center justify-between`}>
+                    <h3 className="font-bold text-base text-foreground group-hover:text-teal-600 dark:group-hover:text-teal-400 flex items-center justify-between transition-colors">
                       <span>{mod.title}</span>
-                      <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                      <ChevronRight className="w-4 h-4 text-muted-foreground opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                     </h3>
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {mod.description}

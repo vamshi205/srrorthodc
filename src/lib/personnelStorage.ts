@@ -59,6 +59,9 @@ export const LOGISTICS_TRANSPORT_NAMES = [
   'ola',
   'dunzo',
   'swiggy genie',
+  'vendor',
+  'supplier',
+  'vendor person',
 ];
 
 export const isTransportLogisticsName = (rawName?: string): boolean => {
@@ -218,7 +221,9 @@ export const getSavedPersonnel = (): Personnel[] => {
  */
 export const savePersonnelList = (list: Personnel[]): void => {
   try {
-    const { deduped } = deduplicatePersonnelList(list);
+    const ignored = getIgnoredPersonnel();
+    const cleanList = list.filter(p => !ignored.has(p.name.trim().toLowerCase()));
+    const { deduped } = deduplicatePersonnelList(cleanList);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(deduped));
     window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: deduped }));
   } catch (error) {
@@ -388,6 +393,7 @@ export const mergePersonnel = async (
  */
 export const syncPersonnelFromDcs = (dcs: Array<{ deliveredBy?: string; returnedBy?: string }>): Personnel[] => {
   const current = getSavedPersonnel();
+  const ignored = getIgnoredPersonnel();
   const nameSet = new Set(current.map(p => normalizePersonnelName(p.name).toLowerCase()));
   const additions: Personnel[] = [];
 
@@ -396,9 +402,11 @@ export const syncPersonnelFromDcs = (dcs: Array<{ deliveredBy?: string; returned
       if (isDisallowedPersonnel(rawName)) return;
       const clean = normalizePersonnelName(rawName);
       if (!clean) return;
-      if (clean.toLowerCase() === 'courier' || isTransportLogisticsName(clean)) return; // Do not register transport/courier modes as staff
-      if (!nameSet.has(clean.toLowerCase())) {
-        nameSet.add(clean.toLowerCase());
+      const cleanLower = clean.toLowerCase();
+      if (ignored.has(cleanLower)) return; // Do not resurrect explicitly deleted/ignored personnel
+      if (cleanLower === 'courier' || isTransportLogisticsName(clean)) return; // Do not register transport/courier modes as staff
+      if (!nameSet.has(cleanLower)) {
+        nameSet.add(cleanLower);
         additions.push({
           id: createId(),
           name: clean,
@@ -429,6 +437,7 @@ export const getDeliveryTeamPersonnelNames = (
   onlyActive = true
 ): string[] => {
   const saved = getSavedPersonnel();
+  const ignored = getIgnoredPersonnel();
   const deliveryRoles: PersonnelRole[] = ['Delivery Executive', 'Field Staff', 'Driver', 'Coordinator'];
   
   const teamMembers = saved.filter(p => {
@@ -439,7 +448,7 @@ export const getDeliveryTeamPersonnelNames = (
   const nameSet = new Set<string>();
   teamMembers.forEach(p => {
     const canonical = normalizePersonnelName(p.name);
-    if (canonical && !isDisallowedPersonnel(canonical) && !isTransportLogisticsName(canonical)) {
+    if (canonical && !ignored.has(canonical.toLowerCase()) && !isDisallowedPersonnel(canonical) && !isTransportLogisticsName(canonical)) {
       nameSet.add(canonical);
     }
   });
