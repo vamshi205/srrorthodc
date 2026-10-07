@@ -32,6 +32,8 @@ import {
 } from '@/services/gmailConnectorService';
 import { loadSavedDcs, SavedDc, transitionSavedDc } from '@/lib/savedDcStorage';
 import { PersonnelSelect } from '@/components/ortho/PersonnelSelect';
+import { ExpenseTaggingTab } from './ExpenseTaggingTab';
+import { DailyExpenseTab } from './DailyExpenseTab';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -90,6 +92,7 @@ import {
   TrendingDown,
   Clock,
   Sparkles,
+  Tag,
   ExternalLink,
   ChevronRight,
   Eye,
@@ -222,19 +225,19 @@ export const BankAccountsView: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Navigation tab with URL synchronization
-  const tabFromUrl = (searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts") || "ledger";
-  const [activeTab, setActiveTabState] = useState<"ledger" | "unlinked" | "linked" | "import" | "accounts">(tabFromUrl);
+  const tabFromUrl = (searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense") || "ledger";
+  const [activeTab, setActiveTabState] = useState<"ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense">(tabFromUrl);
 
   useEffect(() => {
-    const t = searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts";
-    if (t === "unlinked" || t === "linked" || t === "import" || t === "accounts") {
+    const t = searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense";
+    if (t === "unlinked" || t === "linked" || t === "import" || t === "accounts" || t === "expense_tag" || t === "daily_expense") {
       setActiveTabState(t);
     } else {
       setActiveTabState("ledger");
     }
   }, [searchParams]);
 
-  const setActiveTab = (newTab: "ledger" | "unlinked" | "linked" | "import" | "accounts") => {
+  const setActiveTab = (newTab: "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense") => {
     setActiveTabState(newTab);
     const newParams = new URLSearchParams(searchParams);
     if (newTab === "ledger") {
@@ -2086,6 +2089,18 @@ export const BankAccountsView: React.FC = () => {
               >
                 <Building2 className="w-3.5 h-3.5" /> Accounts ({accounts.length})
               </TabsTrigger>
+              <TabsTrigger 
+                value="expense_tag" 
+                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/20"
+              >
+                <Tag className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" /> Auto Expense Tag
+              </TabsTrigger>
+              <TabsTrigger 
+                value="daily_expense" 
+                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap bg-purple-500/10 text-purple-800 dark:text-purple-300 border border-purple-500/30 hover:bg-purple-500/20"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" /> Daily Expense Analytics
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -3189,6 +3204,7 @@ export const BankAccountsView: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              {/* Option buttons commented out as requested
               <Button
                 size="sm"
                 variant="outline"
@@ -3247,6 +3263,7 @@ export const BankAccountsView: React.FC = () => {
               >
                 <Sparkles className="w-3.5 h-3.5 mr-1 text-teal-600" /> + Add 6569 &amp; 1538 Accounts
               </Button>
+              */}
 
               <Button
                 size="sm"
@@ -3386,6 +3403,28 @@ export const BankAccountsView: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: AUTO EXPENSE TAGGING                                               */}
+      {/* ========================================================================= */}
+      {activeTab === "expense_tag" && (
+        <ExpenseTaggingTab
+          transactions={transactions}
+          accounts={accounts}
+          onRefresh={() => loadAllData(true)}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 6: DAILY EXPENSE ANALYTICS                                            */}
+      {/* ========================================================================= */}
+      {activeTab === "daily_expense" && (
+        <DailyExpenseTab
+          transactions={transactions}
+          accounts={accounts}
+          onRefresh={() => loadAllData(true)}
+        />
       )}
 
       {/* ========================================================================= */}

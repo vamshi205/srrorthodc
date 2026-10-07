@@ -44,29 +44,19 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-accent/10 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative w-full max-w-md animate-slide-up">
-        {/* Logo & Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/5 mb-4 shadow-glow overflow-hidden p-2">
+      <div className="relative w-full max-w-sm animate-slide-up">
+        {/* Login Card */}
+        <div className="glass-card rounded-2xl p-8 border border-slate-200/90 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-900">
+          <div className="flex flex-col items-center text-center space-y-3 mb-6">
             <img
               src={LOGO_URL}
-              alt="SRR Ortho Implant Logo"
-              className="w-full h-full object-contain"
+              alt="SRR Ortho Plus"
+              className="h-12 sm:h-14 w-auto object-contain"
             />
-          </div>
-          <h1 className="font-sans text-3xl font-bold text-foreground mb-2">
-            SRR Ortho Plus
-          </h1>
-          <p className="text-muted-foreground">
-            Delivery Challan & Operations Management Portal
-          </p>
-        </div>
-
-        {/* Login Card */}
-        <div className="glass-card rounded-2xl p-8">
-          <div className="flex items-center gap-2 mb-6">
-            <Shield className="w-5 h-5 text-primary" />
-            <h2 className="font-sans text-xl font-semibold">Sign In</h2>
+            <div>
+              <h2 className="font-sans text-base font-bold text-foreground">Sign in to workspace</h2>
+              <p className="text-xs text-muted-foreground mt-1">Enter your credentials to access operations portal</p>
+            </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -136,9 +126,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </form>
         </div>
 
-        <p className="text-center text-muted-foreground text-sm mt-6">
-          Secure access for authorized personnel only
-        </p>
+
       </div>
     </div>
   );

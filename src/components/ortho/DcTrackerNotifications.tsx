@@ -548,16 +548,16 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       >
         <DialogContent className="w-[95vw] sm:max-w-lg p-0 overflow-hidden rounded-2xl border border-border shadow-xl bg-background z-[100] max-h-[90vh] flex flex-col [&>button]:hidden">
           {/* Modal Header */}
-          <div className="bg-slate-900 dark:bg-slate-950 p-4 sm:p-5 text-slate-50 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 text-slate-900 dark:text-slate-100 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-teal-600/20 text-teal-400 border border-teal-500/30 flex items-center justify-center font-bold shrink-0">
-                <BellRing className="w-5 h-5 text-teal-400" />
+              <div className="w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-800 flex items-center justify-center font-bold shrink-0">
+                <BellRing className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="text-base sm:text-lg font-bold tracking-tight text-white">
+                <DialogTitle className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
                   Operations &amp; Collection Reminders
                 </DialogTitle>
-                <DialogDescription className="text-xs text-slate-400 mt-0.5">
+                <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Action items requiring follow-up today
                 </DialogDescription>
               </div>
@@ -577,7 +577,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
                   returnCount: returnReminders.count,
                 });
               }}
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer border border-slate-700 shrink-0"
+              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer border border-slate-200 dark:border-slate-700 shrink-0"
               aria-label="Close popup"
               title="Close"
             >
@@ -861,33 +861,33 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
             onMouseLeave={() => setIsBannerHovered(false)}
             className="fixed bottom-5 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-[9999] sm:max-w-md sm:w-full animate-in fade-in slide-in-from-bottom-5 duration-300 pointer-events-auto shadow-xl"
           >
-            <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-100 shadow-xl p-3.5 sm:p-4">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xl p-3.5 sm:p-4">
               <div className="flex items-start justify-between gap-2.5 sm:gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-teal-500/20 border border-teal-500/30 flex items-center justify-center text-teal-400 shrink-0">
-                    <BellRing className="w-4 h-4 text-teal-400" />
+                  <div className="w-8 h-8 rounded-lg bg-teal-100 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-800 flex items-center justify-center text-teal-700 dark:text-teal-300 shrink-0">
+                    <BellRing className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                   </div>
                   <div className="min-w-0">
-                    <h4 className="font-bold text-xs sm:text-sm text-white tracking-tight truncate">
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 tracking-tight truncate">
                       {activeBanner.title}
                     </h4>
-                    <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 leading-relaxed break-words">
+                    <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed break-words">
                       {activeBanner.message}
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setActiveBanner(null)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   title="Dismiss"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between gap-2 text-xs">
-                <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
+              <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-teal-600" />
                   {activeBanner.type === "payment"
                     ? `Every ${config.paymentIntervalHours || 4} Hours`
                     : "Daily Alert"}

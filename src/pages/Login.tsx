@@ -60,38 +60,24 @@ const Login = () => {
         />
       </div>
 
-      <div className="w-full max-w-md space-y-6 relative z-10">
-        {/* Brand Logo Header */}
-        <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center p-4 rounded-2xl bg-white dark:bg-slate-900 shadow-md border border-slate-200/90 dark:border-slate-800">
+      <div className="w-full max-w-sm relative z-10">
+        {/* Clean Shadcn Card */}
+        <Card className="border border-slate-200/90 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-900 rounded-2xl overflow-hidden">
+          <CardHeader className="space-y-3 text-center pb-4 border-b border-slate-100 dark:border-slate-800/80 px-6 pt-6 flex flex-col items-center">
+            {/* Logo inside card */}
             <img
               src="/srr-logo.png"
-              alt="SRR Ortho Plus Logo"
-              className="h-14 sm:h-16 w-auto object-contain"
+              alt="SRR Ortho Plus"
+              className="h-12 sm:h-14 w-auto object-contain"
             />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 font-sans">
-              SRR Ortho Plus
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Delivery Challan &amp; Operations Management Portal
-            </p>
-          </div>
-        </div>
-
-        {/* Clean Shadcn Card */}
-        <Card className="border border-slate-200/90 dark:border-slate-800 shadow-lg bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl overflow-hidden">
-          <CardHeader className="space-y-1 text-left pb-4 border-b border-slate-100 dark:border-slate-800/80 px-6 pt-6">
-            <CardTitle className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center justify-between">
-              <span>Sign in to your account</span>
-              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
-                v2.0
-              </span>
-            </CardTitle>
-            <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
-              Enter your credential to access the DC tracker workspace
-            </CardDescription>
+            <div>
+              <CardTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
+                Sign in to workspace
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Enter your credentials to access operations portal
+              </CardDescription>
+            </div>
           </CardHeader>
 
           <form onSubmit={handleLogin}>

@@ -27,6 +27,7 @@ export const KNOWN_NAME_ALIASES: Record<string, string> = {
 export const DISALLOWED_PERSONNEL_NAMES = new Set([
   'hospital purchased',
   'hospital purchase',
+  'hospital staff',
   'hospital',
   'patient',
   'patient purchase',
@@ -43,6 +44,9 @@ export const DISALLOWED_PERSONNEL_NAMES = new Set([
   'counter',
   'other',
   'unknown',
+  'no return',
+  'received',
+  'vendor',
   '-',
   '--',
 ]);
@@ -136,15 +140,7 @@ export const normalizePersonnelName = (rawName?: string): string => {
   return toTitleCase(trimmed);
 };
 
-const DEFAULT_PERSONNEL: Personnel[] = [
-  { id: 'p_1', name: 'Ramesh Rao', phone: '9848012345', role: 'Delivery Executive', active: true, createdAt: '2025-01-01T00:00:00.000Z' },
-  { id: 'p_2', name: 'Suresh Kumar', phone: '9848023456', role: 'Delivery Executive', active: true, createdAt: '2025-01-01T00:00:00.000Z' },
-  { id: 'p_3', name: 'Prashanth', phone: '9848034567', role: 'Delivery Executive', active: true, createdAt: '2025-01-01T00:00:00.000Z' },
-  { id: 'p_4', name: 'Venkatesh', phone: '9848045678', role: 'Field Staff', active: true, createdAt: '2025-01-01T00:00:00.000Z' },
-  { id: 'p_5', name: 'Praveen', phone: '9848056789', role: 'Delivery Executive', active: true, createdAt: '2025-01-01T00:00:00.000Z' },
-  { id: 'p_6', name: 'Kiran', phone: '9848067890', role: 'Field Staff', active: true, createdAt: '2025-01-01T00:00:00.000Z' },
-  { id: 'p_7', name: 'Vijay', phone: '9848078901', role: 'Coordinator', active: true, createdAt: '2025-01-01T00:00:00.000Z' },
-];
+const DEFAULT_PERSONNEL: Personnel[] = [];
 
 const createId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -197,13 +193,12 @@ export const getSavedPersonnel = (): Personnel[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_PERSONNEL));
-      return DEFAULT_PERSONNEL;
+      return [];
     }
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
+    if (Array.isArray(parsed)) {
       const ignored = getIgnoredPersonnel();
-      const filtered = parsed.filter(p => !isDisallowedPersonnel(p?.name) && !ignored.has(String(p?.name || '').toLowerCase().trim()));
+      const filtered = parsed.filter(p => p?.name && !isDisallowedPersonnel(p?.name) && !ignored.has(String(p?.name || '').toLowerCase().trim()));
       const { deduped, hasDuplicates } = deduplicatePersonnelList(filtered);
       if (hasDuplicates || filtered.length !== parsed.length) {
         // Automatically save the cleaned deduped version
@@ -211,10 +206,10 @@ export const getSavedPersonnel = (): Personnel[] => {
       }
       return deduped;
     }
-    return DEFAULT_PERSONNEL;
+    return [];
   } catch (error) {
     console.error('Error loading personnel:', error);
-    return DEFAULT_PERSONNEL;
+    return [];
   }
 };
 
@@ -427,30 +422,39 @@ export const syncPersonnelFromDcs = (dcs: Array<{ deliveredBy?: string; returned
 };
 
 /**
+ * Get unified list of delivery team personnel names configured in Settings roster (active delivery personnel)
+ */
+export const getDeliveryTeamPersonnelNames = (
+  savedDcs?: Array<{ deliveredBy?: string; returnedBy?: string }>,
+  onlyActive = true
+): string[] => {
+  const saved = getSavedPersonnel();
+  const deliveryRoles: PersonnelRole[] = ['Delivery Executive', 'Field Staff', 'Driver', 'Coordinator'];
+  
+  const teamMembers = saved.filter(p => {
+    if (onlyActive && !p.active) return false;
+    return !p.role || deliveryRoles.includes(p.role);
+  });
+
+  const nameSet = new Set<string>();
+  teamMembers.forEach(p => {
+    const canonical = normalizePersonnelName(p.name);
+    if (canonical && !isDisallowedPersonnel(canonical) && !isTransportLogisticsName(canonical)) {
+      nameSet.add(canonical);
+    }
+  });
+
+  return Array.from(nameSet).sort((a, b) => a.localeCompare(b));
+};
+
+/**
  * Get unified list of all personnel names available for selection (combining saved directory and DC history)
  */
 export const getAllPersonnelNames = (
   savedDcs?: Array<{ deliveredBy?: string; returnedBy?: string }>,
   onlyActive = false
 ): string[] => {
-  const saved = getSavedPersonnel();
-  const activeNames = (onlyActive ? saved.filter(p => p.active) : saved).map(p => normalizePersonnelName(p.name));
-
-  const nameSet = new Set<string>();
-  activeNames.forEach(n => {
-    if (n && !isDisallowedPersonnel(n)) nameSet.add(n);
-  });
-
-  if (savedDcs && savedDcs.length > 0) {
-    savedDcs.forEach(dc => {
-      const deliv = normalizePersonnelName(dc.deliveredBy);
-      if (deliv && !isDisallowedPersonnel(deliv)) nameSet.add(deliv);
-      const ret = normalizePersonnelName(dc.returnedBy);
-      if (ret && !isDisallowedPersonnel(ret)) nameSet.add(ret);
-    });
-  }
-
-  return Array.from(nameSet).sort((a, b) => a.localeCompare(b));
+  return getDeliveryTeamPersonnelNames(savedDcs, onlyActive);
 };
 
 export interface PersonnelUsageStats {

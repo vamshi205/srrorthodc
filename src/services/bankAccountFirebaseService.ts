@@ -36,6 +36,15 @@ export interface BankAccount {
   updatedAt: number;
 }
 
+export type ExpenseCategory =
+  | 'Fuel / Petrol'
+  | 'Food / Meals'
+  | 'Travel / Vehicle'
+  | 'Salary / Advance'
+  | 'Vehicle Maintenance'
+  | 'Spot Payout / Allowance'
+  | 'Other Operational Expense';
+
 export interface BankTransaction {
   id: string;
   accountId: string;
@@ -56,6 +65,13 @@ export interface BankTransaction {
   availableBalance?: number; // Real-time available balance stated in bank alerts
   emailSubject?: string;
   rawEmailBody?: string;
+  // Expense Tagging Fields
+  expensePersonnelName?: string;
+  expenseCategory?: ExpenseCategory;
+  expenseNotes?: string;
+  isExpenseTagged?: boolean;
+  taggedAt?: string;
+  autoTagConfidence?: number;
   createdAt: number;
   updatedAt: number;
 }
