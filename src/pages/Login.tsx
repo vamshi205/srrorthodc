@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { auth } from "@/firebase";
 import { useNavigate } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, ShieldCheck } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -149,12 +149,6 @@ const Login = () => {
             </CardFooter>
           </form>
         </Card>
-
-        {/* Footer Security Badge */}
-        <p className="text-center text-slate-400 dark:text-slate-500 text-[11px] font-medium flex items-center justify-center gap-1.5">
-          <ShieldCheck className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-          <span>Encrypted Portal Access</span>
-        </p>
       </div>
     </div>
   );
