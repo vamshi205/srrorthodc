@@ -297,30 +297,52 @@ export const NativeCashInvoice: React.FC = () => {
       const paramClient = searchParams.get("client") || sessionStorage.getItem("prefill_cash_client_name");
       const paramView = searchParams.get("viewInv") || sessionStorage.getItem("view_cash_inv_num");
 
+      let loadedExisting = false;
+
       if (paramView) {
+        const cleanView = paramView.trim().toLowerCase();
+        const cleanRawView = cleanView.replace(/^dc\s*#?\s*/i, "");
         const found = invs.find(
           (i) =>
-            (i.invNumber && i.invNumber.trim().toLowerCase() === paramView.trim().toLowerCase()) ||
-            (i.dcNumber && i.dcNumber.trim().toLowerCase() === paramView.trim().toLowerCase())
+            (i.invNumber && (i.invNumber.trim().toLowerCase() === cleanView || i.invNumber.trim().toLowerCase().replace(/^dc\s*#?\s*/i, "") === cleanRawView)) ||
+            (i.dcNumber && (i.dcNumber.trim().toLowerCase() === cleanView || i.dcNumber.trim().toLowerCase().replace(/^dc\s*#?\s*/i, "") === cleanRawView))
         );
         if (found) {
+          handleEditSavedInvoice(found);
           setSelectedInvoiceForView(found);
           setViewModalOpen(true);
+          loadedExisting = true;
         }
+        sessionStorage.removeItem("view_cash_inv_num");
       }
 
-      if (paramDc) {
-        setDcNumber(paramDc);
+      if (!loadedExisting && paramDc) {
+        const cleanDc = paramDc.trim().toLowerCase();
+        const cleanRawDc = cleanDc.replace(/^dc\s*#?\s*/i, "");
+        const found = invs.find(
+          (i) =>
+            (i.dcNumber && (i.dcNumber.trim().toLowerCase() === cleanDc || i.dcNumber.trim().toLowerCase().replace(/^dc\s*#?\s*/i, "") === cleanRawDc)) ||
+            (i.invNumber && (i.invNumber.trim().toLowerCase() === cleanDc || i.invNumber.trim().toLowerCase().replace(/^dc\s*#?\s*/i, "") === cleanRawDc))
+        );
+        if (found) {
+          handleEditSavedInvoice(found);
+          loadedExisting = true;
+        } else {
+          setDcNumber(paramDc);
+        }
         sessionStorage.removeItem("prefill_cash_dc_no");
       }
+
       if (paramClient) {
-        setClientName(paramClient);
+        if (!loadedExisting) {
+          setClientName(paramClient);
+        }
         sessionStorage.removeItem("prefill_cash_client_name");
         // Auto fill address and mobile if matching customer exists
         const matchedCust = custs.find(
           (c) => c.name.toLowerCase().trim() === paramClient.toLowerCase().trim()
         );
-        if (matchedCust) {
+        if (matchedCust && !loadedExisting) {
           if (matchedCust.address) setClientAddress(matchedCust.address);
           if (matchedCust.mobile || matchedCust.phone) {
             setClientMobile(matchedCust.mobile || matchedCust.phone || "");
@@ -330,8 +352,10 @@ export const NativeCashInvoice: React.FC = () => {
       }
 
       // Auto assign next invoice number if this is a fresh invoice
-      const nextNum = computeNextInvoiceNumber(invs);
-      setInvNumber(nextNum);
+      if (!loadedExisting) {
+        const nextNum = computeNextInvoiceNumber(invs);
+        setInvNumber(nextNum);
+      }
     } catch (err) {
       console.error("Error loading initial cash invoice data:", err);
       toast.error("Failed to load cash invoices data");
@@ -1840,8 +1864,8 @@ export const NativeCashInvoice: React.FC = () => {
           </div>
 
           {/* Invoices List Table */}
-          <Card className="border-border shadow-sm overflow-hidden rounded-xl">
-            <div className="overflow-x-auto">
+          <Card className="border-border shadow-sm overflow-hidden rounded-xl min-h-[420px]">
+            <div className="overflow-x-auto min-h-[380px]">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">

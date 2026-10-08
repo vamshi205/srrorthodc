@@ -1,5 +1,6 @@
 import { BankTransaction, ExpenseCategory } from "@/services/bankAccountFirebaseService";
 import { getDeliveryTeamPersonnelNames, normalizePersonnelName } from "@/lib/personnelStorage";
+import { parseTransactionDate } from "@/lib/autoExpenseTagEngine";
 
 export type ExpensePeriod = "today" | "week" | "month" | "all";
 
@@ -37,7 +38,7 @@ export interface GlobalExpenseAnalytics {
  */
 export function isDateInPeriod(dateStr: string, period: ExpensePeriod): boolean {
   if (!dateStr) return false;
-  const d = new Date(dateStr);
+  const d = parseTransactionDate(dateStr);
   const now = new Date();
   
   if (isNaN(d.getTime())) return false;
@@ -51,9 +52,10 @@ export function isDateInPeriod(dateStr: string, period: ExpensePeriod): boolean 
   }
 
   if (period === "week") {
-    const sevenDaysAgo = new Date();
+    const sevenDaysAgo = new Date(now);
     sevenDaysAgo.setDate(now.getDate() - 7);
-    return d >= sevenDaysAgo && d <= now;
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+    return d >= sevenDaysAgo;
   }
 
   if (period === "month") {

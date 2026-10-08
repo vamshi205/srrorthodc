@@ -14,6 +14,7 @@ import {
   clearAllBankDataAndAccountsFromFirestore,
   linkBankTransactionToCashInvoice,
   unlinkBankTransactionFromCashInvoice,
+  cleanOrphanedBankTransactionLinks,
   importBatchBankTransactions,
   subscribeToBankTransactions,
   revertMatchingDcToCashQueue,
@@ -225,22 +226,22 @@ export const BankAccountsView: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Navigation tab with URL synchronization
-  const tabFromUrl = (searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense") || "ledger";
+  const tabFromUrl = (searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense") || "expense_tag";
   const [activeTab, setActiveTabState] = useState<"ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense">(tabFromUrl);
 
   useEffect(() => {
     const t = searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense";
-    if (t === "unlinked" || t === "linked" || t === "import" || t === "accounts" || t === "expense_tag" || t === "daily_expense") {
+    if (t === "ledger" || t === "unlinked" || t === "linked" || t === "import" || t === "accounts" || t === "daily_expense") {
       setActiveTabState(t);
     } else {
-      setActiveTabState("ledger");
+      setActiveTabState("expense_tag");
     }
   }, [searchParams]);
 
   const setActiveTab = (newTab: "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense") => {
     setActiveTabState(newTab);
     const newParams = new URLSearchParams(searchParams);
-    if (newTab === "ledger") {
+    if (newTab === "expense_tag") {
       newParams.delete("tab");
     } else {
       newParams.set("tab", newTab);
@@ -385,6 +386,14 @@ export const BankAccountsView: React.FC = () => {
       setAccounts(accs);
       setTransactions(txs);
       setCashInvoices(invs);
+
+      cleanOrphanedBankTransactionLinks().then((unlinkedCount) => {
+        if (unlinkedCount > 0) {
+          fetchBankTransactionsFromFirestore(undefined, limitToUse).then((refreshedTxs) => {
+            setTransactions(refreshedTxs);
+          }).catch(() => {});
+        }
+      }).catch(() => {});
 
       if (accs.length > 0 && !importAccountId) {
         setImportAccountId(accs[0].id);
@@ -572,7 +581,11 @@ export const BankAccountsView: React.FC = () => {
     });
 
     transactions.forEach((tx) => {
-      if (tx.type === 'credit' && !tx.linkedInvoiceNumber && !tx.linkedInvoiceId) {
+      const isCredit = tx.type === 'credit' || (tx.type as string)?.toLowerCase() === 'credit';
+      const isUnlinked = isCredit && !tx.linkedInvoiceNumber && !tx.linkedInvoiceId;
+      const matchesAccount = selectedAccountId === 'all' || tx.accountId === selectedAccountId;
+
+      if (isUnlinked && matchesAccount) {
         unlinkedCreditCount++;
       }
     });
@@ -586,23 +599,57 @@ export const BankAccountsView: React.FC = () => {
       unlinkedCreditCount,
       totalTransactions: transactions.length,
     };
-  }, [accounts, accountBalances, transactions]);
+  }, [accounts, accountBalances, transactions, selectedAccountId]);
 
   // Unlinked Credit Transactions
   const unlinkedCreditTransactions = useMemo(() => {
     return transactions.filter(
-      (tx) => tx.type === 'credit' && !tx.linkedInvoiceNumber && !tx.linkedInvoiceId
+      (tx) => (tx.type === 'credit' || (tx.type as string)?.toLowerCase() === 'credit') && !tx.linkedInvoiceNumber && !tx.linkedInvoiceId
     );
   }, [transactions]);
 
   // Linked / Reconciled Credit Transactions
   const linkedCreditTransactions = useMemo(() => {
     return transactions.filter(
-      (tx) => tx.type === 'credit' && Boolean(tx.linkedInvoiceNumber || tx.linkedInvoiceId)
+      (tx) => (tx.type === 'credit' || (tx.type as string)?.toLowerCase() === 'credit') && Boolean(tx.linkedInvoiceNumber || tx.linkedInvoiceId)
     );
   }, [transactions]);
 
   // Sorted Executive Bank Accounts (1538 ALWAYS FIRST on far left)
+  const resolveDcNumber = useCallback((tx: BankTransaction): string | null => {
+    if (tx.linkedDcNumbers && tx.linkedDcNumbers.length > 0) {
+      const raw = tx.linkedDcNumbers[0];
+      return raw.replace(/^DC\s*#?\s*/i, '').trim();
+    }
+    const invRef = tx.linkedInvoiceNumber || tx.linkedInvoiceId || '';
+    if (!invRef) return null;
+
+    const directDcMatch = invRef.match(/^DC\s*#?\s*(.+)/i);
+    if (directDcMatch) {
+      return directDcMatch[1].trim();
+    }
+
+    const matchedInv = cashInvoices.find(
+      (inv) =>
+        (inv.invNumber && inv.invNumber.toLowerCase().trim() === invRef.toLowerCase().trim()) ||
+        (inv.invNumber && inv.invNumber.replace(/\//g, '_').toLowerCase() === invRef.toLowerCase())
+    );
+    if (matchedInv && matchedInv.dcNumber) {
+      return matchedInv.dcNumber.replace(/^DC\s*#?\s*/i, '').trim();
+    }
+
+    const matchedDc = savedDcs.find(
+      (dc) =>
+        (dc.invoiceRef && dc.invoiceRef.toLowerCase().trim() === invRef.toLowerCase().trim()) ||
+        (dc.dcNo && dc.dcNo.toLowerCase().trim() === invRef.toLowerCase().trim())
+    );
+    if (matchedDc && matchedDc.dcNo) {
+      return matchedDc.dcNo.replace(/^DC\s*#?\s*/i, '').trim();
+    }
+
+    return null;
+  }, [cashInvoices, savedDcs]);
+
   const sortedBankAccounts = useMemo(() => {
     const accs = accounts.filter((a) => a.accountType !== "cash_in_hand");
     accs.sort((a, b) => {
@@ -2075,7 +2122,7 @@ export const BankAccountsView: React.FC = () => {
                 value="unlinked" 
                 className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
               >
-                <Link2 className="w-3.5 h-3.5" /> Unlinked Cash Transactions ({overallSummary.unlinkedCreditCount})
+                <Link2 className="w-3.5 h-3.5" /> Unlinked Cash Queue ({cashQueueDcs.length})
               </TabsTrigger>
               <TabsTrigger 
                 value="linked" 
@@ -2703,9 +2750,22 @@ export const BankAccountsView: React.FC = () => {
                           </td>
 
                           <td className="p-3 whitespace-nowrap">
-                            <Badge className="bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200 border-teal-300 font-mono font-bold text-[11px]">
-                              {invRef}
-                            </Badge>
+                            {(() => {
+                              const dcNo = resolveDcNumber(tx);
+                              return (
+                                <div className="flex flex-col gap-1 items-start">
+                                  <Badge className="bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200 border-teal-300 font-mono font-bold text-[11px]">
+                                    {invRef}
+                                  </Badge>
+                                  {dcNo && (
+                                    <span className="inline-flex items-center gap-1 text-[10.5px] font-bold font-mono bg-amber-100/90 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded border border-amber-300/80">
+                                      <span className="text-[9.5px] uppercase opacity-75 font-semibold">DC:</span>
+                                      <span>#{dcNo}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           <td className="p-3 font-medium">

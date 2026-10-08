@@ -705,27 +705,27 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
   const totalOutstanding = Object.values(invoicesDuesMap).reduce((a, b) => a + b, 0);
 
   return (
-    <div className={embedded ? "w-full space-y-4" : "min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col"}>
-      {!embedded && (
-        <TopToolbar
-          theme={theme}
-          toggleTheme={toggleTheme}
-          fetchProcedures={fetchProcedures}
-          loading={loading}
-          handlePrint={() => {}}
-          navigate={navigate}
-          handleLogout={handleLogout}
-          setDcMode={(mode) => navigate(`/?mode=${mode}`)}
-          setInitialFilterType={() => {}}
-          setShowProcedureSelector={() => {}}
-          setActiveProcedures={() => {}}
-          setCollapsedProcedures={() => {}}
-        />
-      )}
-
-      <div className={embedded ? "space-y-4 pt-1 pb-4" : "flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-4 pb-12"}>
-        {/* Header & KPI Summary */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-4 rounded-xl border border-border shadow-sm">
+    <div className={embedded ? "w-full space-y-4" : "min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col w-full"}>
+      <main className={embedded ? "w-full space-y-4" : "flex-grow flex flex-col w-full px-1.5 sm:px-3 lg:px-4 py-2 sm:py-2.5 overflow-x-hidden"}>
+        {!embedded && (
+          <TopToolbar
+            theme={theme}
+            toggleTheme={toggleTheme}
+            fetchProcedures={fetchProcedures}
+            loading={loading}
+            handlePrint={() => {}}
+            navigate={navigate}
+            handleLogout={handleLogout}
+            setDcMode={(mode) => navigate(`/?mode=${mode}`)}
+            setInitialFilterType={() => {}}
+            setShowProcedureSelector={() => {}}
+            setActiveProcedures={() => {}}
+            setCollapsedProcedures={() => {}}
+          />
+        )}
+        <div className="space-y-3 pt-0 pb-12 w-full">
+            {/* Header & KPI Summary */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-4 rounded-xl border border-border shadow-sm">
           <div className="flex items-center gap-3">
             {onBack && (
               <Button variant="ghost" onClick={onBack} className="gap-2 h-9 px-2.5">
@@ -2400,6 +2400,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
             </div>
           </DialogContent>
         </Dialog>
-      </div>
-    );
-  }
+      </main>
+    </div>
+  );
+}

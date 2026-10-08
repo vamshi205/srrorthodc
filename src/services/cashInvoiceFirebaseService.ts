@@ -189,25 +189,60 @@ export async function saveCashInvoiceToFirestore(invoice: CashInvoiceData): Prom
 /**
  * Delete a Cash Invoice with instant local-first persistence
  */
-export async function deleteCashInvoiceFromFirestore(invNumber: string): Promise<boolean> {
+export async function deleteCashInvoiceFromFirestore(invNumberOrDcNo: string): Promise<boolean> {
+  if (!invNumberOrDcNo) return false;
+  const cleanTarget = String(invNumberOrDcNo).trim().toLowerCase();
+  const cleanRawNo = cleanTarget.replace(/^dc\s*#?\s*/i, '');
+
   try {
     const cached = localStorage.getItem(LOCAL_STORAGE_CASH_INVOICES_KEY);
     if (cached) {
       let list: CashInvoiceData[] = JSON.parse(cached);
       if (Array.isArray(list)) {
-        list = list.filter((i) => i.invNumber !== invNumber);
+        list = list.filter((i) => {
+          const iNum = String(i.invNumber || '').trim().toLowerCase();
+          const iDc = String(i.dcNumber || '').trim().toLowerCase();
+          if (iNum === cleanTarget || iNum === cleanRawNo || iNum === `dc #${cleanRawNo}`) return false;
+          if (iDc === cleanTarget || iDc === cleanRawNo) return false;
+          return true;
+        });
         localStorage.setItem(LOCAL_STORAGE_CASH_INVOICES_KEY, JSON.stringify(list));
         window.dispatchEvent(new CustomEvent("srrortho:cash_invoices_updated", { detail: list }));
       }
     }
   } catch {}
 
-  // Async background delete
+  // Async background delete from Firestore
   try {
-    const docId = invNumber.replace(/\//g, '_');
-    const ref = doc(db, CASH_INVOICES_COLLECTION, docId);
-    deleteDoc(ref).catch((err) => console.warn('Background delete failed:', err));
-  } catch {}
+    const targetDocId = String(invNumberOrDcNo).trim().replace(/\//g, '_');
+    const directRef = doc(db, CASH_INVOICES_COLLECTION, targetDocId);
+    deleteDoc(directRef).catch(() => {});
+
+    // Also query collection to delete matching documents by invNumber, dcNumber, or doc snapshot id
+    getDocs(collection(db, CASH_INVOICES_COLLECTION)).then((snapshot) => {
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const iNum = String(data.invNumber || '').trim().toLowerCase();
+        const iDc = String(data.dcNumber || '').trim().toLowerCase();
+        const docIdLower = docSnap.id.trim().toLowerCase();
+
+        if (
+          iNum === cleanTarget ||
+          iNum === cleanRawNo ||
+          iNum === `dc #${cleanRawNo}` ||
+          iDc === cleanTarget ||
+          iDc === cleanRawNo ||
+          docIdLower === cleanTarget ||
+          docIdLower === cleanRawNo ||
+          docIdLower === targetDocId.toLowerCase()
+        ) {
+          deleteDoc(docSnap.ref).catch((e) => console.warn('Failed to delete doc:', docSnap.id, e));
+        }
+      });
+    }).catch((e) => console.warn('Firestore collection query for delete failed:', e));
+  } catch (err) {
+    console.warn('Firestore delete cash invoice error:', err);
+  }
 
   return true;
 }

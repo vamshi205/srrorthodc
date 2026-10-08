@@ -16,6 +16,8 @@ import {
   RefreshCw,
   ArrowRight,
   ShieldAlert,
+  Landmark,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,9 +37,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { SavedDc } from "@/lib/savedDcStorage";
+import { getLocalSavedDcs, type SavedDc } from "@/lib/savedDcStorage";
 import {
   saveCashInvoiceToFirestore,
+  fetchCashInvoicesFromFirestore,
   type CashInvoiceData,
 } from "@/services/cashInvoiceFirebaseService";
 import {
@@ -47,13 +50,14 @@ import {
 } from "@/lib/notificationConfig";
 import { useToast } from "@/hooks/use-toast";
 import { logReminderAction } from "@/lib/notificationAudit";
+import { getTodayBankReminders } from "@/lib/bankReminders";
 
 interface DcTrackerNotificationsProps {
-  savedDcs: SavedDc[];
+  savedDcs?: SavedDc[];
   cashInvoices?: CashInvoiceData[];
-  onCollectPayment: (dc: SavedDc) => void;
-  onRecordReturn: (dc: SavedDc) => void;
-  onViewDc: (dc: SavedDc, queue: "pending" | "returned" | "cash") => void;
+  onCollectPayment?: (dc: SavedDc) => void;
+  onRecordReturn?: (dc: SavedDc) => void;
+  onViewDc?: (dc: SavedDc, queue: "pending" | "returned" | "cash") => void;
 }
 
 const STORAGE_KEYS = {
@@ -79,6 +83,73 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
   const [showBannerSnooze, setShowBannerSnooze] = useState(false);
   const [showPopoverSnooze, setShowPopoverSnooze] = useState(false);
   const [activeTab, setActiveTab] = useState<"all" | "payments" | "returns" | "invoices">("all");
+
+  const [internalDcs, setInternalDcs] = useState<SavedDc[]>(() => savedDcs || getLocalSavedDcs());
+  const [internalInvoices, setInternalInvoices] = useState<CashInvoiceData[]>(() => cashInvoices || []);
+  const [modalSearch, setModalSearch] = useState<string>("");
+  const [modalCategory, setModalCategory] = useState<"all" | "payments" | "returns" | "bank">("all");
+
+  const effectiveDcs = savedDcs || internalDcs;
+  const effectiveInvoices = (cashInvoices && cashInvoices.length > 0) ? cashInvoices : internalInvoices;
+
+  useEffect(() => {
+    if (savedDcs && savedDcs.length > 0) setInternalDcs(savedDcs);
+  }, [savedDcs]);
+
+  useEffect(() => {
+    if (cashInvoices && cashInvoices.length > 0) setInternalInvoices(cashInvoices);
+  }, [cashInvoices]);
+
+  useEffect(() => {
+    const handleDcsUpdate = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setInternalDcs(e.detail);
+      } else {
+        setInternalDcs(getLocalSavedDcs());
+      }
+    };
+    const handleInvoicesUpdate = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setInternalInvoices(e.detail);
+      } else {
+        fetchCashInvoicesFromFirestore().then((invs) => {
+          if (Array.isArray(invs)) setInternalInvoices(invs);
+        });
+      }
+    };
+
+    window.addEventListener("srrortho:saved_dcs_updated", handleDcsUpdate);
+    window.addEventListener("srrortho:cash_invoice_updated", handleInvoicesUpdate);
+
+    // Initial fetch once on mount
+    fetchCashInvoicesFromFirestore().then((invs) => {
+      if (Array.isArray(invs) && invs.length > 0) {
+        setInternalInvoices(invs);
+      }
+    });
+
+    return () => {
+      window.removeEventListener("srrortho:saved_dcs_updated", handleDcsUpdate);
+      window.removeEventListener("srrortho:cash_invoice_updated", handleInvoicesUpdate);
+    };
+  }, []);
+
+  const handleCollect = (dc: SavedDc) => {
+    if (onCollectPayment) {
+      onCollectPayment(dc);
+    } else {
+      window.location.href = `/saved?tab=cash&dc=${encodeURIComponent(dc.dcNo || "")}`;
+    }
+  };
+
+  const handleReturn = (dc: SavedDc) => {
+    if (onRecordReturn) {
+      onRecordReturn(dc);
+    } else {
+      window.location.href = `/saved?tab=pending&dc=${encodeURIComponent(dc.dcNo || "")}`;
+    }
+  };
+
   const [activeBanner, setActiveBanner] = useState<{
     type: "payment" | "return" | "combined";
     title: string;
@@ -317,7 +388,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
 
     const minAmount = config.minPaymentAlertAmount || 0;
 
-    const cashQueueDcs = savedDcs.filter(
+    const cashQueueDcs = effectiveDcs.filter(
       (dc) => dc.status === "cash" && (dc.cashAmount || 0) >= minAmount && (dc.cashAmount || 0) > 0
     );
 
@@ -325,7 +396,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       cashQueueDcs.map((d) => d.invoiceRef || d.dcNo).filter(Boolean)
     );
 
-    const pendingInvoices = cashInvoices.filter((inv) => {
+    const pendingInvoices = effectiveInvoices.filter((inv) => {
       const balance = (inv.grandTotal || 0) - (inv.paymentReceived || 0);
       const isPaid = inv.status?.toLowerCase() === "paid" || balance <= 0;
       const meetsMin = balance >= minAmount;
@@ -344,7 +415,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
           0
         ),
     };
-  }, [savedDcs, cashInvoices, config.paymentReminderEnabled, config.minPaymentAlertAmount]);
+  }, [effectiveDcs, effectiveInvoices, config.paymentReminderEnabled, config.minPaymentAlertAmount]);
 
   // 2. Return Items Reminders (Admin configured Cutoff Days, default 2)
   const returnReminders = useMemo(() => {
@@ -355,7 +426,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     const cutoff = config.returnCutoffDays || 2;
     const urgentDays = config.returnUrgentDays || 3;
 
-    const pendingDcs = savedDcs.filter((dc) => {
+    const pendingDcs = effectiveDcs.filter((dc) => {
       if (dc.status !== "pending") return false;
       const days = getDaysPending(dc);
       return days >= cutoff;
@@ -368,28 +439,34 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       count: pendingDcs.length,
       overdueCount: pendingDcs.filter((dc) => getDaysPending(dc) >= urgentDays).length,
     };
-  }, [savedDcs, config.returnReminderEnabled, config.returnCutoffDays, config.returnUrgentDays]);
+  }, [effectiveDcs, config.returnReminderEnabled, config.returnCutoffDays, config.returnUrgentDays]);
 
   // 3. Invoice Reminders
   const invoiceReminders = useMemo(() => {
     if (!config.invoiceReminderEnabled) {
       return { dcs: [], count: 0 };
     }
-    const returnedDcs = savedDcs.filter((dc) => dc.status === "returned");
+    const returnedDcs = effectiveDcs.filter((dc) => dc.status === "returned");
     return {
       dcs: returnedDcs,
       count: returnedDcs.length,
     };
-  }, [savedDcs, config.invoiceReminderEnabled]);
+  }, [effectiveDcs, config.invoiceReminderEnabled]);
+
+  // 4. Today's Bank Reminders for 1538 Account (untagged debits & unmapped credits)
+  const bankReminders = useMemo(() => {
+    return getTodayBankReminders();
+  }, []);
 
   const totalActionCount =
     (config.paymentReminderEnabled ? paymentReminders.totalCount : 0) +
     (config.returnReminderEnabled ? returnReminders.count : 0) +
-    (config.invoiceReminderEnabled ? invoiceReminders.count : 0);
+    (config.invoiceReminderEnabled ? invoiceReminders.count : 0) +
+    bankReminders.count;
 
   // First Login Reminder Popup Check
   useEffect(() => {
-    if (savedDcs.length === 0) return;
+    if (effectiveDcs.length === 0) return;
     if (!config.firstLoginPopupEnabled) return;
 
     const todayDateStr = new Date().toISOString().slice(0, 10);
@@ -427,7 +504,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       }
     }
   }, [
-    savedDcs.length,
+    effectiveDcs.length,
     config.firstLoginPopupEnabled,
     config.firstLoginIncludePayments,
     config.firstLoginIncludeReturns,
@@ -441,7 +518,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
 
   // Periodic Reminder Checker (Admin configured interval, default 4 hours)
   useEffect(() => {
-    if (savedDcs.length === 0) return;
+    if (effectiveDcs.length === 0) return;
 
     const intervalMs = (config.paymentIntervalHours || 4) * 60 * 60 * 1000;
 
@@ -510,7 +587,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       clearInterval(periodicTimer);
     };
   }, [
-    savedDcs.length,
+    effectiveDcs.length,
     loginPopupOpen,
     paymentReminders,
     returnReminders,
@@ -585,53 +662,146 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
             </button>
           </div>
 
-          <div className="p-4 sm:p-5 space-y-4 max-h-[60vh] overflow-y-auto">
-            {/* Card 1: Pending Payments */}
-            {paymentReminders.totalCount > 0 && config.firstLoginIncludePayments && (
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <Wallet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                      Pending Collections
-                    </h4>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                      Total: ₹{paymentReminders.totalAmount.toLocaleString("en-IN")}
-                    </span>
-                    <Badge variant="outline" className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800">
-                      {paymentReminders.totalCount} {paymentReminders.totalCount === 1 ? "Party" : "Parties"}
-                    </Badge>
-                  </div>
+          {/* Modal Header Controls & Stat Summary Cards */}
+          <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 space-y-3 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
+            {/* Category Summary Metric Cards */}
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setModalCategory(modalCategory === "payments" ? "all" : "payments")}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  modalCategory === "payments"
+                    ? "bg-emerald-600 text-white border-emerald-700 shadow-sm"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 hover:border-emerald-400"
+                }`}
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider opacity-85 flex items-center justify-between">
+                  <span>Collections</span>
+                  <Wallet className="w-3.5 h-3.5" />
                 </div>
+                <div className="text-sm font-extrabold font-mono mt-1">
+                  ₹{paymentReminders.totalAmount.toLocaleString("en-IN")}
+                </div>
+                <div className="text-[10px] font-semibold opacity-75 mt-0.5">
+                  {paymentReminders.totalCount} {paymentReminders.totalCount === 1 ? "Party" : "Parties"}
+                </div>
+              </button>
 
-                <div className="space-y-2">
-                  {paymentReminders.dcs.map((dc) => (
+              <button
+                type="button"
+                onClick={() => setModalCategory(modalCategory === "returns" ? "all" : "returns")}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  modalCategory === "returns"
+                    ? "bg-sky-600 text-white border-sky-700 shadow-sm"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 hover:border-sky-400"
+                }`}
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider opacity-85 flex items-center justify-between">
+                  <span>Returns</span>
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-sm font-extrabold mt-1">
+                  {returnReminders.count} {returnReminders.count === 1 ? "Set" : "Sets"}
+                </div>
+                <div className="text-[10px] font-semibold opacity-75 mt-0.5">
+                  {returnReminders.overdueCount > 0 ? `${returnReminders.overdueCount} Urgent` : "Pending"}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModalCategory(modalCategory === "bank" ? "all" : "bank")}
+                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  modalCategory === "bank"
+                    ? "bg-teal-600 text-white border-teal-700 shadow-sm"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 hover:border-teal-400"
+                }`}
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider opacity-85 flex items-center justify-between">
+                  <span>Bank 1538</span>
+                  <Landmark className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-sm font-extrabold mt-1">
+                  {bankReminders.count} {bankReminders.count === 1 ? "Item" : "Items"}
+                </div>
+                <div className="text-[10px] font-semibold opacity-75 mt-0.5">
+                  Today's Items
+                </div>
+              </button>
+            </div>
+
+            {/* Quick Search Input */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+              <Input
+                type="text"
+                value={modalSearch}
+                onChange={(e) => setModalSearch(e.target.value)}
+                placeholder="Search reminders by hospital, Dr, DC#, or amount..."
+                className="h-8 text-xs pl-8 pr-8 rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:ring-teal-500"
+              />
+              {modalSearch && (
+                <button
+                  type="button"
+                  onClick={() => setModalSearch("")}
+                  className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Compact Reminders List */}
+          <div className="p-3 sm:p-4 space-y-2 max-h-[55vh] overflow-y-auto">
+            {/* 1. Pending Payments */}
+            {(modalCategory === "all" || modalCategory === "payments") && paymentReminders.totalCount > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[10.5px] font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center justify-between px-1">
+                  <span>Collections ({paymentReminders.totalCount})</span>
+                  <span>Total: ₹{paymentReminders.totalAmount.toLocaleString("en-IN")}</span>
+                </div>
+                {paymentReminders.dcs
+                  .filter((dc) => {
+                    if (!modalSearch) return true;
+                    const term = modalSearch.toLowerCase();
+                    return (
+                      dc.hospitalName.toLowerCase().includes(term) ||
+                      dc.dcNo.toLowerCase().includes(term) ||
+                      (dc.invoiceRef || "").toLowerCase().includes(term) ||
+                      String(dc.cashAmount || "").includes(term)
+                    );
+                  })
+                  .map((dc) => (
                     <div
                       key={`popup-pay-${dc.id}`}
-                      className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 text-xs"
+                      className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 text-xs hover:border-emerald-300 transition-colors"
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
-                          {dc.hospitalName}
+                      <div className="min-w-0 flex-1 flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                          <Wallet className="w-3.5 h-3.5" />
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
-                          {dc.invoiceRef ? `Cash Memo #${dc.invoiceRef}` : `DC #${dc.dcNo}`}
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {dc.hospitalName}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {dc.invoiceRef ? `Memo #${dc.invoiceRef}` : `DC #${dc.dcNo}`}
+                          </div>
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0 flex items-center gap-3">
-                        <div className="font-mono font-bold text-sm text-slate-900 dark:text-slate-100">
+                      <div className="text-right shrink-0 flex items-center gap-2.5">
+                        <div className="font-mono font-bold text-xs text-emerald-700 dark:text-emerald-400">
                           ₹{(dc.cashAmount || 0).toLocaleString("en-IN")}
                         </div>
                         <Button
                           size="sm"
                           onClick={() => {
                             setLoginPopupOpen(false);
-                            onCollectPayment(dc);
+                            handleCollect(dc);
                           }}
-                          className="h-7 text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 rounded-md shadow-xs gap-1"
+                          className="h-6 text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-2 rounded-md shadow-2xs"
                         >
                           Collect
                         </Button>
@@ -639,30 +809,44 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
                     </div>
                   ))}
 
-                  {paymentReminders.invoices.map((inv) => {
+                {paymentReminders.invoices
+                  .filter((inv) => {
+                    if (!modalSearch) return true;
+                    const term = modalSearch.toLowerCase();
+                    return (
+                      inv.clientName.toLowerCase().includes(term) ||
+                      inv.invNumber.toLowerCase().includes(term)
+                    );
+                  })
+                  .map((inv) => {
                     const balance = (inv.grandTotal || 0) - (inv.paymentReceived || 0);
                     return (
                       <div
                         key={`popup-inv-${inv.invNumber}`}
-                        className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 text-xs"
+                        className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 text-xs hover:border-emerald-300 transition-colors"
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
-                            {inv.clientName}
+                        <div className="min-w-0 flex-1 flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                            <Wallet className="w-3.5 h-3.5" />
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">
-                            Invoice #{inv.invNumber}
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                              {inv.clientName}
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              Invoice #{inv.invNumber}
+                            </div>
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0 flex items-center gap-3">
-                          <div className="font-mono font-bold text-sm text-slate-900 dark:text-slate-100">
+                        <div className="text-right shrink-0 flex items-center gap-2.5">
+                          <div className="font-mono font-bold text-xs text-emerald-700 dark:text-emerald-400">
                             ₹{balance.toLocaleString("en-IN")}
                           </div>
                           <Button
                             size="sm"
                             onClick={() => handleRecordCashInvoicePayment(inv)}
-                            className="h-7 text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 rounded-md shadow-xs gap-1"
+                            className="h-6 text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-2 rounded-md shadow-2xs"
                           >
                             Collect
                           </Button>
@@ -670,27 +854,26 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
                       </div>
                     );
                   })}
-                </div>
               </div>
             )}
 
-            {/* Card 2: Items Return (≥ Cutoff Days) */}
-            {returnReminders.count > 0 && config.firstLoginIncludeReturns && (
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <RotateCcw className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-                    <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                      Pending Surgery Set Returns
-                    </h4>
-                  </div>
-                  <Badge variant="outline" className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800">
-                    {returnReminders.count} {returnReminders.count === 1 ? "Set" : "Sets"} Pending
-                  </Badge>
+            {/* 2. Items Return */}
+            {(modalCategory === "all" || modalCategory === "returns") && returnReminders.count > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="text-[10.5px] font-extrabold uppercase tracking-wider text-sky-700 dark:text-sky-400 px-1">
+                  Surgery Set Returns ({returnReminders.count})
                 </div>
-
-                <div className="space-y-2">
-                  {returnReminders.dcs.map((dc) => {
+                {returnReminders.dcs
+                  .filter((dc) => {
+                    if (!modalSearch) return true;
+                    const term = modalSearch.toLowerCase();
+                    return (
+                      dc.hospitalName.toLowerCase().includes(term) ||
+                      dc.dcNo.toLowerCase().includes(term) ||
+                      (dc.doctorName || "").toLowerCase().includes(term)
+                    );
+                  })
+                  .map((dc) => {
                     const days = getDaysPending(dc);
                     const isOverdue = days >= (config.returnUrgentDays || 3);
                     const totalQty = getTotalQty(dc);
@@ -698,30 +881,33 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
                     return (
                       <div
                         key={`popup-ret-${dc.id}`}
-                        className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 text-xs"
+                        className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 text-xs hover:border-sky-300 transition-colors"
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
-                            {dc.hospitalName}
+                        <div className="min-w-0 flex-1 flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 flex items-center justify-center shrink-0">
+                            <RotateCcw className="w-3.5 h-3.5" />
                           </div>
-                          <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
-                            <span>DC #{dc.dcNo}</span>
-                            {dc.doctorName && <span>• Dr. {dc.doctorName}</span>}
-                            <span>• {totalQty} items</span>
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                              {dc.hospitalName}
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              DC #{dc.dcNo} {dc.doctorName ? `• Dr. ${dc.doctorName}` : ""} • {totalQty} items
+                            </div>
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0 flex items-center gap-2.5">
-                          <span className={`text-[11px] font-semibold ${isOverdue ? "text-rose-600 dark:text-rose-400 font-bold" : "text-amber-600 dark:text-amber-400"}`}>
-                            {days}d out {isOverdue ? "• Urgent" : ""}
+                        <div className="text-right shrink-0 flex items-center gap-2">
+                          <span className={`text-[10.5px] font-bold ${isOverdue ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"}`}>
+                            {days}d out
                           </span>
                           <Button
                             size="sm"
                             onClick={() => {
                               setLoginPopupOpen(false);
-                              onRecordReturn(dc);
+                              handleReturn(dc);
                             }}
-                            className="h-7 text-xs bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-semibold px-2.5 rounded-md shadow-xs gap-1"
+                            className="h-6 text-[11px] bg-slate-800 hover:bg-slate-900 text-white font-bold px-2 rounded-md shadow-2xs"
                           >
                             Return
                           </Button>
@@ -729,16 +915,71 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
                       </div>
                     );
                   })}
-                </div>
               </div>
             )}
 
-            {/* If all caught up */}
-            {paymentReminders.totalCount === 0 && returnReminders.count === 0 && (
+            {/* 3. Bank 1538 Items */}
+            {(modalCategory === "all" || modalCategory === "bank") && bankReminders.count > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="text-[10.5px] font-extrabold uppercase tracking-wider text-teal-700 dark:text-teal-400 px-1">
+                  Bank Account 1538 Today ({bankReminders.count})
+                </div>
+                {bankReminders.items
+                  .filter((item) => {
+                    if (!modalSearch) return true;
+                    const term = modalSearch.toLowerCase();
+                    return (
+                      (item.transaction.description || "").toLowerCase().includes(term) ||
+                      item.title.toLowerCase().includes(term) ||
+                      item.reason.toLowerCase().includes(term) ||
+                      String(item.transaction.amount || "").includes(term)
+                    );
+                  })
+                  .map((item) => (
+                    <div
+                      key={`popup-bank-${item.transaction.id}`}
+                      className="p-2.5 rounded-xl border border-teal-200 dark:border-teal-900 bg-teal-50/40 dark:bg-teal-950/20 flex items-center justify-between gap-3 text-xs hover:border-teal-400 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1 flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 flex items-center justify-center shrink-0">
+                          <Landmark className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {item.transaction.description || item.title}
+                          </div>
+                          <div className="text-[11px] text-teal-700 dark:text-teal-300 truncate">
+                            {item.reason}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0 flex items-center gap-2">
+                        <div className="font-mono font-bold text-xs text-slate-900 dark:text-slate-100">
+                          ₹{(item.transaction.amount || 0).toLocaleString("en-IN")}
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setLoginPopupOpen(false);
+                            window.location.href = "/bank-accounts";
+                          }}
+                          className="h-6 text-[11px] bg-teal-700 hover:bg-teal-800 text-white font-bold px-2 rounded-md shadow-2xs"
+                        >
+                          Open
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {/* Empty State */}
+            {paymentReminders.totalCount === 0 && returnReminders.count === 0 && bankReminders.count === 0 && (
               <div className="py-6 text-center text-slate-500">
                 <CheckCircle2 className="w-10 h-10 text-teal-600 mx-auto mb-2" />
                 <p className="font-semibold text-sm text-slate-800 dark:text-slate-200">
-                  Great news! No overdue collections or returns.
+                  Great news! No overdue collections, returns, or pending 1538 bank items.
                 </p>
               </div>
             )}

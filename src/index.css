@@ -312,4 +312,19 @@
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* 1-Second Module Progress Animation */
+@keyframes fillModuleProgress {
+  0% {
+    width: 0%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.animate-module-progress {
+  animation: fillModuleProgress 1s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+
 

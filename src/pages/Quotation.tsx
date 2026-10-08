@@ -33,8 +33,8 @@ export default function Quotation() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
-      <main className="flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col w-full">
+      <main className="flex-grow flex flex-col w-full px-1.5 sm:px-3 lg:px-4 py-2 sm:py-2.5 overflow-x-hidden">
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}
@@ -50,8 +50,8 @@ export default function Quotation() {
           setCollapsedProcedures={() => {}}
         />
         
-        {/* Floating Quotation card aligned with the main toolbar */}
-        <div className="mt-2 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[700px] h-[calc(100vh-80px)]">
+        {/* Full-width Quotation card matching Bank Accounts & Cash Invoice */}
+        <div className="mt-0 flex-1 w-full bg-card rounded-xl border border-border shadow-md overflow-hidden relative min-h-[calc(100vh-95px)] h-[calc(100vh-95px)]">
           {!iframeLoaded && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/80 backdrop-blur-xs z-10 transition-opacity">
               <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white shadow-sm border border-slate-200">

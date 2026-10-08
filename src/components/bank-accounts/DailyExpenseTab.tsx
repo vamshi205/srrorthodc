@@ -13,6 +13,7 @@ import {
   ExpensePeriod,
   PersonnelExpenseSummary,
 } from "@/lib/expenseAnalyticsEngine";
+import { parseTransactionDate } from "@/lib/autoExpenseTagEngine";
 import {
   Calendar,
   ChevronDown,

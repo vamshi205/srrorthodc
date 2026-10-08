@@ -32,8 +32,8 @@ export default function CashInvoice() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col">
-      <main className="flex-grow flex flex-col px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col w-full">
+      <main className="flex-grow flex flex-col w-full px-1.5 sm:px-3 lg:px-4 py-2 sm:py-2.5 overflow-x-hidden">
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}
@@ -50,7 +50,7 @@ export default function CashInvoice() {
         />
 
         {/* Native Cash Invoice Suite Container */}
-        <div className="mt-3 flex-1 w-full min-h-[calc(100vh-100px)]">
+        <div className="mt-0 flex-1 w-full min-h-[calc(100vh-95px)]">
           <NativeCashInvoice />
         </div>
       </main>

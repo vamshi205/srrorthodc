@@ -20,6 +20,7 @@ import {
   List,
   LogOut,
   Menu,
+  MoreVertical,
   MessageSquare,
   Package,
   Plus,
@@ -158,6 +159,8 @@ import {
   fetchBankAccountsFromFirestore,
   linkBankTransactionToCashInvoice,
   unlinkBankTransactionFromCashInvoice,
+  cleanOrphanedBankTransactionLinks,
+  isBankTxMatchingDc,
   recordCashPaymentToCashInHand,
   type BankTransaction,
   type BankAccount,
@@ -374,6 +377,31 @@ const SavedDcs = () => {
     progress?: number;
     iconType?: "move" | "save" | "delete" | "return" | "invoice" | "cash" | "cancel";
   }>({ open: false });
+
+  const isRealBankTransfer = (
+    dc: SavedDc | null,
+    linkedBankTx: BankTransaction | null
+  ): boolean => {
+    if (!dc) return false;
+    if (dc.paymentMethod === "cash") return false;
+    if (dc.paymentMethod === "bank_transfer") return true;
+
+    const utr = (dc.utrNo || linkedBankTx?.referenceNumber || "").trim().toUpperCase();
+    if (utr.startsWith("CASH-")) return false;
+
+    if (linkedBankTx) {
+      const accName = (linkedBankTx.accountName || linkedBankTx.description || "").toLowerCase();
+      const accId = (linkedBankTx.bankAccountId || "").toLowerCase();
+      if (accId === "cash_in_hand" || accName.includes("petty cash") || accName.includes("cash in hand")) {
+        return false;
+      }
+      return true;
+    }
+
+    if (utr && utr !== "N/A") return true;
+
+    return false;
+  };
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
@@ -1281,179 +1309,165 @@ const SavedDcs = () => {
       ? `${paymentRemarksInput.trim()} (${statusRemarkText})`
       : statusRemarkText;
 
-    setIsActionLoading(true);
-    try {
-      setLoadingDcIds((prev) => new Set(prev).add(dc.id));
+    const isCash = paymentMethod === "cash";
+    const isFullPay = nextStatus === "completed";
+    const currentInstAmt = currentInstallment;
 
-      const bankAccountId = matchedBankTx?.accountId;
-      const bankName = matchedBankTx?.description || "Bank Account";
-      const utrNo = matchedBankTx?.referenceNumber || matchedBankTx?.id;
+    setPaymentDialog({ open: false, dc: null });
 
-      const existingPartPayments = dc.partPayments || [];
-      const newInstallmentEntry = {
-        at: new Date().toISOString(),
-        amount: currentInstallment,
-        paymentMethod,
-        collectedBy:
-          paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
-        utrNo: matchedBankTx?.referenceNumber || matchedBankTx?.id,
-        remarks: paymentRemarksInput.trim() || undefined,
-      };
-      const updatedPartPayments = [
-        ...existingPartPayments,
-        newInstallmentEntry,
-      ];
+    await runActionWithProgress({
+      dcNo: dc.dcNo,
+      title: isFullPay ? "Settling DC Payment" : "Recording Part Payment",
+      targetQueueName: isFullPay ? "Completed" : "Cash Queue",
+      targetQueueKey: nextStatus,
+      iconType: isCash ? "cash" : "save",
+      initialMessage: isCash
+        ? `Recording physical cash collection of ₹${currentInstAmt.toLocaleString("en-IN")} into Cash In Hand account...`
+        : `Linking bank payment of ₹${currentInstAmt.toLocaleString("en-IN")}...`,
+      successMessage: isFullPay
+        ? `Payment Received & DC #${dc.dcNo} Settled Successfully! 💵`
+        : `Part Payment of ₹${currentInstAmt.toLocaleString("en-IN")} Recorded!`,
+      actionFn: async () => {
+        setIsActionLoading(true);
+        setLoadingDcIds((prev) => new Set(prev).add(dc.id));
 
-      await transitionSavedDc(dc.id, {
-        toStatus: nextStatus,
-        action:
-          nextStatus === "completed"
-            ? "MOVE_CASH_TO_COMPLETED"
-            : "MOVE_TO_CASH",
-        updates: {
-          cashAmount: originalInvoiceTotal,
-          paidAmount,
-          originalInvoiceTotal,
-          isPartialPayment,
-          hospitalMargin: margin,
+        const bankAccountId = matchedBankTx?.accountId;
+        const bankName = matchedBankTx?.description || "Bank Account";
+        const utrNo = matchedBankTx?.referenceNumber || matchedBankTx?.id;
+
+        const existingPartPayments = dc.partPayments || [];
+        const newInstallmentEntry = {
+          at: new Date().toISOString(),
+          amount: currentInstAmt,
           paymentMethod,
           collectedBy:
             paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
-          paidAt: new Date().toISOString(),
-          cashRemarks: finalRemarks,
-          partPayments: updatedPartPayments,
-          ...(matchedBankTx
-            ? {
-                bankAccountId,
-                bankName,
-                utrNo,
-              }
-            : {}),
-        },
-        meta: {
-          paidAt: new Date().toISOString(),
-          paidAmount,
-          originalInvoiceTotal,
-          isPartialPayment,
-          paymentMethod,
-          collectedBy:
-            paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
-          billedAmount: dc.billedAmount,
-          hospitalMargin: margin,
-          partPayments: updatedPartPayments,
-          remarks: finalRemarks,
-          ...(matchedBankTx ? { bankAccountId, utrNo } : {}),
-        },
-      });
+          utrNo: matchedBankTx?.referenceNumber || matchedBankTx?.id,
+          remarks: paymentRemarksInput.trim() || undefined,
+        };
+        const updatedPartPayments = [
+          ...existingPartPayments,
+          newInstallmentEntry,
+        ];
 
-      // Link to Bank Transaction if matched
-      if (matchedBankTx) {
-        try {
-          const mockInvoice: CashInvoiceData = {
-            invNumber: dc.invoiceRef || `DC #${dc.dcNo}`,
-            dcNumber: dc.dcNo,
-            clientName: dc.hospitalName,
-            grandTotal: paidAmount,
-            status: "Paid",
-            paymentReceived: paidAmount,
-            savedAt: Date.now(),
-          };
-          await linkBankTransactionToCashInvoice(
-            matchedBankTx.id,
-            mockInvoice,
-            true,
-          );
-        } catch (e) {
-          console.error("Failed to link bank transaction on DC pay modal:", e);
-        }
-      } else if (paymentMethod === "cash") {
-        try {
-          await recordCashPaymentToCashInHand(
-            dc,
+        await transitionSavedDc(dc.id, {
+          toStatus: nextStatus,
+          action:
+            nextStatus === "completed"
+              ? "MOVE_CASH_TO_COMPLETED"
+              : "MOVE_TO_CASH",
+          updates: {
+            cashAmount: originalInvoiceTotal,
             paidAmount,
-            paymentCollectedBy,
-            finalRemarks,
-          );
-        } catch (e) {
-          console.error(
-            "Failed to record cash transaction in Cash In Hand account:",
-            e,
-          );
-        }
-      }
+            originalInvoiceTotal,
+            isPartialPayment,
+            hospitalMargin: margin,
+            paymentMethod,
+            collectedBy:
+              paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+            paidAt: new Date().toISOString(),
+            cashRemarks: finalRemarks,
+            partPayments: updatedPartPayments,
+            ...(matchedBankTx
+              ? {
+                  bankAccountId,
+                  bankName,
+                  utrNo,
+                }
+              : {}),
+          },
+          meta: {
+            paidAt: new Date().toISOString(),
+            paidAmount,
+            originalInvoiceTotal,
+            isPartialPayment,
+            paymentMethod,
+            collectedBy:
+              paymentMethod === "cash" ? paymentCollectedBy.trim() : undefined,
+            billedAmount: dc.billedAmount,
+            hospitalMargin: margin,
+            partPayments: updatedPartPayments,
+            remarks: finalRemarks,
+            ...(matchedBankTx ? { bankAccountId, utrNo } : {}),
+          },
+        });
 
-      // Sync payment status to Firestore Cash Invoice
-      if (dc.invoiceRef || dc.dcNo) {
-        try {
-          const invoices = await fetchCashInvoicesFromFirestore();
-          const match = invoices.find(
-            (inv) =>
-              (dc.invoiceRef && inv.invNumber === dc.invoiceRef) ||
-              (dc.dcNo && inv.dcNumber === dc.dcNo),
-          );
-          if (match) {
-            match.paymentReceived = paidAmount;
-            match.status = "Paid";
-            await saveCashInvoiceToFirestore(match);
+        // Link to Bank Transaction if matched
+        if (matchedBankTx) {
+          try {
+            const mockInvoice: CashInvoiceData = {
+              invNumber: dc.invoiceRef || `DC #${dc.dcNo}`,
+              dcNumber: dc.dcNo,
+              clientName: dc.hospitalName,
+              grandTotal: paidAmount,
+              status: "Paid",
+              paymentReceived: paidAmount,
+              savedAt: Date.now(),
+            };
+            await linkBankTransactionToCashInvoice(
+              matchedBankTx.id,
+              mockInvoice,
+              true,
+            );
+          } catch (e) {
+            console.error("Failed to link bank transaction on DC pay modal:", e);
           }
-        } catch (e) {
-          console.error(
-            "Failed to sync payment status to Firestore cash invoice:",
-            e,
-          );
+        } else if (paymentMethod === "cash") {
+          try {
+            await recordCashPaymentToCashInHand(
+              dc,
+              paidAmount,
+              paymentCollectedBy,
+              finalRemarks,
+            );
+          } catch (e) {
+            console.error(
+              "Failed to record cash transaction in Cash In Hand account:",
+              e,
+            );
+          }
         }
-      }
 
-      setSavedDcs((prev) =>
-        prev.map((d) =>
-          d.id === dc.id
-            ? {
-                ...d,
-                status: "completed",
-                cashAmount: paidAmount,
-                paymentMethod,
-                collectedBy:
-                  paymentMethod === "cash"
-                    ? paymentCollectedBy.trim()
-                    : undefined,
-                paidAt: new Date().toISOString(),
-                cashRemarks: finalRemarks,
-                ...(matchedBankTx ? { bankAccountId, bankName, utrNo } : {}),
-              }
-            : d,
-        ),
-      );
+        // Sync payment status to Firestore Cash Invoice
+        if (dc.invoiceRef || dc.dcNo) {
+          try {
+            const invoices = await fetchCashInvoicesFromFirestore();
+            const match = invoices.find(
+              (inv) =>
+                (dc.invoiceRef && inv.invNumber === dc.invoiceRef) ||
+                (dc.dcNo && inv.dcNumber === dc.dcNo),
+            );
+            if (match) {
+              match.paymentReceived = paidAmount;
+              match.status = "Paid";
+              await saveCashInvoiceToFirestore(match);
+            }
+          } catch (e) {
+            console.error(
+              "Failed to sync payment status to Firestore cash invoice:",
+              e,
+            );
+          }
+        }
 
-      setSelectedDcId(null);
-      setActiveQueue("completed");
-      setSearchParams({ queue: "completed" });
+        const freshDcs = await loadSavedDcs();
+        setSavedDcs(freshDcs);
+        setSelectedDcId(dc.id);
+        setDetailsDialogOpen(false);
 
-      const successDesc = matchedBankTx
-        ? `DC #${dc.dcNo} linked to Bank Credit (Ref: ${utrNo}) & moved to Completed!`
-        : `DC #${dc.dcNo} marked as Bank Transfer (Link later from Bank Accounts) & moved to Completed!`;
-
-      toast({ title: "Payment Recorded", description: successDesc });
-      setPaymentDialog({ open: false, dc: null });
-      setPaymentAmountInput("");
-      setPaymentRemarksInput("");
-      setPaymentCollectedBy("");
-      setPaymentMethod("cash");
-      setSelectedCreditTxId("not_found");
-    } catch (err) {
-      toast({
-        title: "Payment Failed",
-        description:
-          err instanceof Error ? err.message : "Failed to record payment.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsActionLoading(false);
-      setLoadingDcIds((prev) => {
-        const next = new Set(prev);
-        next.delete(dc.id);
-        return next;
-      });
-    }
+        setPaymentAmountInput("");
+        setPaymentRemarksInput("");
+        setPaymentCollectedBy("");
+        setPaymentMethod("cash");
+        setSelectedCreditTxId("not_found");
+        setIsActionLoading(false);
+        setLoadingDcIds((prev) => {
+          const next = new Set(prev);
+          next.delete(dc.id);
+          return next;
+        });
+      },
+    });
   };
 
   // Apply quick filters
@@ -1668,6 +1682,7 @@ const SavedDcs = () => {
     setLoadingDcIds((prev) => new Set(prev).add(id));
     try {
       await deleteSavedDc(id);
+      cleanOrphanedBankTransactionLinks().catch(() => {});
       const dcs = await loadSavedDcs();
       setSavedDcs(dcs);
       toast({ title: "DC deleted" });
@@ -2210,21 +2225,21 @@ const SavedDcs = () => {
         setIsActionLoading(true);
         try {
           const invoices = await fetchCashInvoicesFromFirestore();
-          const alreadyExists = invoices.some(
-            (inv) =>
-              inv.dcNumber &&
-              inv.dcNumber.trim().toLowerCase() ===
-                (dc.dcNo || "").trim().toLowerCase(),
-          );
+          const cleanDcNo = (dc.dcNo || "").trim().toLowerCase();
+          const cleanRawDcNo = cleanDcNo.replace(/^dc\s*#?\s*/i, "");
 
-          if (alreadyExists) {
-            toast({
-              title: "Cash Invoice Already Created",
-              description: `A cash memo for DC ${dc.dcNo} has already been created by another user.`,
-              variant: "destructive",
-            });
-            return;
-          }
+          const existingInv = invoices.find((inv) => {
+            const invDc = (inv.dcNumber || "").trim().toLowerCase();
+            const invDcRaw = invDc.replace(/^dc\s*#?\s*/i, "");
+            const invNum = (inv.invNumber || "").trim().toLowerCase();
+            const invNumRaw = invNum.replace(/^dc\s*#?\s*/i, "");
+            return (
+              invDc === cleanDcNo ||
+              invDcRaw === cleanRawDcNo ||
+              invNum === cleanDcNo ||
+              invNumRaw === cleanRawDcNo
+            );
+          });
 
           sessionStorage.setItem("prefill_cash_dc_no", dc.dcNo || "");
           sessionStorage.setItem("prefill_cash_client_name", dc.hospitalName || "");
@@ -2232,6 +2247,21 @@ const SavedDcs = () => {
           if (dc.status === "pending" || dc.isPurchase) {
             sessionStorage.setItem("is_purchase_dc", "true");
           }
+
+          if (existingInv) {
+            const existingInvNum = existingInv.invNumber || existingInv.id || "";
+            sessionStorage.setItem("view_cash_inv_num", existingInvNum);
+            toast({
+              title: "Opening Existing Cash Invoice",
+              description: `Found existing Cash Memo #${existingInvNum} for DC ${dc.dcNo}. Loading into editor...`,
+            });
+            closeActionDialog();
+            navigate(
+              `/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || "")}&client=${encodeURIComponent(dc.hospitalName || "")}&viewInv=${encodeURIComponent(existingInvNum)}`,
+            );
+            return;
+          }
+
           closeActionDialog();
           navigate(
             `/cash-invoice?dcNo=${encodeURIComponent(dc.dcNo || "")}&client=${encodeURIComponent(dc.hospitalName || "")}`,
@@ -2626,14 +2656,48 @@ const SavedDcs = () => {
             ? `Part Payment Received: ₹${newPaidAmount.toLocaleString("en-IN")} of ₹${originalInvoiceTotal.toLocaleString("en-IN")} (Balance Due: ₹${(originalInvoiceTotal - newPaidAmount).toLocaleString("en-IN")}) via ${methodLabel}`
             : `Paid ₹${newPaidAmount.toLocaleString("en-IN")} via ${methodLabel}`;
 
+      // Unlink matching bank transactions if UTR is attached or if all installments are deleted
+      try {
+        const txs = await fetchBankTransactionsFromFirestore(undefined, 250).catch(() => []);
+        const targetUtr = (deletedItem.utrNo || "").trim().toLowerCase();
+        const dcNoClean = (dc.dcNo || "").trim().toLowerCase();
+        const invRefClean = (dc.invoiceRef || "").trim().toLowerCase();
+
+        for (const tx of txs) {
+          const tRef = (tx.referenceNumber || "").trim().toLowerCase();
+          const tInv = (tx.linkedInvoiceNumber || tx.linkedInvoiceId || "").trim().toLowerCase();
+          const tDcNos = (tx.linkedDcNumbers || []).map((n: string) => n.trim().toLowerCase());
+
+          const isUtrMatch = Boolean(targetUtr && tRef && tRef === targetUtr);
+          const isDcMatch = updatedPartPayments.length === 0 && isBankTxMatchingDc(tx, dc);
+
+          if (isUtrMatch || isDcMatch) {
+            await unlinkBankTransactionFromCashInvoice(tx.id, false).catch(() => {});
+          }
+        }
+      } catch (unlinkErr) {
+        console.warn("Failed to unlink bank transaction on installment delete:", unlinkErr);
+      }
+
+      setLinkedBankTx(null);
+
       await transitionSavedDc(dc.id, {
         toStatus: nextStatus,
         action: "DELETE_PART_PAYMENT_INSTALLMENT",
+        clear: updatedPartPayments.length === 0 ? ["paymentMethod", "utrNo", "bankName", "bankAccountId", "paidAmount", "paidAt", "settlementDate", "cashAmount", "settledAmount"] : [],
         updates: {
           partPayments: updatedPartPayments,
-          paidAmount: newPaidAmount,
+          paidAmount: updatedPartPayments.length === 0 ? 0 : newPaidAmount,
           isPartialPayment: isStillPartial,
-          cashRemarks: newCashRemarks,
+          cashRemarks: updatedPartPayments.length === 0 ? "All part payments deleted. Awaiting re-collection." : newCashRemarks,
+          ...(updatedPartPayments.length === 0
+            ? {
+                paymentMethod: undefined,
+                utrNo: undefined,
+                bankName: undefined,
+                bankAccountId: undefined,
+              }
+            : {}),
         },
         meta: {
           note: `Deleted installment #${indexToDelete + 1} (₹${deletedItem.amount.toLocaleString("en-IN")}).`,
@@ -2677,6 +2741,270 @@ const SavedDcs = () => {
         return newSet;
       });
     }
+  };
+
+  const renderDcActionDropdownContent = (dc: SavedDc) => {
+    const contactSummary = getHospitalContactSummary(dc.hospitalName);
+    return (
+      <DropdownMenuContent
+        align="end"
+        className="w-64 p-1.5 shadow-2xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md max-h-[82vh] overflow-y-auto z-50 text-xs"
+      >
+        {/* QUICK ACTIONS */}
+        <div className="px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+          Quick Actions
+        </div>
+        <DropdownMenuItem
+          onClick={() =>
+            handleOpenHospitalContact(
+              dc.hospitalName,
+              dc,
+              !contactSummary.hasPhone,
+            )
+          }
+          className="gap-2.5 py-1.5 px-2.5 font-medium text-emerald-800 dark:text-emerald-300 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+        >
+          <Phone className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+          <span className="truncate">
+            {contactSummary.hasPhone
+              ? `Call (${contactSummary.primaryPhone})`
+              : "Add Phone Number"}
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => openEditDcModal(dc)}
+          className="gap-2.5 py-1.5 px-2.5 font-semibold text-teal-800 dark:text-teal-300 rounded-lg bg-teal-50/70 hover:bg-teal-100 dark:bg-teal-950/40 cursor-pointer"
+        >
+          <Edit className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+          <span>Edit DC Details</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator className="my-1 bg-slate-100 dark:bg-slate-800" />
+
+        {/* VIEW & DOCUMENTS */}
+        <div className="px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+          View & Documents
+        </div>
+        <DropdownMenuItem
+          onClick={() => {
+            setSelectedDcId(dc.id);
+            setDcDocumentModalOpen(true);
+          }}
+          className="gap-2.5 py-1.5 px-2.5 font-medium rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          <Eye className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+          <span>View DC Document</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            setSelectedDcId(dc.id);
+            setDetailsDialogOpen(true);
+          }}
+          className="gap-2.5 py-1.5 px-2.5 font-medium rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          <Activity className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+          <span>Track Status</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => handlePrint(dc)}
+          className="gap-2.5 py-1.5 px-2.5 font-medium rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          <Printer className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+          <span>Print DC</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => handleShare(dc)}
+          className="gap-2.5 py-1.5 px-2.5 font-medium rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          <Share2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+          <span>Share PDF</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator className="my-1 bg-slate-100 dark:bg-slate-800" />
+
+        {/* WORKFLOW & BILLING */}
+        <div className="px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+          Workflow & Billing
+        </div>
+
+        {dc.status === "pending" && (
+          <>
+            <DropdownMenuItem
+              onClick={() => openActionDialog("return", dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-medium rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+              <span>Mark as Returned</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => openActionDialog("purchase", dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-semibold text-amber-700 dark:text-amber-400 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer"
+            >
+              <ShoppingBag className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+              <span>Purchase (Direct Sale)</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => handleCreateCashMemoForDc(dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-semibold text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer"
+            >
+              <Receipt className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+              <span>Create Cash Memo</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => openActionDialog("invoice", dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-semibold text-purple-700 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 cursor-pointer"
+            >
+              <FileText className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+              <span>Go GST Bill Invoice</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => openActionDialog("cancel", dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-medium text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+            >
+              <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+              <span>Cancel Case</span>
+            </DropdownMenuItem>
+          </>
+        )}
+
+        {dc.status === "cancelled" && (
+          <DropdownMenuItem
+            onClick={() => restoreFromCancelled(dc)}
+            className="gap-2.5 py-1.5 px-2.5 font-semibold text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+          >
+            <Undo2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+            <span>Restore to Pending</span>
+          </DropdownMenuItem>
+        )}
+
+        {dc.status === "returned" && (
+          <>
+            <DropdownMenuItem
+              onClick={() => openActionDialog("invoice", dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-semibold text-purple-700 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/40 cursor-pointer"
+            >
+              <FileText className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+              <span>Link Invoice</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => handleCreateCashMemoForDc(dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-semibold text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer"
+            >
+              <Receipt className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+              <span>Create Cash Memo</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                setMoveToPendingDialog({
+                  open: true,
+                  dc,
+                })
+              }
+              className="gap-2.5 py-1.5 px-2.5 font-medium rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <Undo2 className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+              <span>Move back to Pending</span>
+            </DropdownMenuItem>
+          </>
+        )}
+
+        {dc.status === "completed" && (
+          <>
+            {dc.invoiceRef &&
+              (dc.isTaxInvoice ||
+                (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))) && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => openActionDialog("invoice", dc)}
+                    className="gap-2.5 py-1.5 px-2.5 font-semibold text-purple-800 dark:text-purple-300 rounded-lg bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 cursor-pointer"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+                    <span className="truncate">
+                      Tax Invoice: {dc.invoiceRef}
+                    </span>
+                  </DropdownMenuItem>
+                  {dc.invoiceUrl ? (
+                    <DropdownMenuItem
+                      onClick={() => window.open(dc.invoiceUrl, "_blank")}
+                      className="gap-2.5 py-1.5 px-2.5 font-semibold text-emerald-700 dark:text-emerald-300 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 cursor-pointer"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                      <span>Open GoGSTBill</span>
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={() => openActionDialog("invoice", dc)}
+                      className="gap-2.5 py-1.5 px-2.5 font-semibold text-indigo-700 dark:text-indigo-300 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 cursor-pointer"
+                    >
+                      <Link2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                      <span>Enter GoGSTBill URL</span>
+                    </DropdownMenuItem>
+                  )}
+                </>
+              )}
+
+            {dc.invoiceRef &&
+              !(
+                dc.isTaxInvoice ||
+                (!dc.cashAmount && !dc.invoiceRef.startsWith("SRR-"))
+              ) && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => handleCreateCashMemoForDc(dc)}
+                    className="gap-2.5 py-1.5 px-2.5 font-semibold text-blue-800 dark:text-blue-300 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 cursor-pointer"
+                  >
+                    <Receipt className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                    <span className="truncate">Cash Memo #{dc.invoiceRef}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setViewingCashMemoRef(dc.invoiceRef!);
+                      setCashMemoModalOpen(true);
+                    }}
+                    className="gap-2.5 py-1.5 px-2.5 font-semibold text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer"
+                  >
+                    <Receipt className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                    <span className="truncate">
+                      View Cash Memo ({dc.invoiceRef})
+                    </span>
+                  </DropdownMenuItem>
+                </>
+              )}
+
+            <DropdownMenuItem
+              onClick={() => openPaymentDialog(dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-semibold text-emerald-800 dark:text-emerald-300 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 cursor-pointer"
+            >
+              <Wallet className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+              <span>Edit Payment Info</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => openDelinkConfirmDialog(dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-semibold text-amber-900 dark:text-amber-300 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 cursor-pointer"
+            >
+              <Undo2 className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+              <span>Delink & Move to Cash Queue</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => moveBackToReturned(dc)}
+              className="gap-2.5 py-1.5 px-2.5 font-medium rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <Undo2 className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+              <span>Move back to Returned</span>
+            </DropdownMenuItem>
+          </>
+        )}
+
+        <DropdownMenuSeparator className="my-1 bg-slate-100 dark:bg-slate-800" />
+        <DropdownMenuItem
+          onClick={() => requestDelete(dc)}
+          className="gap-2.5 py-1.5 px-2.5 font-medium text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+        >
+          <X className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+          <span>Delete DC</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    );
   };
 
   const cancelReturnToPending = async (dc: SavedDc) => {
@@ -2752,9 +3080,9 @@ const SavedDcs = () => {
   );
 
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden flex flex-col">
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden flex flex-col w-full">
       {/* Main Content */}
-      <main className="flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
+      <main className="flex-grow flex flex-col w-full px-1.5 sm:px-3 lg:px-4 py-2 sm:py-2.5 overflow-x-hidden">
         {/* Top toolbar */}
         <TopToolbar
           theme={theme}
@@ -2784,19 +3112,7 @@ const SavedDcs = () => {
               setDetailsDialogOpen(true);
             }}
           />
-          <DcTrackerNotifications
-            savedDcs={savedDcs}
-            cashInvoices={cashInvoices}
-            onCollectPayment={openPaymentDialog}
-            onRecordReturn={(dc) => openActionDialog("return", dc)}
-            onViewDc={(dc, queue) => {
-              setActiveQueue(queue);
-              setSearchParams({ queue });
-              setSelectedDcId(dc.id);
-              setDetailsDialogOpen(true);
-            }}
-          />
-        </div>
+                  </div>
 
         <div className="space-y-4">
 
@@ -3002,15 +3318,15 @@ const SavedDcs = () => {
                     {/* Cash Tab */}
                     <TabsTrigger
                       value="cash"
-                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-amber-800 dark:data-[state=active]:text-amber-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-amber-200/80 dark:data-[state=active]:border-amber-900/40"
+                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-800 dark:data-[state=active]:text-emerald-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-emerald-200/80 dark:data-[state=active]:border-emerald-900/40"
                     >
-                      <Wallet className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <Wallet className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                       <span className="hidden sm:inline">Cash</span>
                       {statusCounts.cash > 0 && (
                         <Badge
                           className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
                             activeQueue === "cash"
-                              ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
                               : "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
                           }`}
                         >
@@ -3074,9 +3390,22 @@ const SavedDcs = () => {
                           selectedDc.partPayments.length > 0,
                       );
 
-                      // Consistent Sticky Row Theme Configuration
+                      // Linear Blueprint Grid Theme Configuration
                       const getStatusCardTheme = () => {
-                        return "border-2 border-slate-300 dark:border-slate-700 shadow-md bg-background dark:bg-slate-900/95";
+                        switch (selectedDc.status) {
+                          case "pending":
+                            return "border border-teal-300/80 dark:border-teal-700/60 border-l-4 border-l-teal-600 bg-gradient-to-r from-teal-50/90 via-white to-emerald-50/60 dark:from-slate-900 dark:via-teal-950/30 dark:to-slate-900 text-slate-900 dark:text-slate-100 shadow-md shadow-teal-500/5";
+                          case "returned":
+                            return "border border-purple-300/80 dark:border-purple-700/60 border-l-4 border-l-purple-600 bg-gradient-to-r from-purple-50/90 via-white to-indigo-50/60 dark:from-slate-900 dark:via-purple-950/30 dark:to-slate-900 text-slate-900 dark:text-slate-100 shadow-md shadow-purple-500/5";
+                          case "cash":
+                            return "border border-emerald-300/80 dark:border-emerald-700/60 border-l-4 border-l-emerald-600 bg-gradient-to-r from-emerald-50/90 via-white to-teal-50/60 dark:from-slate-900 dark:via-emerald-950/30 dark:to-slate-900 text-slate-900 dark:text-slate-100 shadow-md shadow-emerald-500/5";
+                          case "completed":
+                            return "border border-emerald-300/80 dark:border-emerald-700/60 border-l-4 border-l-emerald-600 bg-gradient-to-r from-emerald-50/90 via-white to-teal-50/60 dark:from-slate-900 dark:via-emerald-950/30 dark:to-slate-900 text-slate-900 dark:text-slate-100 shadow-md shadow-emerald-500/5";
+                          case "cancelled":
+                            return "border border-rose-300/80 dark:border-rose-700/60 border-l-4 border-l-rose-600 bg-gradient-to-r from-rose-50/90 via-white to-pink-50/60 dark:from-slate-900 dark:via-rose-950/30 dark:to-slate-900 text-slate-900 dark:text-slate-100 shadow-md shadow-rose-500/5";
+                          default:
+                            return "border border-slate-300 dark:border-slate-800 border-l-4 border-l-slate-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm";
+                        }
                       };
 
                       const getStatusBadgeStyle = () => {
@@ -3086,7 +3415,7 @@ const SavedDcs = () => {
                           case "returned":
                             return "bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-950 dark:text-purple-200";
                           case "cash":
-                            return "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 font-extrabold";
+                            return "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 font-extrabold";
                           case "completed":
                             return "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 font-extrabold";
                           case "cancelled":
@@ -3098,8 +3427,20 @@ const SavedDcs = () => {
 
                       return (
                         <div
-                          className={`sticky top-[80px] z-20 mb-4 mt-2 p-2 px-4 text-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 dark:text-slate-100 ${getStatusCardTheme()}`}
+                          className={`sticky top-[80px] z-20 mb-4 mt-2 p-3 px-4 text-slate-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 dark:text-slate-100 relative overflow-hidden backdrop-blur-md ${getStatusCardTheme()}`}
                         >
+                          {/* Linear Blueprint Micro-Grid Pattern Overlay */}
+                          <div className="absolute inset-0 pointer-events-none opacity-40 dark:opacity-20 mix-blend-overlay">
+                            <div
+                              className="absolute inset-0"
+                              style={{
+                                backgroundImage: `linear-gradient(to right, rgba(15, 118, 110, 0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(15, 118, 110, 0.15) 1px, transparent 1px)`,
+                                backgroundSize: "16px 16px",
+                              }}
+                            />
+                          </div>
+                          {/* Top-Right Glow Ambient Light */}
+                          <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-teal-500/10 dark:bg-teal-400/15 blur-2xl pointer-events-none" />
                           {/* Left Status Info */}
                           <div className="flex items-center gap-2.5 flex-wrap min-w-0">
                             <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-black px-2.5 py-1 shadow-2xs">
@@ -3129,7 +3470,7 @@ const SavedDcs = () => {
                                 case "cash":
                                   return (
                                     <div
-                                      className="h-7 w-7 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center justify-center shrink-0 shadow-2xs"
+                                      className="h-7 w-7 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center shrink-0 shadow-2xs"
                                       title="Awaiting Payment (Cash Queue)"
                                     >
                                       <Wallet className="w-4 h-4" />
@@ -3345,8 +3686,8 @@ const SavedDcs = () => {
                     <div className="border-t-2 border-border">
                       {filteredDcs.length === 0 ? (
                         <div className="p-8 sm:p-12 text-center">
-                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-muted/20 flex items-center justify-center mx-auto mb-4">
-                            <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
+                          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-muted/20 flex items-center justify-center mx-auto mb-2">
+                            <FileText className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground" />
                           </div>
                           <h3 className="text-base sm:text-lg font-semibold mb-2">
                             No DCs found
@@ -3383,13 +3724,24 @@ const SavedDcs = () => {
                               return (
                                 <div
                                   key={dc.id}
-                                  className={`group p-3 transition-colors duration-150 cursor-pointer ${
+                                  className={`group p-3 transition-colors duration-150 cursor-pointer relative overflow-hidden ${
                                     isSelected
-                                      ? "bg-teal-500/10 border-l-4 border-l-teal-600 font-semibold"
+                                      ? "bg-gradient-to-r from-teal-50/90 via-teal-50/50 to-transparent dark:from-teal-950/50 dark:via-teal-950/20 dark:to-transparent border-l-4 border-l-teal-600 font-semibold shadow-2xs"
                                       : "bg-white border-l-4 border-l-transparent hover:border-l-teal-500 hover:bg-slate-50 dark:bg-slate-950 dark:hover:bg-slate-900"
                                   }`}
                                   onClick={() => setSelectedDcId(dc.id)}
                                 >
+                                  {isSelected && (
+                                    <div className="absolute inset-0 pointer-events-none opacity-15 dark:opacity-20 mix-blend-overlay">
+                                      <div
+                                        className="absolute inset-0"
+                                        style={{
+                                          backgroundImage: `linear-gradient(to right, rgba(15, 118, 110, 0.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(15, 118, 110, 0.12) 1px, transparent 1px)`,
+                                          backgroundSize: "14px 14px",
+                                        }}
+                                      />
+                                    </div>
+                                  )}
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0 flex-1">
                                       <div className="flex items-center gap-2 flex-wrap">
@@ -3454,7 +3806,7 @@ const SavedDcs = () => {
                                                 !contactSummary.hasPhone,
                                               );
                                             }}
-                                            className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-none border ${
+                                            className={`w-8 h-8 flex items-center justify-center rounded-lg border shadow-2xs transition-all ${
                                               contactSummary.hasPhone
                                                 ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
                                                 : "bg-slate-50 border-slate-200 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200"
@@ -3475,7 +3827,7 @@ const SavedDcs = () => {
                                           setSelectedDcId(dc.id);
                                           setDcDocumentModalOpen(true);
                                         }}
-                                        className="w-8 h-8 flex items-center justify-center bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 transition-all shadow-none"
+                                        className="w-8 h-8 flex items-center justify-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-all shadow-2xs"
                                         title="View Delivery Challan (Document Preview)"
                                       >
                                         <Eye className="w-4 h-4" />
@@ -3486,7 +3838,7 @@ const SavedDcs = () => {
                                           setSelectedDcId(dc.id);
                                           setDetailsDialogOpen(true);
                                         }}
-                                        className="w-8 h-8 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-full text-blue-700 hover:bg-blue-100 transition-all shadow-none"
+                                        className="w-8 h-8 flex items-center justify-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-blue-600 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-2xs"
                                         title="Track Status & History"
                                       >
                                         <Activity className="w-4 h-4" />
@@ -3496,7 +3848,7 @@ const SavedDcs = () => {
                                           e.stopPropagation();
                                           handlePrint(dc);
                                         }}
-                                        className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 transition-all shadow-none"
+                                        className="w-8 h-8 flex items-center justify-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-100 transition-all shadow-2xs"
                                         title="Print DC"
                                       >
                                         <Printer className="w-4 h-4" />
@@ -3513,283 +3865,11 @@ const SavedDcs = () => {
                                             {loadingDcIds.has(dc.id) ? (
                                               <RefreshCw className="h-4 w-4 text-slate-600 animate-spin" />
                                             ) : (
-                                              <Edit className="h-4 w-4 text-slate-600" />
+                                              <MoreVertical className="w-3.5 h-3.5 text-slate-600" />
                                             )}
                                           </Button>
                                         </DropdownMenuTrigger>
-                                        <DropdownMenuContent
-                                          align="end"
-                                          className="w-52"
-                                        >
-                                          <DropdownMenuItem
-                                            onClick={() => {
-                                              const cs =
-                                                getHospitalContactSummary(
-                                                  dc.hospitalName,
-                                                );
-                                              handleOpenHospitalContact(
-                                                dc.hospitalName,
-                                                dc,
-                                                !cs.hasPhone,
-                                              );
-                                            }}
-                                            className="gap-2 font-medium text-emerald-800 dark:text-emerald-300"
-                                          >
-                                            <Phone className="h-4 w-4 text-emerald-600" />
-                                            {getHospitalContactSummary(
-                                              dc.hospitalName,
-                                            ).hasPhone
-                                              ? `Call (${getHospitalContactSummary(dc.hospitalName).primaryPhone})`
-                                              : "Add Phone Number"}
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onClick={() => openEditDcModal(dc)}
-                                            className="gap-2 font-bold text-teal-800 dark:text-teal-300 bg-teal-50/60 hover:bg-teal-100 cursor-pointer"
-                                          >
-                                            <Edit className="h-4 w-4 text-blue-600" />
-                                            Edit DC Details
-                                          </DropdownMenuItem>
-                                          <DropdownMenuSeparator />
-                                          <DropdownMenuItem
-                                            onClick={() => {
-                                              setSelectedDcId(dc.id);
-                                              setDcDocumentModalOpen(true);
-                                            }}
-                                            className="gap-2"
-                                          >
-                                            <Eye className="h-4 w-4 text-blue-600" />
-                                            View DC Document
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onClick={() => {
-                                              setSelectedDcId(dc.id);
-                                              setDetailsDialogOpen(true);
-                                            }}
-                                            className="gap-2"
-                                          >
-                                            <Activity className="h-4 w-4 text-blue-600" />
-                                            Track Status
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onClick={() => handlePrint(dc)}
-                                            className="gap-2"
-                                          >
-                                            <Printer className="h-4 w-4 text-indigo-600" />
-                                            Print DC
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onClick={() => handleShare(dc)}
-                                            className="gap-2"
-                                          >
-                                            <Share2 className="h-4 w-4 text-slate-600" />
-                                            Share PDF
-                                          </DropdownMenuItem>
-                                          <DropdownMenuSeparator />
-                                          <DropdownMenuItem
-                                            onClick={() =>
-                                              openActionDialog("return", dc)
-                                            }
-                                            disabled={dc.status !== "pending"}
-                                            className="gap-2"
-                                          >
-                                            <RotateCcw className="h-4 w-4" />
-                                            Mark as Returned
-                                          </DropdownMenuItem>
-                                          {dc.status === "pending" && (
-                                            <>
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  openActionDialog(
-                                                    "purchase",
-                                                    dc,
-                                                  )
-                                                }
-                                                className="gap-2 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30 cursor-pointer"
-                                              >
-                                                <ShoppingBag className="h-4 w-4 text-slate-600" />
-                                                Purchase (Direct Sale)
-                                              </DropdownMenuItem>
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  handleCreateCashMemoForDc(dc)
-                                                }
-                                                className="gap-2 pl-7 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 cursor-pointer font-medium"
-                                              >
-                                                <Receipt className="h-3.5 w-3.5 text-blue-600" />
-                                                &bull; Cash Invoice
-                                              </DropdownMenuItem>
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  openActionDialog(
-                                                    "invoice",
-                                                    dc,
-                                                  )
-                                                }
-                                                className="gap-2 pl-7 text-xs text-purple-700 hover:bg-purple-50 dark:text-purple-400 cursor-pointer font-medium"
-                                              >
-                                                <FileText className="h-3.5 w-3.5 text-slate-600" />
-                                                &bull; Go GST Bill
-                                              </DropdownMenuItem>
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  openActionDialog("cancel", dc)
-                                                }
-                                                className="gap-2 text-orange-600"
-                                              >
-                                                <AlertCircle className="h-4 w-4" />
-                                                Cancel Case
-                                              </DropdownMenuItem>
-                                            </>
-                                          )}
-                                          {dc.status === "cancelled" && (
-                                            <DropdownMenuItem
-                                              onClick={() =>
-                                                restoreFromCancelled(dc)
-                                              }
-                                              className="gap-2"
-                                            >
-                                              <Undo2 className="h-4 w-4" />
-                                              Restore to Pending
-                                            </DropdownMenuItem>
-                                          )}
-                                          {dc.status === "returned" && (
-                                            <>
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  openActionDialog(
-                                                    "invoice",
-                                                    dc,
-                                                  )
-                                                }
-                                                className="gap-2"
-                                              >
-                                                <Receipt className="h-4 w-4" />
-                                                Link Invoice
-                                              </DropdownMenuItem>
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  handleCreateCashMemoForDc(dc)
-                                                }
-                                                className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
-                                              >
-                                                <Receipt className="h-4 w-4 text-blue-600" />
-                                                Create Cash Memo
-                                              </DropdownMenuItem>
-                                            </>
-                                          )}
-                                          {dc.status === "completed" && (
-                                            <>
-                                              {dc.invoiceRef &&
-                                                (dc.isTaxInvoice ||
-                                                  (!dc.cashAmount &&
-                                                    !dc.invoiceRef.startsWith(
-                                                      "SRR-",
-                                                    ))) && (
-                                                  <>
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        openActionDialog(
-                                                          "invoice",
-                                                          dc,
-                                                        )
-                                                      }
-                                                      className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
-                                                    >
-                                                      <FileText className="h-4 w-4 text-slate-600" />
-                                                      Tax Invoice:{" "}
-                                                      {dc.invoiceRef}
-                                                    </DropdownMenuItem>
-                                                    {dc.invoiceUrl ? (
-                                                      <DropdownMenuItem
-                                                        onClick={() =>
-                                                          window.open(
-                                                            dc.invoiceUrl,
-                                                            "_blank",
-                                                          )
-                                                        }
-                                                        className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                                      >
-                                                        <ExternalLink className="h-4 w-4 text-emerald-600" />
-                                                        Open GoGSTBill
-                                                      </DropdownMenuItem>
-                                                    ) : (
-                                                      <DropdownMenuItem
-                                                        onClick={() =>
-                                                          openActionDialog(
-                                                            "invoice",
-                                                            dc,
-                                                          )
-                                                        }
-                                                        className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
-                                                      >
-                                                        <Link2 className="h-4 w-4 text-indigo-600" />
-                                                        Enter GoGSTBill URL
-                                                      </DropdownMenuItem>
-                                                    )}
-                                                  </>
-                                                )}
-                                              {dc.invoiceRef &&
-                                                !(
-                                                  dc.isTaxInvoice ||
-                                                  (!dc.cashAmount &&
-                                                    !dc.invoiceRef.startsWith(
-                                                      "SRR-",
-                                                    ))
-                                                ) && (
-                                                  <DropdownMenuItem
-                                                    onClick={() => {
-                                                      setViewingCashMemoRef(
-                                                        dc.invoiceRef!,
-                                                      );
-                                                      setCashMemoModalOpen(
-                                                        true,
-                                                      );
-                                                    }}
-                                                    className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
-                                                  >
-                                                    <Receipt className="h-4 w-4 text-blue-600" />
-                                                    View Cash Memo (
-                                                    {dc.invoiceRef})
-                                                  </DropdownMenuItem>
-                                                )}
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  openPaymentDialog(dc)
-                                                }
-                                                className="gap-2 font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                              >
-                                                <Wallet className="h-4 w-4 text-emerald-600" />
-                                                Edit Payment Info
-                                              </DropdownMenuItem>
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  openDelinkConfirmDialog(dc)
-                                                }
-                                                className="gap-2 font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 cursor-pointer"
-                                              >
-                                                <Undo2 className="h-4 w-4 text-slate-600" />
-                                                Delink & Move to Cash Queue
-                                              </DropdownMenuItem>
-                                              <DropdownMenuItem
-                                                onClick={() =>
-                                                  moveBackToReturned(dc)
-                                                }
-                                                className="gap-2"
-                                              >
-                                                <Undo2 className="h-4 w-4" />
-                                                Move back to Returned
-                                              </DropdownMenuItem>
-                                            </>
-                                          )}
-                                          <DropdownMenuSeparator />
-                                          <DropdownMenuItem
-                                            onClick={() => requestDelete(dc)}
-                                            className="text-destructive gap-2"
-                                          >
-                                            <X className="h-4 w-4" />
-                                            Delete
-                                          </DropdownMenuItem>
-                                        </DropdownMenuContent>
+                                        {renderDcActionDropdownContent(dc)}
                                       </DropdownMenu>
                                     </div>
                                   </div>
@@ -3799,21 +3879,22 @@ const SavedDcs = () => {
                           </div>
 
                           {/* Desktop Table View */}
-                          <div className="hidden md:block border border-border/80 rounded-xl overflow-hidden shadow-none bg-background dark:bg-slate-900/95 ">
-                            <div className="max-h-[60vh] overflow-y-auto">
-                              <table className="w-full border-separate border-spacing-0">
+                          {/* Desktop Table View */}
+                          <div className="hidden md:block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-2xs w-full min-h-[480px]">
+                            <div className="min-h-[440px] max-h-[75vh] overflow-y-auto">
+                              <table className="w-full border-collapse">
                                 <thead>
-                                  <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-border sticky top-0 z-10 text-slate-700 dark:text-slate-300">
-                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[50px] border-r border-border/50">
+                                  <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
+                                    <th className="text-center py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[50px]">
                                       Select
                                     </th>
-                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[110px] border-r border-border/50">
+                                    <th className="text-left py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[110px]">
                                       <SortableHeader sortKey="date">
                                         <Calendar className="h-3.5 w-3.5 mr-1" />
                                         Date
                                       </SortableHeader>
                                     </th>
-                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[100px] border-r border-border/50">
+                                    <th className="text-left py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[110px]">
                                       <SortableHeader sortKey="dcNo">
                                         DC No
                                       </SortableHeader>
@@ -3821,59 +3902,59 @@ const SavedDcs = () => {
                                     {(activeQueue === "cash" ||
                                       activeQueue === "completed" ||
                                       activeQueue === "all") && (
-                                      <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[150px] border-r border-border/50">
+                                      <th className="text-left py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[150px]">
                                         Invoice / Memo No
                                       </th>
                                     )}
-                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 border-r border-border/50 min-w-[200px]">
+                                    <th className="text-left py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 min-w-[200px]">
                                       <SortableHeader sortKey="party">
                                         Party Name
                                       </SortableHeader>
                                     </th>
-                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[80px] border-r border-border/50">
+                                    <th className="text-center py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[80px]">
                                       <SortableHeader sortKey="items">
                                         <Package className="h-3.5 w-3.5 mr-1" />
                                         Items
                                       </SortableHeader>
                                     </th>
-                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[70px] border-r border-border/50">
+                                    <th className="text-center py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[70px]">
                                       <SortableHeader sortKey="days">
                                         Days
                                       </SortableHeader>
                                     </th>
-                                    <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
+                                    <th className="text-left py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[120px]">
                                       Delivered
                                     </th>
                                     {(activeQueue === "returned" ||
                                       activeQueue === "completed" ||
                                       activeQueue === "cash" ||
                                       activeQueue === "cancelled") && (
-                                      <th className="text-left p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[120px] border-r border-border/50">
+                                      <th className="text-left py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[120px]">
                                         Returned
                                       </th>
                                     )}
-                                    <th className="text-center p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 w-[60px]">
+                                    <th className="text-center py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[140px]">
                                       Actions
                                     </th>
                                   </tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                   {filteredDcs.map((dc) => {
                                     const daysPending = getDaysPending(dc);
                                     const totalQty = getTotalQty(dc);
                                     return (
                                       <tr
                                         key={dc.id}
-                                        className={`group border-b border-border/50 transition-colors duration-150 cursor-pointer ${
+                                        className={`group transition-colors duration-150 cursor-pointer ${
                                           selectedDcId === dc.id
-                                            ? "bg-teal-500/10 hover:bg-teal-500/15 border-l-4 border-l-teal-600 font-semibold"
-                                            : "hover:bg-slate-100/70 dark:hover:bg-slate-800/70"
+                                            ? "bg-gradient-to-r from-teal-50/90 via-teal-50/50 to-transparent dark:from-teal-950/50 dark:via-teal-950/20 dark:to-transparent border-l-4 border-l-teal-600 font-semibold shadow-2xs"
+                                            : "hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
                                         }`}
                                         onClick={() => {
                                           setSelectedDcId(dc.id);
                                         }}
                                       >
-                                        <td className="relative p-3 text-center border-r-2 border-slate-200">
+                                        <td className="relative p-3 text-center">
                                           <span
                                             className={`absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r transition-all duration-200 ${
                                               selectedDcId === dc.id
@@ -3893,7 +3974,7 @@ const SavedDcs = () => {
                                             onClick={(e) => e.stopPropagation()}
                                           />
                                         </td>
-                                        <td className="p-3 border-r-2 border-slate-200">
+                                        <td className="p-3">
                                           <div className="flex items-center gap-2">
                                             <Calendar className="h-4 w-4 text-slate-400 group-hover:text-blue-600 group-hover:scale-110 transition-all duration-200 flex-shrink-0" />
                                             <button
@@ -3902,20 +3983,20 @@ const SavedDcs = () => {
                                                 setSelectedDcId(dc.id);
                                                 setDetailsDialogOpen(true);
                                               }}
-                                              className="text-sm font-medium hover:text-blue-700 group-hover:text-slate-900 transition-colors text-left"
+                                              className="text-xs font-medium hover:text-blue-700 group-hover:text-slate-900 transition-colors text-left"
                                             >
                                               {formatDate(getDisplayDate(dc))}
                                             </button>
                                           </div>
                                         </td>
-                                        <td className="p-3 border-r-2 border-slate-200">
+                                        <td className="p-3">
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               setSelectedDcId(dc.id);
                                               setDetailsDialogOpen(true);
                                             }}
-                                            className="text-sm font-extrabold text-teal-800 hover:text-teal-900 group-hover:text-teal-700 group-hover:translate-x-1 inline-flex items-center gap-1 hover:underline transition-all duration-200"
+                                            className="text-[12px] font-black text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/80 border border-teal-200 dark:border-teal-800 px-2.5 py-0.5 rounded-lg whitespace-nowrap font-mono hover:bg-teal-100 transition-all inline-block shadow-2xs"
                                           >
                                             {dc.dcNo}
                                           </button>
@@ -3923,7 +4004,7 @@ const SavedDcs = () => {
                                         {(activeQueue === "cash" ||
                                           activeQueue === "completed" ||
                                           activeQueue === "all") && (
-                                          <td className="p-3 border-r-2 border-slate-200">
+                                          <td className="p-3">
                                             {dc.invoiceRef ? (
                                               dc.isTaxInvoice ||
                                               (!dc.cashAmount &&
@@ -4128,7 +4209,7 @@ const SavedDcs = () => {
                                             )}
                                           </td>
                                         )}
-                                        <td className="p-3 border-r-2 border-slate-200">
+                                        <td className="p-3">
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
@@ -4140,7 +4221,7 @@ const SavedDcs = () => {
                                             {dc.hospitalName}
                                           </button>
                                         </td>
-                                        <td className="p-3 text-center border-r-2 border-slate-200">
+                                        <td className="p-3 text-center">
                                           <div className="flex items-center justify-center gap-1">
                                             <Badge
                                               variant="outline"
@@ -4150,7 +4231,7 @@ const SavedDcs = () => {
                                             </Badge>
                                           </div>
                                         </td>
-                                        <td className="p-3 text-center border-r-2 border-slate-200">
+                                        <td className="p-3 text-center">
                                           <div
                                             className={`text-sm font-medium ${daysPending > 7 && dc.status === "pending" ? "text-red-600" : "text-slate-600"}`}
                                           >
@@ -4161,7 +4242,7 @@ const SavedDcs = () => {
                                               )}
                                           </div>
                                         </td>
-                                        <td className="p-3 border-r-2 border-slate-200">
+                                        <td className="p-3">
                                           <div
                                             className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5"
                                             title={dc.deliveredBy}
@@ -4190,7 +4271,7 @@ const SavedDcs = () => {
                                           activeQueue === "completed" ||
                                           activeQueue === "cash" ||
                                           activeQueue === "cancelled") && (
-                                          <td className="p-3 border-r-2 border-slate-200">
+                                          <td className="p-3">
                                             <div
                                               className="text-xs font-medium truncate max-w-[120px] flex items-center gap-1.5"
                                               title={dc.returnedBy}
@@ -4235,7 +4316,7 @@ const SavedDcs = () => {
                                                       !contactSummary.hasPhone,
                                                     );
                                                   }}
-                                                  className={`w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-none border ${
+                                                  className={`w-8 h-8 flex items-center justify-center rounded-lg border shadow-2xs transition-all ${
                                                     contactSummary.hasPhone
                                                       ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
                                                       : "bg-slate-50 border-slate-200 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200"
@@ -4256,10 +4337,10 @@ const SavedDcs = () => {
                                                 setSelectedDcId(dc.id);
                                                 setDcDocumentModalOpen(true);
                                               }}
-                                              className="w-8 h-8 flex items-center justify-center bg-teal-50 border border-teal-200 rounded-full text-teal-700 hover:bg-teal-100 transition-all shadow-none"
+                                              className="w-8 h-8 flex items-center justify-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-all shadow-2xs"
                                               title="View Delivery Challan (Document Preview)"
                                             >
-                                              <Eye className="w-4 h-4 text-teal-700" />
+                                              <Eye size={14} />
                                             </button>
                                             <button
                                               onClick={(e) => {
@@ -4267,27 +4348,27 @@ const SavedDcs = () => {
                                                 setSelectedDcId(dc.id);
                                                 setDetailsDialogOpen(true);
                                               }}
-                                              className="w-8 h-8 flex items-center justify-center bg-blue-50 border border-blue-200 rounded-full text-blue-700 hover:bg-blue-100 transition-all shadow-none"
+                                              className="w-8 h-8 flex items-center justify-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-blue-600 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-2xs"
                                               title="Track Status & History"
                                             >
-                                              <Activity className="w-4 h-4 text-blue-700" />
+                                              <Activity size={14} />
                                             </button>
                                             <button
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 handlePrint(dc);
                                               }}
-                                              className="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-full text-slate-700 hover:bg-slate-100 transition-all shadow-none"
+                                              className="w-8 h-8 flex items-center justify-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-100 transition-all shadow-2xs"
                                               title="Print DC"
                                             >
-                                              <Printer className="w-4 h-4 text-slate-700" />
+                                              <Printer size={14} />
                                             </button>
                                             <DropdownMenu>
                                               <DropdownMenuTrigger asChild>
                                                 <Button
                                                   size="sm"
                                                   variant="ghost"
-                                                  className="h-8 w-8 p-0 hover:bg-slate-200"
+                                                  className="w-8 h-8 flex items-center justify-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:text-amber-600 hover:bg-amber-50 transition-all shadow-2xs p-0"
                                                   disabled={loadingDcIds.has(
                                                     dc.id,
                                                   )}
@@ -4299,423 +4380,11 @@ const SavedDcs = () => {
                                                   {loadingDcIds.has(dc.id) ? (
                                                     <RefreshCw className="h-4 w-4 text-slate-600 animate-spin" />
                                                   ) : (
-                                                    <Edit className="h-4 w-4 text-slate-600" />
+                                                    <MoreVertical className="w-3.5 h-3.5 text-slate-600" />
                                                   )}
                                                 </Button>
                                               </DropdownMenuTrigger>
-                                              <DropdownMenuContent
-                                                align="end"
-                                                className="w-52"
-                                              >
-                                                <DropdownMenuItem
-                                                  onClick={() => {
-                                                    const cs =
-                                                      getHospitalContactSummary(
-                                                        dc.hospitalName,
-                                                      );
-                                                    handleOpenHospitalContact(
-                                                      dc.hospitalName,
-                                                      dc,
-                                                      !cs.hasPhone,
-                                                    );
-                                                  }}
-                                                  className="gap-2 font-medium text-emerald-800 dark:text-emerald-300"
-                                                >
-                                                  <Phone className="h-4 w-4 text-emerald-600" />
-                                                  {getHospitalContactSummary(
-                                                    dc.hospitalName,
-                                                  ).hasPhone
-                                                    ? `Call (${getHospitalContactSummary(dc.hospitalName).primaryPhone})`
-                                                    : "Add Phone Number"}
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem
-                                                  onClick={() =>
-                                                    openEditDcModal(dc)
-                                                  }
-                                                  className="gap-2 font-bold text-teal-800 dark:text-teal-300 bg-teal-50/60 hover:bg-teal-100 cursor-pointer"
-                                                >
-                                                  <Edit className="h-4 w-4 text-blue-600" />
-                                                  Edit DC Details
-                                                </DropdownMenuItem>
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem
-                                                  onClick={() => {
-                                                    setSelectedDcId(dc.id);
-                                                    setDcDocumentModalOpen(
-                                                      true,
-                                                    );
-                                                  }}
-                                                  className="gap-2"
-                                                >
-                                                  <Eye className="h-4 w-4 text-blue-600" />
-                                                  View DC Document
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem
-                                                  onClick={() => {
-                                                    setSelectedDcId(dc.id);
-                                                    setDetailsDialogOpen(true);
-                                                  }}
-                                                  className="gap-2"
-                                                >
-                                                  <Activity className="h-4 w-4 text-blue-600" />
-                                                  Track Status
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem
-                                                  onClick={() =>
-                                                    handlePrint(dc)
-                                                  }
-                                                  className="gap-2"
-                                                >
-                                                  <Printer className="h-4 w-4 text-indigo-600" />
-                                                  Print DC
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem
-                                                  onClick={() =>
-                                                    handleShare(dc)
-                                                  }
-                                                  className="gap-2"
-                                                >
-                                                  <Share2 className="h-4 w-4 text-slate-600" />
-                                                  Share PDF
-                                                </DropdownMenuItem>
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem
-                                                  onClick={() =>
-                                                    openActionDialog(
-                                                      "return",
-                                                      dc,
-                                                    )
-                                                  }
-                                                  disabled={
-                                                    dc.status !== "pending"
-                                                  }
-                                                  className="gap-2"
-                                                >
-                                                  <RotateCcw className="h-4 w-4" />
-                                                  Mark as Returned
-                                                </DropdownMenuItem>
-                                                {dc.status === "pending" && (
-                                                  <>
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        openActionDialog(
-                                                          "purchase",
-                                                          dc,
-                                                        )
-                                                      }
-                                                      className="gap-2 font-bold text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30 cursor-pointer"
-                                                    >
-                                                      <ShoppingBag className="h-4 w-4 text-slate-600" />
-                                                      Purchase (Direct Sale)
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        handleCreateCashMemoForDc(
-                                                          dc,
-                                                        )
-                                                      }
-                                                      className="gap-2 pl-7 text-xs text-blue-700 hover:bg-blue-50 dark:text-blue-400 cursor-pointer font-medium"
-                                                    >
-                                                      <Receipt className="h-3.5 w-3.5 text-blue-600" />
-                                                      &bull; Cash Invoice
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        openActionDialog(
-                                                          "invoice",
-                                                          dc,
-                                                        )
-                                                      }
-                                                      className="gap-2 pl-7 text-xs text-purple-700 hover:bg-purple-50 dark:text-purple-400 cursor-pointer font-medium"
-                                                    >
-                                                      <FileText className="h-3.5 w-3.5 text-slate-600" />
-                                                      &bull; Go GST Bill
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        openActionDialog(
-                                                          "cancel",
-                                                          dc,
-                                                        )
-                                                      }
-                                                      className="gap-2 text-orange-600"
-                                                    >
-                                                      <AlertCircle className="h-4 w-4" />
-                                                      Cancel Case
-                                                    </DropdownMenuItem>
-                                                  </>
-                                                )}
-                                                {dc.status === "cancelled" && (
-                                                  <DropdownMenuItem
-                                                    onClick={() =>
-                                                      restoreFromCancelled(dc)
-                                                    }
-                                                    className="gap-2"
-                                                  >
-                                                    <Undo2 className="h-4 w-4" />
-                                                    Restore to Pending
-                                                  </DropdownMenuItem>
-                                                )}
-                                                {dc.status === "returned" && (
-                                                  <DropdownMenuItem
-                                                    onClick={() =>
-                                                      openActionDialog(
-                                                        "invoice",
-                                                        dc,
-                                                      )
-                                                    }
-                                                    className="gap-2"
-                                                  >
-                                                    <Receipt className="h-4 w-4" />
-                                                    Link Invoice
-                                                  </DropdownMenuItem>
-                                                )}
-                                                {dc.status === "returned" &&
-                                                  !dc.invoiceRef && (
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        handleCreateCashMemoForDc(
-                                                          dc,
-                                                        )
-                                                      }
-                                                      className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
-                                                    >
-                                                      <Receipt className="h-4 w-4 text-blue-600" />
-                                                      Create Cash Memo
-                                                    </DropdownMenuItem>
-                                                  )}
-                                                {dc.invoiceRef &&
-                                                  (dc.isTaxInvoice ||
-                                                    (!dc.cashAmount &&
-                                                      !dc.invoiceRef.startsWith(
-                                                        "SRR-",
-                                                      ))) && (
-                                                    <>
-                                                      <DropdownMenuItem
-                                                        onClick={() =>
-                                                          openActionDialog(
-                                                            "invoice",
-                                                            dc,
-                                                          )
-                                                        }
-                                                        className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
-                                                      >
-                                                        <FileText className="h-4 w-4 text-slate-600" />
-                                                        Tax Invoice:{" "}
-                                                        {dc.invoiceRef}
-                                                      </DropdownMenuItem>
-                                                      {dc.invoiceUrl ? (
-                                                        <DropdownMenuItem
-                                                          onClick={() =>
-                                                            window.open(
-                                                              dc.invoiceUrl,
-                                                              "_blank",
-                                                            )
-                                                          }
-                                                          className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                                        >
-                                                          <ExternalLink className="h-4 w-4 text-emerald-600" />
-                                                          Open GoGSTBill
-                                                        </DropdownMenuItem>
-                                                      ) : (
-                                                        <DropdownMenuItem
-                                                          onClick={() =>
-                                                            openActionDialog(
-                                                              "invoice",
-                                                              dc,
-                                                            )
-                                                          }
-                                                          className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
-                                                        >
-                                                          <Link2 className="h-4 w-4 text-indigo-600" />
-                                                          Enter GoGSTBill URL
-                                                        </DropdownMenuItem>
-                                                      )}
-                                                    </>
-                                                  )}
-                                                {dc.invoiceRef &&
-                                                  !(
-                                                    dc.isTaxInvoice ||
-                                                    (!dc.cashAmount &&
-                                                      !dc.invoiceRef.startsWith(
-                                                        "SRR-",
-                                                      ))
-                                                  ) && (
-                                                    <>
-                                                      <DropdownMenuItem
-                                                        onClick={() => {
-                                                          setViewingCashMemoRef(
-                                                            dc.invoiceRef!,
-                                                          );
-                                                          setCashMemoModalOpen(
-                                                            true,
-                                                          );
-                                                        }}
-                                                        className="gap-2 font-bold text-blue-700 hover:bg-blue-50"
-                                                      >
-                                                        <Receipt className="h-4 w-4 text-blue-600" />
-                                                        View Cash Memo (
-                                                        {dc.invoiceRef})
-                                                      </DropdownMenuItem>
-                                                      <DropdownMenuItem
-                                                        onClick={() =>
-                                                          handleShareWhatsApp(
-                                                            dc,
-                                                          )
-                                                        }
-                                                        className="gap-2"
-                                                      >
-                                                        <MessageSquare className="h-4 w-4 text-emerald-600" />
-                                                        Share via WhatsApp
-                                                      </DropdownMenuItem>
-                                                      {dc.status === "cash" && (
-                                                        <DropdownMenuItem
-                                                          onClick={() =>
-                                                            openPaymentDialog(
-                                                              dc,
-                                                            )
-                                                          }
-                                                          className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
-                                                        >
-                                                          <Wallet className="h-4 w-4 text-emerald-600" />
-                                                          Mark as Paid
-                                                        </DropdownMenuItem>
-                                                      )}
-                                                    </>
-                                                  )}
-                                                {dc.status === "completed" && (
-                                                  <>
-                                                    {dc.invoiceRef &&
-                                                      (dc.isTaxInvoice ||
-                                                        (!dc.cashAmount &&
-                                                          !dc.invoiceRef.startsWith(
-                                                            "SRR-",
-                                                          ))) && (
-                                                        <>
-                                                          <DropdownMenuItem
-                                                            onClick={() =>
-                                                              openActionDialog(
-                                                                "invoice",
-                                                                dc,
-                                                              )
-                                                            }
-                                                            className="gap-2 font-bold text-purple-800 bg-purple-50 hover:bg-purple-100 cursor-pointer"
-                                                          >
-                                                            <FileText className="h-4 w-4 text-slate-600" />
-                                                            Tax Invoice:{" "}
-                                                            {dc.invoiceRef}
-                                                          </DropdownMenuItem>
-                                                          {dc.invoiceUrl ? (
-                                                            <DropdownMenuItem
-                                                              onClick={() =>
-                                                                window.open(
-                                                                  dc.invoiceUrl,
-                                                                  "_blank",
-                                                                )
-                                                              }
-                                                              className="gap-2 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                                            >
-                                                              <ExternalLink className="h-4 w-4 text-emerald-600" />
-                                                              Open GoGSTBill
-                                                            </DropdownMenuItem>
-                                                          ) : (
-                                                            <DropdownMenuItem
-                                                              onClick={() =>
-                                                                openActionDialog(
-                                                                  "invoice",
-                                                                  dc,
-                                                                )
-                                                              }
-                                                              className="gap-2 font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 cursor-pointer"
-                                                            >
-                                                              <Link2 className="h-4 w-4 text-indigo-600" />
-                                                              Enter GoGSTBill
-                                                              URL
-                                                            </DropdownMenuItem>
-                                                          )}
-                                                        </>
-                                                      )}
-                                                    {dc.invoiceRef &&
-                                                      !(
-                                                        dc.isTaxInvoice ||
-                                                        (!dc.cashAmount &&
-                                                          !dc.invoiceRef.startsWith(
-                                                            "SRR-",
-                                                          ))
-                                                      ) && (
-                                                        <DropdownMenuItem
-                                                          onClick={() => {
-                                                            setViewingCashMemoRef(
-                                                              dc.invoiceRef!,
-                                                            );
-                                                            setCashMemoModalOpen(
-                                                              true,
-                                                            );
-                                                          }}
-                                                          className="gap-2 font-bold text-blue-700 hover:bg-blue-50 cursor-pointer"
-                                                        >
-                                                          <Receipt className="h-4 w-4 text-blue-600" />
-                                                          View Cash Memo (
-                                                          {dc.invoiceRef})
-                                                        </DropdownMenuItem>
-                                                      )}
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        openPaymentDialog(dc)
-                                                      }
-                                                      className="gap-2 font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                                                    >
-                                                      <Wallet className="h-4 w-4 text-emerald-600" />
-                                                      Edit Payment Info
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        openDelinkConfirmDialog(
-                                                          dc,
-                                                        )
-                                                      }
-                                                      className="gap-2 font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 cursor-pointer"
-                                                    >
-                                                      <Undo2 className="h-4 w-4 text-slate-600" />
-                                                      Delink & Move to Cash
-                                                      Queue
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                      onClick={() =>
-                                                        moveBackToReturned(dc)
-                                                      }
-                                                      className="gap-2"
-                                                    >
-                                                      <Undo2 className="h-4 w-4" />
-                                                      Move back to Returned
-                                                    </DropdownMenuItem>
-                                                  </>
-                                                )}
-                                                {dc.status === "returned" && (
-                                                  <DropdownMenuItem
-                                                    onClick={() =>
-                                                      setMoveToPendingDialog({
-                                                        open: true,
-                                                        dc,
-                                                      })
-                                                    }
-                                                    className="gap-2"
-                                                  >
-                                                    <Undo2 className="h-4 w-4" />
-                                                    Move back to Pending
-                                                  </DropdownMenuItem>
-                                                )}
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem
-                                                  onClick={() =>
-                                                    requestDelete(dc)
-                                                  }
-                                                  className="text-destructive gap-2"
-                                                >
-                                                  <X className="h-4 w-4" />
-                                                  Delete
-                                                </DropdownMenuItem>
-                                              </DropdownMenuContent>
+                                              {renderDcActionDropdownContent(dc)}
                                             </DropdownMenu>
                                           </div>
                                         </td>
@@ -6189,8 +5858,7 @@ const SavedDcs = () => {
                         <div>
                           <h4 className="font-bold text-sm text-blue-900 dark:text-blue-200 flex items-center gap-2">
                             <span>
-                              GoGST Tax Invoice Linked (
-                              {selectedDc.invoiceRef || "Linked"})
+                              {`GoGST Tax Invoice Linked (${selectedDc.invoiceRef || "Linked"})`}
                             </span>
                             <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-[10px] py-0 px-2 font-extrabold border border-blue-300">
                               Tax Invoice
@@ -6203,9 +5871,8 @@ const SavedDcs = () => {
                         </div>
                       </div>
                     </div>
-                  ) : (
-                    (selectedDc.status === "completed" ||
-                      Boolean(selectedDc.paidAt || linkedBankTx || (selectedDc.partPayments && selectedDc.partPayments.length > 0))) ? (
+                  ) : selectedDc.status === "completed" ||
+                    Boolean(selectedDc.paidAt || linkedBankTx || (selectedDc.partPayments && selectedDc.partPayments.length > 0)) ? (
                       <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-background from-emerald-50 via-teal-50/50 to-emerald-50/20 dark:from-emerald-950/40 dark:to-slate-900 p-3.5 space-y-2.5 shadow-none">
                         {/* Part Payment Alert Banner if Partial Payment */}
                         {(() => {
@@ -6240,6 +5907,8 @@ const SavedDcs = () => {
 
                           const due = Math.max(0, orig - paid);
 
+                          // If zero amount paid and no active part payment installments exist, do not show Part Payment Settlement box
+                          if (paid <= 0 && (!selectedDc.partPayments || selectedDc.partPayments.length === 0)) return null;
                           if (!isPart && due <= 0 && (!selectedDc.partPayments || selectedDc.partPayments.length === 0)) return null;
 
                           const partPaymentsList =
@@ -6385,160 +6054,163 @@ const SavedDcs = () => {
                           );
                         })()}
 
-                        {/* Render single-transaction payment details card ONLY if there are no multi-installment part payments */}
+                        {/* Render single-transaction payment details card ONLY if there are no multi-installment part payments AND active payment exists */}
                         {(!selectedDc.partPayments ||
                           selectedDc.partPayments.length === 0) && (
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="p-2 rounded-lg bg-emerald-700 text-white shadow-none">
-                                <Landmark className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                                  <span>
-                                    {selectedDc.paymentMethod ===
-                                      "bank_transfer" ||
-                                    linkedBankTx ||
-                                    selectedDc.utrNo
-                                      ? "Payment & Bank Transaction Details"
-                                      : "Cash Collection Record (Physical Cash)"}
-                                  </span>
-                                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[10px] py-0 px-1.5 font-bold border border-emerald-300">
-                                    {selectedDc.paymentMethod ===
-                                      "bank_transfer" ||
-                                    linkedBankTx ||
-                                    selectedDc.utrNo
-                                      ? "🏦 Bank Transfer / UPI"
-                                      : "💵 Physical Cash (Hand Collected)"}
-                                  </Badge>
-                                </h4>
-                                <p className="text-[11px] text-slate-500">
-                                  {selectedDc.paymentMethod === "bank_transfer" ||
-                                  linkedBankTx ||
-                                  selectedDc.utrNo
-                                    ? `Reconciled bank transaction record for DC #${selectedDc.dcNo}`
-                                    : `Physical cash collected in hand for DC #${selectedDc.dcNo} • Unlinked to bank statement`}
-                                </p>
-                              </div>
-                            </div>
-                            {selectedDc.paidAmount ||
-                            selectedDc.cashAmount ||
-                            linkedBankTx?.amount ? (
-                              <div className="text-right">
-                                <span className="text-[10px] text-slate-500 uppercase font-bold block">
-                                  Paid Amount
-                                </span>
-                                <span className="text-base font-black font-mono text-emerald-700 dark:text-emerald-400">
-                                  ₹
-                                  {(
-                                    selectedDc.paidAmount ||
-                                    selectedDc.cashAmount ||
-                                    linkedBankTx?.amount ||
-                                    0
-                                  ).toLocaleString("en-IN")}
-                                </span>
-                              </div>
-                            ) : null}
-                          </div>
-                        )}
-
-                        {(!selectedDc.partPayments ||
-                          selectedDc.partPayments.length === 0) && (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2.5 border-t border-emerald-200/90 dark:border-emerald-800/80 text-xs">
-                            <div>
-                              <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                                Bank Account
-                              </span>
-                              <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1 mt-0.5">
-                                <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                {selectedDc.paymentMethod === "bank_transfer" ||
-                                linkedBankTx ||
-                                selectedDc.utrNo
-                                  ? selectedDc.bankName || "Operating Account"
-                                  : selectedDc.bankName ||
-                                    "Physical Cash Treasury (In Hand)"}{" "}
-                                {selectedDc.accountNumber
-                                  ? `(${selectedDc.accountNumber})`
-                                  : ""}
-                              </span>
-                            </div>
-
-                            <div>
-                              <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                                UTR / Ref #
-                              </span>
-                              {selectedDc.utrNo ||
-                              linkedBankTx?.referenceNumber ? (
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <code className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 text-[11px]">
-                                    {selectedDc.utrNo ||
-                                      linkedBankTx?.referenceNumber}
-                                  </code>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const val =
-                                        selectedDc.utrNo ||
-                                        linkedBankTx?.referenceNumber ||
-                                        "";
-                                      navigator.clipboard.writeText(val);
-                                      toast({
-                                        title: "Copied UTR #",
-                                        description: val,
-                                      });
-                                    }}
-                                    className="text-slate-400 hover:text-slate-700 p-0.5 rounded cursor-pointer"
-                                    title="Copy UTR Number"
-                                  >
-                                    <Copy className="w-3.5 h-3.5 text-teal-700" />
-                                  </button>
+                          Boolean(
+                            linkedBankTx ||
+                              selectedDc.utrNo ||
+                              (selectedDc.paidAmount && selectedDc.paidAmount > 0) ||
+                              (selectedDc.cashAmount && selectedDc.cashAmount > 0) ||
+                              selectedDc.paymentStatus === "PAID" ||
+                              selectedDc.status === "PAID"
+                          ) ? (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-2 rounded-lg bg-emerald-700 text-white shadow-none">
+                                    <Landmark className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                                      <span>
+                                        {isRealBankTransfer(selectedDc, linkedBankTx)
+                                          ? "Payment & Bank Transaction Details"
+                                          : "Cash Collection Record (Physical Cash)"}
+                                      </span>
+                                      <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-[10px] py-0 px-1.5 font-bold border border-emerald-300">
+                                        {isRealBankTransfer(selectedDc, linkedBankTx)
+                                          ? "🏦 Bank Transfer / UPI"
+                                          : "💵 Physical Cash (Hand Collected)"}
+                                      </Badge>
+                                    </h4>
+                                    <p className="text-[11px] text-slate-500">
+                                      {isRealBankTransfer(selectedDc, linkedBankTx)
+                                        ? `Reconciled bank transaction record for DC #${selectedDc.dcNo}`
+                                        : `Physical cash collected in hand for DC #${selectedDc.dcNo} • Unlinked to bank statement`}
+                                    </p>
+                                  </div>
                                 </div>
-                              ) : (
-                                <span className="text-slate-400 mt-0.5 block">
-                                  N/A
-                                </span>
-                              )}
-                            </div>
-
-                            <div>
-                              <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                                Settlement Date
-                              </span>
-                              <span className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1 mt-0.5">
-                                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                {selectedDc.paidAt
-                                  ? formatDate(selectedDc.paidAt)
-                                  : linkedBankTx?.date
-                                    ? `${linkedBankTx.date} ${linkedBankTx.time || ""}`
-                                    : formatDate(selectedDc.savedAt)}
-                              </span>
-                            </div>
-
-                            {selectedDc.invoiceRef && (
-                              <div>
-                                <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                                  Invoice / Memo Ref
-                                </span>
-                                <span className="font-mono font-bold text-teal-800 dark:text-teal-300 mt-0.5 block">
-                                  {selectedDc.invoiceRef}
-                                </span>
+                                {selectedDc.paidAmount ||
+                                selectedDc.cashAmount ||
+                                linkedBankTx?.amount ? (
+                                  <div className="text-right">
+                                    <span className="text-[10px] text-slate-500 uppercase font-bold block">
+                                      Paid Amount
+                                    </span>
+                                    <span className="text-base font-black font-mono text-emerald-700 dark:text-emerald-400">
+                                      ₹
+                                      {(
+                                        selectedDc.paidAmount ||
+                                        selectedDc.cashAmount ||
+                                        linkedBankTx?.amount ||
+                                        0
+                                      ).toLocaleString("en-IN")}
+                                    </span>
+                                  </div>
+                                ) : null}
                               </div>
-                            )}
 
-                            {linkedBankTx?.description && (
-                              <div className="sm:col-span-2">
-                                <span className="text-[10px] font-bold uppercase text-slate-500 block">
-                                  Bank Narration
-                                </span>
-                                <span
-                                  className="font-medium text-slate-800 dark:text-slate-200 mt-0.5 block truncate"
-                                  title={linkedBankTx.description}
-                                >
-                                  {linkedBankTx.description}
-                                </span>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2.5 border-t border-emerald-200/90 dark:border-emerald-800/80 text-xs">
+                                <div>
+                                  <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                    Bank Account
+                                  </span>
+                                  <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1 mt-0.5">
+                                    <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                    {isRealBankTransfer(selectedDc, linkedBankTx)
+                                      ? selectedDc.bankName || "Operating Account"
+                                      : selectedDc.bankName ||
+                                        "Physical Cash Treasury (In Hand)"}{" "}
+                                    {selectedDc.accountNumber
+                                      ? `(${selectedDc.accountNumber})`
+                                      : ""}
+                                  </span>
+                                </div>
+
+                                <div>
+                                  <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                    UTR / Ref #
+                                  </span>
+                                  {selectedDc.utrNo ||
+                                  linkedBankTx?.referenceNumber ? (
+                                    <div className="flex items-center gap-1 mt-0.5">
+                                      <code className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 text-[11px]">
+                                        {selectedDc.utrNo ||
+                                          linkedBankTx?.referenceNumber}
+                                      </code>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const val =
+                                            selectedDc.utrNo ||
+                                            linkedBankTx?.referenceNumber ||
+                                            "";
+                                          navigator.clipboard.writeText(val);
+                                          toast({
+                                            title: "Copied UTR #",
+                                            description: val,
+                                          });
+                                        }}
+                                        className="text-slate-400 hover:text-slate-700 p-0.5 rounded cursor-pointer"
+                                        title="Copy UTR Number"
+                                      >
+                                        <Copy className="w-3.5 h-3.5 text-teal-700" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 mt-0.5 block">
+                                      N/A
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                    Settlement Date
+                                  </span>
+                                  <span className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1 mt-0.5">
+                                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    {selectedDc.paidAt
+                                      ? formatDate(selectedDc.paidAt)
+                                      : linkedBankTx?.date
+                                        ? `${linkedBankTx.date} ${linkedBankTx.time || ""}`
+                                        : formatDate(selectedDc.savedAt)}
+                                  </span>
+                                </div>
+
+                                {selectedDc.invoiceRef && (
+                                  <div>
+                                    <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                      Invoice / Memo Ref
+                                    </span>
+                                    <span className="font-mono font-bold text-teal-800 dark:text-teal-300 mt-0.5 block">
+                                      {selectedDc.invoiceRef}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {linkedBankTx?.description && (
+                                  <div className="sm:col-span-2">
+                                    <span className="text-[10px] font-bold uppercase text-slate-500 block">
+                                      Bank Narration
+                                    </span>
+                                    <span
+                                      className="font-medium text-slate-800 dark:text-slate-200 mt-0.5 block truncate"
+                                      title={linkedBankTx.description}
+                                    >
+                                      {linkedBankTx.description}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
+                            </>
+                          ) : (
+                            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+                              <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold">No active payment record attached</p>
+                              <p className="text-[11px] text-slate-400 mt-0.5">DC is currently unpaid or awaiting payment collection.</p>
+                            </div>
+                          )
                         )}
                       </div>
                     ) : (
@@ -6554,13 +6226,13 @@ const SavedDcs = () => {
                         </p>
                       </div>
                     )
-                  )}
+                  }
                 </TabsContent>
 
                 {/* Overview Tab Content */}
                 <TabsContent value="overview" className="mt-3 space-y-3">
-
-                  {/* Tracking + actions (courier-tracking style) */}
+                  <div className="space-y-3">
+                    {/* Tracking + actions (courier-tracking style) */}
                   <div className="rounded-md border border-slate-200 bg-white p-2.5 sm:p-3">
                     <div className="space-y-4">
                       {/* Animated Workflow Progress */}
@@ -7211,11 +6883,10 @@ const SavedDcs = () => {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                              {selectedDc.invoiceRef && (
+                              {selectedIsCashMemo && (
                                 <Button
                                   size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs border-amber-300 text-amber-900 bg-white hover:bg-amber-50 font-medium"
+                                  className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-none"
                                   onClick={() => {
                                     setDetailsDialogOpen(false);
                                     setViewingCashMemoRef(
@@ -7224,195 +6895,119 @@ const SavedDcs = () => {
                                     setCashMemoModalOpen(true);
                                   }}
                                 >
-                                  <Receipt className="h-3 w-3 mr-1" /> View Memo
+                                  <Receipt className="h-3.5 w-3.5 mr-1" />{" "}
+                                  View Cash Memo
                                 </Button>
                               )}
                               <Button
                                 size="sm"
-                                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-none"
+                                className="h-7 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-none"
                                 onClick={() => openPaymentDialog(selectedDc)}
                               >
-                                <Wallet className="h-3.5 w-3.5 mr-1" /> Collect
-                                / Mark as Paid
+                                <Wallet className="h-3.5 w-3.5 mr-1" /> Mark as Paid / Record Payment
                               </Button>
                             </div>
                           </div>
                         )}
 
-                        {/* State: GoGST Tax Invoice Linked */}
-                        {selectedDc.isTaxInvoice ||
-                        (!selectedDc.cashAmount &&
-                          selectedDc.invoiceRef &&
-                          !selectedDc.invoiceRef.startsWith("SRR-")) ? (
-                          <div className="rounded-xl border border-purple-300/90 bg-purple-50/70 dark:bg-purple-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-none">
+                        {/* State: Completed / Paid */}
+                        {(selectedDc.status === "completed" ||
+                          (selectedDc.status !== "cash" &&
+                            selectedDc.invoiceRef)) && (
+                          <div className="rounded-xl border border-emerald-300/90 bg-emerald-50/70 dark:bg-emerald-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-none">
                             <div className="flex items-center gap-2.5">
-                              <div className="h-9 w-9 rounded-xl bg-purple-700 text-white flex items-center justify-center shrink-0 shadow-none">
-                                <FileText className="h-5 w-5" />
+                              <div className="h-9 w-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-none">
+                                <CheckCircle2 className="h-5 w-5" />
                               </div>
                               <div>
-                                <div className="text-xs font-bold text-purple-950 dark:text-purple-200 flex items-center gap-2 flex-wrap">
+                                <div className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-2 flex-wrap">
                                   <span>
-                                    GoGST Tax Invoice Linked:{" "}
-                                    {selectedDc.invoiceRef}
+                                    {isRealBankTransfer(selectedDc, linkedBankTx)
+                                      ? "⚡ Bank Payment Linked & Settled"
+                                      : "💵 Physical Cash Collected (Unlinked to Bank Deposit)"}
                                   </span>
-                                  <Badge className="bg-purple-700 text-white text-[10px] font-bold py-0.5 px-2">
-                                    INVOICE LINKED
+                                  <Badge className="bg-emerald-700 text-white text-[10px] font-bold py-0.5 px-2">
+                                    {isRealBankTransfer(selectedDc, linkedBankTx)
+                                      ? "BANK SETTLED"
+                                      : "CASH COLLECTED"}
                                   </Badge>
                                 </div>
-                                <p className="text-[11px] text-purple-800 dark:text-purple-300 mt-0.5 leading-relaxed">
-                                  Invoice linked is final step in OrthoDC.
-                                  Payment details and collection are tracked
-                                  directly in GoGSTBill.
+                                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                                  {selectedDc.invoiceRef
+                                    ? `Cash Memo: ${selectedDc.invoiceRef} • `
+                                    : ""}
+                                  {isRealBankTransfer(selectedDc, linkedBankTx)
+                                    ? `Reconciled with Bank Deposit (UTR: ${selectedDc.utrNo || linkedBankTx?.referenceNumber || "Verified"})`
+                                    : `Cash payment of ₹${((selectedDc as any).cashAmount || 0).toLocaleString("en-IN")} collected${selectedDc.collectedBy ? ` by ${selectedDc.collectedBy}` : ""}. Optional bank deposit link pending.`}
                                 </p>
                               </div>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs border-purple-300 text-purple-800 bg-white hover:bg-purple-50 font-semibold"
-                                onClick={() => {
-                                  setDetailsDialogOpen(false);
-                                  openActionDialog("invoice", selectedDc);
-                                }}
-                              >
-                                <FileText className="h-3 w-3 mr-1 text-slate-600" />{" "}
-                                View / Edit Link
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="h-7 text-xs bg-purple-700 hover:bg-purple-800 text-white font-bold shadow-none gap-1"
-                                onClick={() =>
-                                  window.open(
-                                    selectedDc.invoiceUrl ||
-                                      "https://gogstbill.com",
-                                    "_blank",
-                                  )
-                                }
-                              >
-                                <ExternalLink className="h-3 w-3" /> Open
-                                GoGSTBill
-                              </Button>
+                              {selectedIsCashMemo && (
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-none"
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    setViewingCashMemoRef(
+                                      selectedDc.invoiceRef!,
+                                    );
+                                    setCashMemoModalOpen(true);
+                                  }}
+                                >
+                                  <Receipt className="h-3.5 w-3.5 mr-1" />{" "}
+                                  View Cash Memo
+                                </Button>
+                              )}
+                              {!isRealBankTransfer(selectedDc, linkedBankTx) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-emerald-400 text-emerald-800 bg-white hover:bg-emerald-50 font-semibold shadow-none"
+                                  onClick={() => {
+                                    setDetailsDialogOpen(false);
+                                    openPaymentDialog(selectedDc);
+                                  }}
+                                >
+                                  <Landmark className="h-3 w-3 mr-1 text-emerald-600" />{" "}
+                                  Link Bank Deposit
+                                </Button>
+                              )}
                             </div>
                           </div>
-                        ) : (
-                          (selectedDc.status === "completed" ||
-                            (selectedDc.status !== "cash" &&
-                              selectedDc.invoiceRef)) && (
-                            <div className="rounded-xl border border-emerald-300/90 bg-emerald-50/70 dark:bg-emerald-950/40 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-none">
-                              <div className="flex items-center gap-2.5">
-                                <div className="h-9 w-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-none">
-                                  <CheckCircle2 className="h-5 w-5" />
-                                </div>
-                                <div>
-                                  <div className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-2 flex-wrap">
-                                    <span>
-                                      {selectedDc.paymentMethod ===
-                                        "bank_transfer" ||
-                                      linkedBankTx ||
-                                      selectedDc.utrNo
-                                        ? "⚡ Bank Payment Linked & Settled"
-                                        : "💵 Physical Cash Collected (Unlinked to Bank Deposit)"}
-                                    </span>
-                                    <Badge className="bg-emerald-700 text-white text-[10px] font-bold py-0.5 px-2">
-                                      {selectedDc.paymentMethod ===
-                                        "bank_transfer" ||
-                                      linkedBankTx ||
-                                      selectedDc.utrNo
-                                        ? "BANK SETTLED"
-                                        : "CASH COLLECTED"}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                                    {selectedDc.invoiceRef
-                                      ? `Cash Memo: ${selectedDc.invoiceRef} • `
-                                      : ""}
-                                    {selectedDc.paymentMethod ===
-                                      "bank_transfer" ||
-                                    linkedBankTx ||
-                                    selectedDc.utrNo
-                                      ? `Reconciled with Bank Deposit (UTR: ${selectedDc.utrNo || linkedBankTx?.referenceNumber || "Verified"})`
-                                      : `Cash payment of ₹${((selectedDc as any).cashAmount || 0).toLocaleString("en-IN")} collected${selectedDc.collectedBy ? ` by ${selectedDc.collectedBy}` : ""}. Optional bank deposit link pending.`}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                                {selectedIsCashMemo && (
-                                  <Button
-                                    size="sm"
-                                    className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-none"
-                                    onClick={() => {
-                                      setDetailsDialogOpen(false);
-                                      setViewingCashMemoRef(
-                                        selectedDc.invoiceRef!,
-                                      );
-                                      setCashMemoModalOpen(true);
-                                    }}
-                                  >
-                                    <Receipt className="h-3.5 w-3.5 mr-1" />{" "}
-                                    View Cash Memo
-                                  </Button>
-                                )}
-                                {!(
-                                  selectedDc.paymentMethod ===
-                                    "bank_transfer" ||
-                                  linkedBankTx ||
-                                  selectedDc.utrNo
-                                ) && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 text-xs border-emerald-400 text-emerald-800 bg-white hover:bg-emerald-50 font-semibold shadow-none"
-                                    onClick={() => {
-                                      setDetailsDialogOpen(false);
-                                      openPaymentDialog(selectedDc);
-                                    }}
-                                  >
-                                    <Landmark className="h-3 w-3 mr-1 text-emerald-600" />{" "}
-                                    Link Bank Deposit
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          )
                         )}
 
                         {/* State: Cancelled */}
-                        {selectedDc.status === "cancelled" && (
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
-                              <div>
-                                <span className="text-xs text-slate-700">
-                                  This case was cancelled.
-                                </span>
-                                {selectedDc.returnedBy && (
-                                  <div className="text-[11px] text-slate-600 font-medium">
-                                    Items returned by:{" "}
-                                    <span className="text-slate-900 font-bold">
-                                      {selectedDc.returnedBy}
+                          {selectedDc.status === "cancelled" && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                                <div>
+                                  <span className="text-xs text-slate-700">
+                                    This case was cancelled.
+                                  </span>
+                                  {selectedDc.returnedBy && (
+                                    <span className="text-[10px] text-slate-500 block">
+                                      Cancelled by: {selectedDc.returnedBy}
                                     </span>
-                                  </div>
-                                )}
+                                  )}
+                                </div>
                               </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs border-slate-300 text-slate-700 hover:bg-white"
+                                onClick={() => restoreFromCancelled(selectedDc)}
+                              >
+                                <Undo2 className="h-3 w-3 mr-1" /> Restore DC
+                              </Button>
                             </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs border-slate-300 text-slate-700 hover:bg-white"
-                              onClick={() => restoreFromCancelled(selectedDc)}
-                            >
-                              <Undo2 className="h-3 w-3 mr-1" /> Restore DC
-                            </Button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* Optional Cash Memo / Tax Invoice Card in Overview */}
+                      {/* Optional Cash Memo / Tax Invoice Card in Overview */}
                   {selectedDc.invoiceRef && (
                     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 mt-3">
                       <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center justify-between">
@@ -7612,8 +7207,7 @@ const SavedDcs = () => {
                                 className="mt-2 h-8 w-full text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 rounded-xl shadow-none"
                                 onClick={() => openPaymentDialog(selectedDc)}
                               >
-                                <Wallet className="h-3.5 w-3.5" /> Mark as Paid
-                                (Collect Payment)
+                                <Wallet className="h-3.5 w-3.5" /> Mark as Paid <span>(Collect Payment)</span>
                               </Button>
                             )}
                           </>
@@ -7621,6 +7215,8 @@ const SavedDcs = () => {
                       </div>
                     </div>
                   )}
+                  </div>
+                  </div>
                 </TabsContent>
 
                 {/* HISTORY TAB: DETAILED ACTIVITY & AUDIT TIMELINE */}
@@ -8002,8 +7598,8 @@ const SavedDcs = () => {
                         </div>
                       </div>
                     )}
-                  </div>
-                </TabsContent>
+                    </div>
+                  </TabsContent>
               </Tabs>
             </div>
           )}
@@ -10393,23 +9989,23 @@ const SavedDcs = () => {
 
           <div className="p-6 text-center space-y-4">
             {/* Animated Icon Tile */}
-            <div className="mx-auto h-14 w-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0">
+            <div className="mx-auto h-16 w-16 rounded-2xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 shadow-inner">
               {queueTransitionState.progress === 100 ? (
                 <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-bounce" />
+              ) : queueTransitionState.iconType === "cash" ? (
+                <Wallet className="w-8 h-8 text-amber-600 dark:text-amber-400 animate-pulse" />
+              ) : queueTransitionState.iconType === "save" || queueTransitionState.iconType === "move" ? (
+                <Loader2 className="w-8 h-8 text-teal-600 dark:text-teal-400 animate-spin" />
               ) : queueTransitionState.iconType === "delete" ? (
                 <Trash2 className="w-7 h-7 text-rose-600 dark:text-rose-400 animate-pulse" />
-              ) : queueTransitionState.iconType === "save" ? (
-                <Check className="w-7 h-7 text-emerald-600 dark:text-emerald-400 animate-pulse" />
               ) : queueTransitionState.iconType === "return" ? (
                 <RotateCcw className="w-7 h-7 text-teal-600 dark:text-teal-400 animate-spin" />
               ) : queueTransitionState.iconType === "invoice" ? (
                 <FileText className="w-7 h-7 text-purple-600 dark:text-purple-400 animate-pulse" />
-              ) : queueTransitionState.iconType === "cash" ? (
-                <Wallet className="w-7 h-7 text-amber-600 dark:text-amber-400 animate-pulse" />
               ) : queueTransitionState.iconType === "cancel" ? (
                 <AlertCircle className="w-7 h-7 text-orange-600 dark:text-orange-400 animate-pulse" />
               ) : (
-                <RefreshCw className="w-7 h-7 text-teal-600 dark:text-teal-400 animate-spin" />
+                <Loader2 className="w-8 h-8 text-teal-600 dark:text-teal-400 animate-spin" />
               )}
             </div>
 

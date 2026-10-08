@@ -33,7 +33,7 @@ export default function BankAccounts() {
 
   return (
     <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col w-full">
-      <main className="flex-grow flex flex-col px-1.5 sm:px-3 lg:px-4 py-2 sm:py-3 overflow-x-hidden w-full">
+      <main className="flex-grow flex flex-col w-full px-1.5 sm:px-3 lg:px-4 py-2 sm:py-2.5 overflow-x-hidden">
         <TopToolbar
           theme={theme}
           toggleTheme={toggleTheme}
@@ -50,7 +50,7 @@ export default function BankAccounts() {
         />
 
         {/* Full-width Bank Accounts View Container */}
-        <div className="mt-2 flex-1 w-full min-h-[calc(100vh-100px)]">
+        <div className="mt-0 flex-1 w-full min-h-[calc(100vh-95px)]">
           <BankAccountsView />
         </div>
       </main>

@@ -271,10 +271,10 @@ export default function ImageDatabase() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-hero overflow-x-hidden">
-      <div className="min-h-screen">
+    <div className="min-h-screen bg-gradient-hero overflow-x-hidden flex flex-col w-full">
+      <div className="min-h-screen flex flex-col w-full">
         {/* Main Content */}
-        <main className="flex-grow flex flex-col w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 overflow-x-hidden">
+        <main className="flex-grow flex flex-col w-full px-1.5 sm:px-3 lg:px-4 py-2 sm:py-2.5 overflow-x-hidden">
           {/* Top toolbar */}
           <TopToolbar
             theme={theme}

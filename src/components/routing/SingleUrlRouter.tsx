@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Router,
   createPath,
@@ -179,3 +179,4 @@ export const SingleUrlRouter: React.FC<SingleUrlRouterProps> = ({ children, futu
     </Router>
   );
 };
+

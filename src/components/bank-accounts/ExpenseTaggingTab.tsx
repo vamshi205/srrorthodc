@@ -13,6 +13,7 @@ import {
   runAutoExpenseTagRules,
   predictExpenseTag,
   ExpenseTagSuggestion,
+  parseTransactionDate,
 } from "@/lib/autoExpenseTagEngine";
 import {
   Sparkles,
@@ -98,15 +99,14 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     return acc1538?.id || accounts.find((a) => a.isDefault)?.id || accounts[0]?.id || "";
   }, [accounts]);
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(defaultAccId);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(defaultAccId || "");
   const [dateRangeFilter, setDateRangeFilter] = useState<"today" | "week" | "month" | "all">("today");
 
-  // Always force 1538 account and 'today' filter whenever tab is loaded/mounted
+  // Force default 1538 account selection whenever defaultAccId loads or updates
   React.useEffect(() => {
     if (defaultAccId) {
       setSelectedAccountId(defaultAccId);
     }
-    setDateRangeFilter("today");
   }, [defaultAccId]);
 
   const handleAccountChange = (newAccId: string) => {
@@ -197,12 +197,31 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     return () => window.removeEventListener("srrortho:personnel_updated", handleUpdate);
   }, []);
 
-  // Filter for Debit Transactions (Restricted to selected Bank Account, defaulting to 1538)
+  // Filter for Debit Transactions (Defaulted to HDFC 1538 Account or All Accounts)
   const debitTransactions = useMemo(() => {
-    return transactions.filter(
-      (t) => t.type === "debit" && (!selectedAccountId || t.accountId === selectedAccountId)
-    );
-  }, [transactions, selectedAccountId]);
+    const selectedObj = accounts.find((a) => a.id === selectedAccountId);
+    const isTarget1538 =
+      selectedAccountId.includes("1538") ||
+      selectedObj?.accountNumber?.includes("1538") ||
+      selectedObj?.accountName?.includes("1538");
+
+    return transactions.filter((t) => {
+      const isDebit =
+        t.type === "debit" ||
+        (t.type as string)?.toLowerCase() === "debit" ||
+        (t.amount > 0 && Boolean(t.expenseCategory));
+
+      const isTx1538 = t.accountSuffix === "1538" || (t.accountId && t.accountId.includes("1538"));
+
+      const matchesAccount =
+        !selectedAccountId ||
+        selectedAccountId === "all" ||
+        t.accountId === selectedAccountId ||
+        (isTarget1538 && isTx1538);
+
+      return isDebit && matchesAccount;
+    });
+  }, [transactions, selectedAccountId, accounts]);
 
   // Auto-compute AI Suggestions across all debit transactions (incorporating historical records)
   const liveSuggestionsMap = useMemo(() => {
@@ -394,21 +413,25 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     return debitTransactions.filter((tx) => {
       // Date Range Filter
       if (dateRangeFilter !== "all") {
-        const [y, m, d] = (tx.date || "").split("-").map(Number);
-        const txDate = y && m && d ? new Date(y, m - 1, d) : new Date(tx.date);
+        const txDate = parseTransactionDate(tx.date);
+        if (isNaN(txDate.getTime())) return false;
+
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
+        const compareDate = new Date(txDate);
+        compareDate.setHours(0, 0, 0, 0);
+
         if (dateRangeFilter === "today") {
-          if (txDate.toDateString() !== today.toDateString()) return false;
+          if (compareDate.getTime() !== today.getTime()) return false;
         } else if (dateRangeFilter === "week") {
           const weekAgo = new Date(today);
           weekAgo.setDate(today.getDate() - 7);
-          if (txDate < weekAgo) return false;
+          if (compareDate < weekAgo) return false;
         } else if (dateRangeFilter === "month") {
           const monthAgo = new Date(today);
           monthAgo.setDate(today.getDate() - 30);
-          if (txDate < monthAgo) return false;
+          if (compareDate < monthAgo) return false;
         }
       }
 
@@ -488,114 +511,36 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
 
   return (
     <div className="space-y-4 font-sans text-foreground">
-      {/* 1. Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-300 flex items-center justify-center shrink-0">
-            <BadgeIndianRupee className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Tagged Expenses
-            </div>
-            <div className="text-lg font-mono font-extrabold text-teal-700 dark:text-teal-400">
-              ₹{stats.totalTaggedExpense.toLocaleString("en-IN")}
-            </div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">
-              {stats.taggedCount} debits tagged to delivery personnel
-            </div>
-          </div>
-        </Card>
-
-        <Card className="border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 flex items-center justify-center shrink-0">
-            <Tag className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Untagged Debits
-            </div>
-            <div className="text-lg font-mono font-extrabold text-amber-600 dark:text-amber-400">
-              ₹{stats.totalUntaggedAmount.toLocaleString("en-IN")}
-            </div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">
-              {stats.untaggedCount} pending debit transactions
-            </div>
-          </div>
-        </Card>
-
-        <Card className="border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 flex items-center justify-center shrink-0">
-            <UserCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Top Delivery Executive
-            </div>
-            <div className="text-sm font-bold text-foreground truncate max-w-[140px]">
-              {stats.topPerson}
-            </div>
-            <div className="text-[10px] text-emerald-600 font-mono font-semibold mt-0.5">
-              ₹{stats.topPersonAmount.toLocaleString("en-IN")} total
-            </div>
-          </div>
-        </Card>
-
-        <Card className="border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-300 flex items-center justify-center shrink-0">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              AI Match Engine
-            </div>
-            <div className="text-sm font-bold text-foreground">
-              {aiSuggestions.size} Auto Suggestions
-            </div>
-            <div className="text-[10px] text-purple-600 font-semibold mt-0.5">
-              Pattern matching active
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* 2. Action Bar & Filter Toolbar */}
-      <div className="flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
-        {/* Search Bar & Account Selector */}
-        <div className="flex flex-wrap items-center gap-2 flex-1">
-          <div className="relative flex-1 min-w-[220px] max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground pointer-events-none" />
-            <Input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search payee, fuel, narration, UTR #..."
-              className="pl-9 text-xs h-9 rounded-md w-full"
-            />
-          </div>
-
-          <Select value={selectedAccountId} onValueChange={handleAccountChange}>
-            <SelectTrigger className="h-9 text-xs font-semibold w-auto min-w-[160px] rounded-md">
-              <Building2 className="w-3.5 h-3.5 mr-1 text-teal-600" />
-              <SelectValue placeholder="Select Account" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((acc) => (
-                <SelectItem key={acc.id} value={acc.id} className="text-xs font-medium">
-                  {acc.accountName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* Streamlined Toolbar & Action Bar */}
+      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-2.5 bg-card p-2.5 rounded-xl border border-border shadow-xs">
+        {/* Left Side: Search Input */}
+        <div className="relative flex-1 min-w-[200px] max-w-md">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground pointer-events-none" />
+          <Input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search payee, fuel, narration, UTR #..."
+            className="pl-8 text-xs h-8 rounded-md w-full"
+          />
         </div>
 
-        {/* Date Filter Pills & Action Buttons */}
+        {/* Right Side: Date Range Selector & Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 justify-end">
-          {/* Date Range Selector Pills */}
-          <div className="flex items-center gap-0.5 bg-muted/60 p-1 rounded-lg border border-border text-xs">
+          <div className="flex items-center gap-0.5 bg-muted/60 p-0.5 rounded-md border border-border text-xs">
+            <button
+              onClick={() => setDateRangeFilter("all")}
+              className={`px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
+                dateRangeFilter === "all"
+                  ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              All Time
+            </button>
             <button
               onClick={() => setDateRangeFilter("today")}
-              className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
+              className={`px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
                 dateRangeFilter === "today"
                   ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -605,7 +550,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
             </button>
             <button
               onClick={() => setDateRangeFilter("week")}
-              className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
+              className={`px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
                 dateRangeFilter === "week"
                   ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -615,7 +560,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
             </button>
             <button
               onClick={() => setDateRangeFilter("month")}
-              className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
+              className={`px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
                 dateRangeFilter === "month"
                   ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -623,71 +568,46 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
             >
               This Month
             </button>
-            <button
-              onClick={() => setDateRangeFilter("all")}
-              className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors ${
-                dateRangeFilter === "all"
-                  ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              All Time
-            </button>
           </div>
 
-          {/* Action Buttons */}
           <Button
             size="sm"
             onClick={handleRunAiEngine}
-            className="h-9 px-3 text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-md shadow-xs gap-1.5"
+            className="h-8 px-2.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-md gap-1"
           >
-            <Sparkles className="w-3.5 h-3.5 text-purple-200 animate-pulse" />
-            <span>Run AI Auto-Tag</span>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>AI Auto-Tag</span>
           </Button>
-
-          {aiSuggestions.size > 0 && (
-            <Button
-              size="sm"
-              onClick={handleBatchApplyAi}
-              disabled={isSaving}
-              className="h-9 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs gap-1.5"
-            >
-              {isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-              <span>Apply {aiSuggestions.size} AI Tags</span>
-            </Button>
-          )}
 
           <Button
             size="sm"
             onClick={() => setIsManualModalOpen(true)}
-            className="h-9 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs gap-1"
+            className="h-8 px-2.5 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md gap-1"
           >
-            <Plus className="w-3.5 h-3.5" /> Record Spot Expense
+            <Plus className="w-3.5 h-3.5" /> Spot Expense
           </Button>
 
           <Button
             size="sm"
             variant="outline"
             onClick={handleExportExcel}
-            className="h-9 px-3 text-xs font-bold border-slate-300 text-slate-700 dark:text-slate-200 hover:bg-slate-100 rounded-md gap-1.5"
-            title="Download active expenses as Excel CSV report"
+            className="h-8 px-2.5 text-xs font-bold border-border rounded-md gap-1"
+            title="Download CSV report"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Export Excel</span>
+            <Download className="w-3.5 h-3.5 text-emerald-600" /> Export
           </Button>
         </div>
       </div>
 
-      {/* 3. Delivery Personnel & Category Filter Pills */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-        {/* Executive Filter Pills */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs text-muted-foreground font-semibold mr-1">Personnel:</span>
+      {/* 3. Executive Filter Pills & Dropdowns */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className="text-[11px] text-muted-foreground font-semibold mr-1">Personnel:</span>
           <Button
             size="sm"
             variant={selectedPersonnel === "all" ? "default" : "outline"}
             onClick={() => setSelectedPersonnel("all")}
-            className={`h-7 px-2.5 text-xs font-semibold rounded-md ${
+            className={`h-6 px-2 text-[11px] font-semibold rounded-md ${
               selectedPersonnel === "all" ? "bg-teal-700 text-white hover:bg-teal-800" : ""
             }`}
           >
@@ -697,7 +617,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
             size="sm"
             variant={selectedPersonnel === "untagged" ? "default" : "outline"}
             onClick={() => setSelectedPersonnel("untagged")}
-            className={`h-7 px-2.5 text-xs font-semibold rounded-md ${
+            className={`h-6 px-2 text-[11px] font-semibold rounded-md ${
               selectedPersonnel === "untagged"
                 ? "bg-amber-600 text-white hover:bg-amber-700"
                 : "text-amber-800 hover:bg-amber-50"
@@ -711,7 +631,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
               size="sm"
               variant={selectedPersonnel === pName ? "default" : "outline"}
               onClick={() => setSelectedPersonnel(pName)}
-              className={`h-7 px-2.5 text-xs font-semibold rounded-md ${
+              className={`h-6 px-2 text-[11px] font-semibold rounded-md ${
                 selectedPersonnel === pName ? "bg-teal-700 text-white hover:bg-teal-800" : ""
               }`}
             >
@@ -720,19 +640,40 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
           ))}
         </div>
 
-        {/* Category Filter Dropdown */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Bank Account Selection Dropdown */}
+          <Select value={selectedAccountId} onValueChange={handleAccountChange}>
+            <SelectTrigger className="h-6 text-[11px] w-auto min-w-[140px] rounded-md font-semibold border-teal-300 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200">
+              <Building2 className="w-3 h-3 mr-1 text-teal-600 shrink-0" />
+              <SelectValue placeholder="All Accounts" />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((acc) => {
+                const is1538Acc = acc.accountNumber?.includes("1538") || acc.accountName?.includes("1538") || acc.id.includes("1538");
+                return (
+                  <SelectItem key={acc.id} value={acc.id} className="text-[11px] font-medium">
+                    {is1538Acc ? `⭐ ${acc.accountName}` : acc.accountName}
+                  </SelectItem>
+                );
+              })}
+              <SelectItem value="all" className="text-[11px] font-bold text-teal-800 dark:text-teal-300 border-t border-border mt-1 pt-1">
+                🏦 All Bank Accounts
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Expense Category Dropdown */}
           <Select
             value={selectedCategoryFilter}
             onValueChange={(v) => setSelectedCategoryFilter(v)}
           >
-            <SelectTrigger className="h-7 text-xs w-auto min-w-[150px] rounded-md font-semibold">
+            <SelectTrigger className="h-6 text-[11px] w-auto min-w-[140px] rounded-md font-semibold">
               <SelectValue placeholder="All Expense Categories" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Expense Categories</SelectItem>
+              <SelectItem value="all" className="text-[11px]">All Expense Categories</SelectItem>
               {EXPENSE_CATEGORIES.map((cat) => (
-                <SelectItem key={cat} value={cat} className="text-xs">
+                <SelectItem key={cat} value={cat} className="text-[11px]">
                   {cat}
                 </SelectItem>
               ))}
@@ -776,10 +717,10 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                   return (
                     <tr
                       key={tx.id}
-                      className={`transition-colors hover:bg-muted/30 ${
+                      className={`transition-colors ${
                         isUntagged
-                          ? "bg-[radial-gradient(#f59e0b_0.75px,transparent_0.75px)] [background-size:8px_8px] bg-amber-50/40 dark:bg-amber-950/20"
-                          : "hover:bg-muted/20"
+                          ? "bg-amber-500/5 dark:bg-amber-500/10 border-l-2 border-l-amber-500 hover:bg-amber-500/10 dark:hover:bg-amber-500/15"
+                          : "hover:bg-muted/30"
                       }`}
                     >
                       {/* Date */}

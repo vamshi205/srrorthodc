@@ -196,8 +196,42 @@ export const saveSavedDc = async (
  */
 export const deleteSavedDc = async (id: string): Promise<void> => {
   const currentDcs = getLocalSavedDcs();
+  const dcToDelete = currentDcs.find((d) => d.id === id);
   const filtered = currentDcs.filter((d) => d.id !== id);
   saveLocalDcs(filtered);
+
+  if (dcToDelete) {
+    try {
+      const {
+        fetchBankTransactionsFromFirestore,
+        unlinkBankTransactionFromCashInvoice,
+        isBankTxMatchingDc,
+        cleanOrphanedBankTransactionLinks,
+      } = require('@/services/bankAccountFirebaseService');
+      const { deleteCashInvoiceFromFirestore } = require('@/services/cashInvoiceFirebaseService');
+
+      // 1. Delete associated cash invoice if it exists
+      if (dcToDelete.invoiceRef) {
+        deleteCashInvoiceFromFirestore(dcToDelete.invoiceRef).catch(() => {});
+      }
+      if (dcToDelete.dcNo) {
+        deleteCashInvoiceFromFirestore(dcToDelete.dcNo).catch(() => {});
+      }
+
+      // 2. Unlink all matching bank transactions using comprehensive matcher
+      const txs = await fetchBankTransactionsFromFirestore().catch(() => []);
+      for (const tx of txs) {
+        if (isBankTxMatchingDc(tx, dcToDelete)) {
+          await unlinkBankTransactionFromCashInvoice(tx.id, false).catch(() => {});
+        }
+      }
+
+      // 3. Clean any orphaned bank transaction links
+      cleanOrphanedBankTransactionLinks().catch(() => {});
+    } catch (e) {
+      console.warn('Auto-unlink bank transactions on DC delete warning:', e);
+    }
+  }
 
   // Sync with Firestore asynchronously in background
   deleteDcFromFirestore(id).catch((error) => {

@@ -717,7 +717,7 @@ const EmailerView = ({
   }
 
   return (
-    <div className="h-full w-full overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto">
+    <div className="h-full w-full overflow-y-auto p-3 md:p-5">
       {innerLayout}
     </div>
   );

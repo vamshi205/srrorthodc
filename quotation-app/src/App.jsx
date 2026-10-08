@@ -1740,20 +1740,23 @@ Website: srrorthoplus.com`;
     }
   };
 
-  const NavItem = ({ id, label, icon }) => (
-    <button
-      type="button"
-      onClick={() => setView(id)}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] md:text-[12.5px] font-bold transition-all shrink-0 whitespace-nowrap ${
-        view === id 
-          ? 'bg-teal-600 text-white shadow-2xs' 
-          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-      }`}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
+  const NavItem = ({ id, label, icon }) => {
+    const isActive = view === id;
+    return (
+      <button
+        type="button"
+        onClick={() => setView(id)}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 whitespace-nowrap ${
+          isActive 
+            ? 'bg-teal-600 text-white shadow-2xs font-extrabold ring-1 ring-teal-500/50' 
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 font-semibold'
+        }`}
+      >
+        {icon}
+        <span>{label}</span>
+      </button>
+    );
+  };
 
   const handleLogout = async () => {
     try {
@@ -1924,24 +1927,31 @@ Website: srrorthoplus.com`;
       {/* ─────────────────────────────────────────
           WORKSPACE SUB-HEADER (CASH INVOICE MATCHING TOOLBAR)
           ───────────────────────────────────────── */}
+      {/* ─────────────────────────────────────────
+          WORKSPACE SUB-HEADER (CASH INVOICE MATCHING TOOLBAR)
+          ───────────────────────────────────────── */}
       {!isAdminOnlyMode && (
-        <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 px-3 md:px-6 py-2 flex items-center justify-between gap-2 z-40 shrink-0 shadow-2xs">
-          {/* Left: Nav Tabs */}
+        <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-3 md:px-5 py-2 flex items-center justify-between gap-2 z-40 shrink-0 shadow-2xs">
+          {/* Left: Nav Tabs matching Shadcn UI pill list */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 min-w-0 flex-1">
-            <NavItem id="library" label="Library" icon={<LayoutDashboard size={14} />} />
-            <NavItem id="history" label="History" icon={<Database size={14} />} />
-            <NavItem id="drive" label="Drive" icon={<HardDrive size={14} />} />
-            <NavItem id="emailer" label="Emailer" icon={<Mail size={14} />} />
-            {isManagementActive && (
-              <NavItem id="emailHistory" label="Email History" icon={<RefreshCw size={14} />} />
-            )}
-            <NavItem id="pricelists" label="Price List" icon={<FileText size={14} />} />
+            <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200/80 shadow-2xs">
+              <NavItem id="library" label="Library" icon={<LayoutDashboard size={14} />} />
+              <NavItem id="history" label="History" icon={<Database size={14} />} />
+              <NavItem id="pricelists" label="Price List" icon={<FileText size={14} />} />
+              <NavItem id="drive" label="Drive" icon={<HardDrive size={14} />} />
+              <NavItem id="emailer" label="Emailer" icon={<Mail size={14} />} />
+              {isManagementActive && (
+                <NavItem id="emailHistory" label="Email History" icon={<RefreshCw size={14} />} />
+              )}
+              <NavItem id="settings" label="Settings" icon={<Settings size={14} />} />
+            </div>
           </div>
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Icon-Only Admin Status Indicator Button */}
+            {/* Admin Status Indicator Button */}
             <button 
+              type="button"
               onClick={() => {
                 if (isManagementActive) {
                   setIsManagementActive(false);
@@ -1957,30 +1967,32 @@ Website: srrorthoplus.com`;
                   });
                 }
               }}
-              className={`p-2 rounded-xl border transition-all shadow-2xs flex items-center justify-center ${
+              className={`p-2 rounded-lg border transition-all shadow-2xs flex items-center justify-center cursor-pointer ${
                 isManagementActive 
                   ? 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100' 
-                  : 'bg-red-50 border-red-300 hover:bg-red-100'
+                  : 'bg-rose-50 border-rose-200 hover:bg-rose-100'
               }`}
               title={isManagementActive ? "Admin Mode: Active (Click to Disable)" : "Admin Mode: Disabled (Click to Enable)"}
             >
               {/* Green (Active) / Red (Off) Status Dot */}
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                isManagementActive ? 'bg-emerald-500 animate-pulse shadow-sm ring-2 ring-emerald-300' : 'bg-red-500 ring-2 ring-red-300'
+                isManagementActive ? 'bg-emerald-500 animate-pulse ring-2 ring-emerald-300' : 'bg-rose-500 ring-2 ring-rose-300'
               }`} />
             </button>
 
             <button
+              type="button"
               onClick={() => refreshData()}
-              className="btn-outline !py-1.5 !px-3 text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:bg-slate-100"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200/80 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer select-none"
               title="Refresh Database"
             >
-              <RefreshCw size={13} className={isDataLoading ? "animate-spin text-teal-600" : "text-slate-500"} />
+              <RefreshCw size={13} className={isDataLoading ? "animate-spin text-teal-600" : "text-slate-400"} />
               <span className="hidden sm:inline">Sync</span>
             </button>
 
             {isManagementActive && (
               <button
+                type="button"
                 onClick={() => {
                   setEditingTemplate({
                     id: Date.now().toString(),
@@ -1999,7 +2011,7 @@ Website: srrorthoplus.com`;
                   });
                   setView('builder');
                 }}
-                className="btn-primary !py-1.5 !px-3.5 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer select-none"
               >
                 <Plus size={14} /> New Template
               </button>
@@ -2007,6 +2019,7 @@ Website: srrorthoplus.com`;
 
             {/* Mobile Menu Button */}
             <button 
+              type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="lg:hidden p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg"
             >
@@ -2024,22 +2037,25 @@ Website: srrorthoplus.com`;
             <button onClick={() => setIsMobileMenuOpen(false)}><Plus className="rotate-45" size={32} /></button>
           </div>
           <div className="flex flex-col gap-2">
-            {['library', 'history', 'drive', 'emailer', isManagementActive ? 'emailHistory' : null, 'pricelists', 'settings']
-              .filter(Boolean)
-              .map(id => (
+            {[
+              { id: 'library', label: 'Library' },
+              { id: 'history', label: 'History' },
+              { id: 'pricelists', label: 'Price List' },
+              { id: 'drive', label: 'Drive' },
+              { id: 'emailer', label: 'Emailer' },
+              ...(isManagementActive ? [{ id: 'emailHistory', label: 'Email History' }] : []),
+              { id: 'settings', label: 'Settings' }
+            ].map(item => (
               <button
-                key={id}
-                onClick={() => { setView(id); setIsMobileMenuOpen(false); }}
-                className={`text-left p-4 rounded-2xl text-lg font-semibold uppercase tracking-wide transition-all ${
-                  view === id ? 'bg-[var(--apple-gray-1)] text-[var(--emerald)]' : 'text-[var(--apple-gray-5)]'
+                key={item.id}
+                onClick={() => { setView(item.id); setIsMobileMenuOpen(false); }}
+                className={`text-left p-4 rounded-xl text-base font-semibold uppercase tracking-wide transition-all ${
+                  view === item.id ? 'bg-slate-100 text-teal-700 font-extrabold' : 'text-slate-600'
                 }`}
               >
-                {id}
+                {item.label}
               </button>
             ))}
-            <button onClick={handleLogout} className="text-left p-4 rounded-2xl text-lg font-semibold text-red-500 uppercase tracking-wide mt-4 border-t border-[var(--apple-gray-2)] pt-8">
-              Sign Out
-            </button>
           </div>
         </div>
       )}
@@ -2051,33 +2067,34 @@ Website: srrorthoplus.com`;
 
         {/* VIEW: LIBRARY */}
         {view === 'library' && (
-          <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
-            <div className="max-w-7xl mx-auto space-y-4">
+          <div className="h-full overflow-y-auto px-2 sm:px-4 py-3 md:py-4">
+            <div className="w-full space-y-4">
               
               {/* Sleek Workspace Header & Quick Metrics Banner */}
-              <header className="bg-white/80 backdrop-blur-sm border border-slate-200/90 rounded-2xl p-4 md:p-5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <h1 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">Quotations & Templates</h1>
-                    <span className="text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200 px-2.5 py-0.5 rounded-full">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold tracking-tight text-slate-900">Quotations & Templates</h1>
+                    <span className="text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200/70 px-2.5 py-0.5 rounded-full font-mono">
                       {templates.length} {templates.length === 1 ? 'Template' : 'Templates'}
                     </span>
                   </div>
-                  <p className="text-[13px] text-slate-500 font-medium">Select a template to generate a quotation, or manage custom templates.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Select a template to generate a quotation, or manage custom templates.</p>
                 </div>
 
                 {/* Quick Metrics & Actions */}
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-bold text-slate-700 shrink-0">
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-lg text-xs font-semibold text-slate-700 shrink-0">
                     <FileText size={14} className="text-teal-600" />
                     <span>{quotationHistory.length} Generated</span>
                   </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-bold text-slate-700 shrink-0">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-lg text-xs font-semibold text-slate-700 shrink-0">
                     <Mail size={14} className="text-emerald-600" />
                     <span>{emailHistory.length} Emails</span>
                   </div>
                   {isManagementActive && (
                     <button
+                      type="button"
                       onClick={() => {
                         setEditingTemplate({
                           id: Date.now().toString(),
@@ -2097,13 +2114,13 @@ Website: srrorthoplus.com`;
                         });
                         setView('builder');
                       }}
-                      className="btn-primary !py-2 !px-4 text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:shadow-xs shrink-0"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer select-none shrink-0"
                     >
-                      <Plus size={15} /> New Template
+                      <Plus size={14} /> New Template
                     </button>
                   )}
                 </div>
-              </header>
+              </div>
 
               {/* Search Bar */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -4315,281 +4332,276 @@ Website: srrorthoplus.com`;
 
         {/* VIEW: PRICE LISTS */}
         {view === 'pricelists' && (
-          <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
-            <div className="max-w-6xl mx-auto">
-              <header className="flex flex-col md:flex-row md:items-end justify-between mb-4 md:mb-6 gap-4">
-                <div>
-                  <h1 className="apple-title-1 mb-2">Price Lists</h1>
-                  <p className="apple-subtitle">Manage and access manufacturer price lists. <span className="font-semibold text-[var(--apple-black)]">{priceLists.filter(p => isManagementActive || !p.hidden).length}</span> total</p>
-                </div>
-                <div>
-                  <input type="file" onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    const label = prompt('Enter a name for this Price List (e.g. Stryker 2024):');
-                    if (!label) { e.target.value = ''; return; }
-                    const newItem = { id: Date.now().toString(), label, fileName: file.name, uploadedAt: new Date().toLocaleDateString('en-GB') };
-                    syncItem('price_lists', newItem, false, file).then(success => {
-                      if (success) setPriceLists(prev => [...prev, newItem]);
-                    });
-                    e.target.value = '';
-                  }} className="hidden" id="price-list-upload" />
-                  <label htmlFor="price-list-upload" className="btn-primary cursor-pointer">
-                    <Plus size={18} /> Upload List
-                  </label>
-                </div>
-              </header>
-
+          <div className="w-full space-y-4 px-2 sm:px-4 py-3 md:py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
               <div>
-                <div className="grid gap-3">
-                  {priceLists
-                    .filter(item => isManagementActive || !item.hidden)
-                    .map(item => (
-                      <div 
-                        key={item.id} 
-                        className={`apple-card p-5 flex items-center justify-between hover:border-[var(--apple-gray-4)] transition-all ${
-                          item.hidden ? 'opacity-60 bg-[var(--apple-gray-1)]' : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-11 h-11 bg-[var(--apple-gray-1)] rounded-xl flex items-center justify-center">
-                            <FileText size={22} className="text-[var(--apple-black)]" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-[16px] font-bold text-[var(--apple-black)] leading-tight">{item.label}</p>
-                              {item.hidden && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">Hidden</span>
-                              )}
-                            </div>
-                            <p className="text-[12px] text-[var(--apple-gray-5)] mt-1">{item.fileName} • {item.uploadedAt}</p>
-                          </div>
-                        </div>
+                <h1 className="text-xl font-bold tracking-tight text-slate-900">Price Lists</h1>
+                <p className="text-xs text-slate-500">Manage and access manufacturer price lists. <span className="font-bold text-slate-900">{priceLists.filter(p => isManagementActive || !p.hidden).length}</span> total</p>
+              </div>
+              <div>
+                <input type="file" onChange={(e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  const label = prompt('Enter a name for this Price List (e.g. Stryker 2024):');
+                  if (!label) { e.target.value = ''; return; }
+                  const newItem = { id: Date.now().toString(), label, fileName: file.name, uploadedAt: new Date().toLocaleDateString('en-GB') };
+                  syncItem('price_lists', newItem, false, file).then(success => {
+                    if (success) setPriceLists(prev => [...prev, newItem]);
+                  });
+                  e.target.value = '';
+                }} className="hidden" id="price-list-upload" />
+                <label htmlFor="price-list-upload" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium shadow-2xs transition-colors cursor-pointer select-none">
+                  <Plus size={15} /> Upload List
+                </label>
+              </div>
+            </div>
+
+            <div className="grid gap-2.5">
+              {priceLists
+                .filter(item => isManagementActive || !item.hidden)
+                .map(item => (
+                  <div 
+                    key={item.id} 
+                    className={`bg-white rounded-xl border border-slate-200/80 p-4 flex items-center justify-between shadow-2xs hover:border-slate-300 transition-all ${
+                      item.hidden ? 'opacity-60 bg-slate-50' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-10 h-10 bg-slate-100 border border-slate-200/60 rounded-xl flex items-center justify-center shrink-0 text-slate-700">
+                        <FileText size={20} />
+                      </div>
+                      <div>
                         <div className="flex items-center gap-2">
-                          <button 
-                            onClick={() => setPreviewingDoc({ ...item, type: 'application/pdf' })} 
-                            className="w-9 h-9 flex items-center justify-center text-[var(--apple-gray-5)] hover:text-[var(--apple-black)] hover:bg-[var(--apple-gray-1)] rounded-lg transition-all" 
-                            title="View Document"
-                          >
-                            <Eye size={18} />
-                          </button>
-                          <a href={item.data} download={item.fileName} className="w-9 h-9 flex items-center justify-center text-[var(--apple-gray-5)] hover:text-[var(--apple-black)] hover:bg-[var(--apple-gray-1)] rounded-lg transition-all" title="Download">
-                            <Download size={18} />
-                          </a>
-                          {isManagementActive && (
-                            <>
-                              <button 
-                                onClick={async () => {
-                                  const updatedItem = { ...item, hidden: !item.hidden };
-                                  setPriceLists(prev => prev.map(p => p.id === item.id ? updatedItem : p));
-                                  await syncItem('price_lists', updatedItem, false);
-                                }}
-                                className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${
-                                  item.hidden 
-                                    ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50' 
-                                    : 'text-[var(--apple-gray-4)] hover:text-[var(--apple-black)] hover:bg-[var(--apple-gray-1)]'
-                                }`}
-                                title={item.hidden ? "Show in Menu" : "Hide from Menu"}
-                              >
-                                {item.hidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                              </button>
-                              <button 
-                                onClick={() => confirmDelete(async () => {
-                                  setPriceLists(prev => prev.filter(p => p.id !== item.id));
-                                  await syncItem('price_lists', item, true);
-                                })}
-                                className="w-9 h-9 flex items-center justify-center text-[var(--apple-gray-4)] hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                title="Delete"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </>
+                          <p className="text-sm font-bold text-slate-900 leading-tight">{item.label}</p>
+                          {item.hidden && (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200/70">Hidden</span>
                           )}
                         </div>
+                        <p className="text-xs text-slate-500 mt-0.5">{item.fileName} • {item.uploadedAt}</p>
                       </div>
-                    ))}
-                  {priceLists.filter(item => isManagementActive || !item.hidden).length === 0 && (
-                    <div className="text-center py-16 bg-white border border-dashed border-[var(--apple-gray-3)] rounded-2xl">
-                      <p className="text-[15px] text-[var(--apple-gray-4)]">No price lists available.</p>
                     </div>
-                  )}
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        onClick={() => setPreviewingDoc({ ...item, type: 'application/pdf' })} 
+                        className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200/60 transition-all" 
+                        title="View Document"
+                      >
+                        <Eye size={16} />
+                      </button>
+                      <a href={item.data} download={item.fileName} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200/60 transition-all" title="Download">
+                        <Download size={16} />
+                      </a>
+                      {isManagementActive && (
+                        <>
+                          <button 
+                            onClick={async () => {
+                              const updatedItem = { ...item, hidden: !item.hidden };
+                              setPriceLists(prev => prev.map(p => p.id === item.id ? updatedItem : p));
+                              await syncItem('price_lists', updatedItem, false);
+                            }}
+                            className={`w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200/60 transition-all ${
+                              item.hidden 
+                                ? 'text-amber-600 bg-amber-50 hover:bg-amber-100 border-amber-200' 
+                                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                            }`}
+                            title={item.hidden ? "Show in Menu" : "Hide from Menu"}
+                          >
+                            {item.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                          <button 
+                            onClick={() => confirmDelete(async () => {
+                              setPriceLists(prev => prev.filter(p => p.id !== item.id));
+                              await syncItem('price_lists', item, true);
+                            })}
+                            className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200/60 hover:border-rose-200/60 transition-all"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              {priceLists.filter(item => isManagementActive || !item.hidden).length === 0 && (
+                <div className="text-center py-12 bg-white border border-dashed border-slate-300 rounded-xl">
+                  <p className="text-sm font-semibold text-slate-600">No price lists available.</p>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
 
         {/* VIEW: SETTINGS */}
         {view === 'settings' && (
-          <div className="h-full overflow-y-auto px-4 py-4 md:px-8 md:py-6">
-            <div className="max-w-4xl mx-auto">
-              <header className="mb-4 md:mb-6">
-                <h1 className="apple-title-1">Settings</h1>
-                <p className="apple-subtitle">Manage your company profile and application preferences.</p>
-              </header>
+          <div className="w-full space-y-4 px-2 sm:px-4 py-3 md:py-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
+              <h1 className="text-xl font-bold tracking-tight text-slate-900">Settings</h1>
+              <p className="text-xs text-slate-500">Manage your company profile and application preferences.</p>
+            </div>
 
-              <div className="apple-card p-8">
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="apple-label">Company Name</label>
-                      <input
-                        type="text"
-                        value={companyData.name}
-                        onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
-                        className="apple-input"
-                      />
-                    </div>
-                    <div>
-                      <label className="apple-label">Email Address</label>
-                      <input
-                        type="email"
-                        value={companyData.email}
-                        onChange={e => setCompanyData({ ...companyData, email: e.target.value })}
-                        className="apple-input"
-                      />
-                    </div>
-                  </div>
+            <div className="bg-white rounded-xl border border-slate-200/80 p-5 sm:p-6 shadow-2xs">
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="apple-label">Company Address</label>
-                    <textarea
-                      rows="3"
-                      value={companyData.address}
-                      onChange={e => setCompanyData({ ...companyData, address: e.target.value })}
-                      className="apple-input"
+                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Company Name</label>
+                    <input
+                      type="text"
+                      value={companyData.name}
+                      onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
                     />
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Email Address</label>
+                    <input
+                      type="email"
+                      value={companyData.email}
+                      onChange={e => setCompanyData({ ...companyData, email: e.target.value })}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Company Address</label>
+                  <textarea
+                    rows="2"
+                    value={companyData.address}
+                    onChange={e => setCompanyData({ ...companyData, address: e.target.value })}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Phone Numbers</label>
+                    <input
+                      type="text"
+                      value={companyData.phone}
+                      onChange={e => setCompanyData({ ...companyData, phone: e.target.value })}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Website</label>
+                    <input
+                      type="text"
+                      value={companyData.website}
+                      onChange={e => setCompanyData({ ...companyData, website: e.target.value })}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                    />
+                  </div>
+                </div>
+                <div className="pt-5 border-t border-slate-200/80 space-y-4">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <Award size={16} className="text-teal-600" />
+                    Authorized Signatory
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="apple-label">Phone Numbers</label>
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Signatory Name</label>
                       <input
                         type="text"
-                        value={companyData.phone}
-                        onChange={e => setCompanyData({ ...companyData, phone: e.target.value })}
-                        className="apple-input"
+                        value={companyData.signatoryName || ''}
+                        onChange={e => setCompanyData({ ...companyData, signatoryName: e.target.value })}
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                        placeholder="e.g. A. Padmavathi"
                       />
                     </div>
                     <div>
-                      <label className="apple-label">Website</label>
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Signatory Designation / Role</label>
                       <input
                         type="text"
-                        value={companyData.website}
-                        onChange={e => setCompanyData({ ...companyData, website: e.target.value })}
-                        className="apple-input"
+                        value={companyData.signatoryRole || ''}
+                        onChange={e => setCompanyData({ ...companyData, signatoryRole: e.target.value })}
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                        placeholder="e.g. Proprietor"
                       />
                     </div>
                   </div>
-                  <div className="pt-6 border-t border-[var(--apple-gray-2)] space-y-6">
-                    <h3 className="text-[14px] font-bold text-[var(--apple-black)] uppercase tracking-wider mb-2 flex items-center gap-2">
-                      <Award size={16} className="text-[var(--accent)]" />
-                      Authorized Signatory
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="apple-label">Signatory Name</label>
-                        <input
-                          type="text"
-                          value={companyData.signatoryName || ''}
-                          onChange={e => setCompanyData({ ...companyData, signatoryName: e.target.value })}
-                          className="apple-input"
-                          placeholder="e.g. A. Padmavathi"
-                        />
-                      </div>
-                      <div>
-                        <label className="apple-label">Signatory Designation / Role</label>
-                        <input
-                          type="text"
-                          value={companyData.signatoryRole || ''}
-                          onChange={e => setCompanyData({ ...companyData, signatoryRole: e.target.value })}
-                          className="apple-input"
-                          placeholder="e.g. Proprietor"
-                        />
-                      </div>
-                    </div>
 
-                    <div className="flex flex-col md:flex-row items-center gap-6 p-6 bg-[var(--apple-gray-1)] rounded-2xl border border-[var(--apple-gray-2)]">
-                      <div className="flex-1 space-y-3">
-                        <div>
-                          <p className="text-[14px] font-bold text-[var(--apple-black)]">Upload Signature Image</p>
-                          <p className="text-[12px] text-[var(--apple-gray-5)] mt-1">
-                            Recommended format: PNG with transparent background. Max size 200KB.
-                          </p>
-                        </div>
-                        
-                        <div className="flex items-center gap-4">
-                          <label className="btn-outline !py-2.5 cursor-pointer flex items-center gap-2 select-none">
-                            <UploadCloud size={16} />
-                            Choose Image
-                            <input 
-                              type="file" 
-                              accept="image/*" 
-                              className="hidden" 
-                              onChange={(e) => {
-                                const file = e.target.files[0];
-                                if (!file) return;
-                                if (file.size > 204800) {
-                                  showAlert('File Too Large', 'Please upload a signature image under 200KB.', 'error');
-                                  return;
-                                }
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                  setCompanyData(prev => ({
-                                    ...prev,
-                                    signature: reader.result
-                                  }));
-                                };
-                                reader.readAsDataURL(file);
-                              }}
-                            />
-                          </label>
-                          
-                          {companyData.signature && (
-                            <button
-                              onClick={() => setCompanyData(prev => ({ ...prev, signature: '' }))}
-                              className="text-[12px] font-bold text-red-500 hover:underline cursor-pointer"
-                            >
-                              Remove Image
-                            </button>
-                          )}
-                        </div>
+                  <div className="flex flex-col md:flex-row items-center gap-5 p-4 bg-slate-50 rounded-xl border border-slate-200/80">
+                    <div className="flex-1 space-y-2">
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">Upload Signature Image</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Recommended format: PNG with transparent background. Max size 200KB.
+                        </p>
                       </div>
-
-                      <div className="w-48 h-20 bg-white border border-[var(--apple-gray-3)] rounded-xl flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
-                        {companyData.signature ? (
-                          <img 
-                            src={companyData.signature} 
-                            alt="Signature Preview" 
-                            className="max-w-full max-h-full object-contain p-2" 
+                      
+                      <div className="flex items-center gap-3 pt-1">
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 cursor-pointer shadow-2xs transition-colors select-none">
+                          <UploadCloud size={15} />
+                          Choose Image
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+                              if (file.size > 204800) {
+                                showAlert('File Too Large', 'Please upload a signature image under 200KB.', 'error');
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                setCompanyData(prev => ({
+                                  ...prev,
+                                  signature: reader.result
+                                }));
+                              };
+                              reader.readAsDataURL(file);
+                            }}
                           />
-                        ) : (
-                          <span className="text-[11px] text-[var(--apple-gray-4)] italic">No signature uploaded</span>
+                        </label>
+                        
+                        {companyData.signature && (
+                          <button
+                            type="button"
+                            onClick={() => setCompanyData(prev => ({ ...prev, signature: '' }))}
+                            className="text-xs font-semibold text-rose-600 hover:underline cursor-pointer"
+                          >
+                            Remove Image
+                          </button>
                         )}
                       </div>
                     </div>
-                  </div>
 
-                  <div className="pt-6 border-t border-[var(--apple-gray-2)]">
-                    <button
-                      onClick={async () => {
-                        setSyncStatus('syncing');
-                        const success = await saveCompanyData(companyData);
-                        if (success) {
-                          setSyncStatus('saved');
-                          showAlert('Settings Updated', 'Company settings have been saved to the cloud successfully.', 'success');
-                        } else {
-                          setSyncStatus('error');
-                          showAlert('Sync Failed', 'Failed to save settings to the cloud. Please try again.', 'error');
-                        }
-                      }}
-                      className="btn-primary"
-                    >
-                      <Save size={18} /> Save Settings
-                    </button>
+                    <div className="w-44 h-16 bg-white border border-slate-200 rounded-lg flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                      {companyData.signature ? (
+                        <img 
+                          src={companyData.signature} 
+                          alt="Signature Preview" 
+                          className="max-w-full max-h-full object-contain p-1.5" 
+                        />
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">No signature uploaded</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
+                <div className="pt-4 border-t border-slate-200/80">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setSyncStatus('syncing');
+                      const success = await saveCompanyData(companyData);
+                      if (success) {
+                        setSyncStatus('saved');
+                        showAlert('Settings Updated', 'Company settings have been saved to the cloud successfully.', 'success');
+                      } else {
+                        setSyncStatus('error');
+                        showAlert('Sync Failed', 'Failed to save settings to the cloud. Please try again.', 'error');
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Save size={16} /> Save Settings
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

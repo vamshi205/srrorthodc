@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { getLocalSavedDcs } from '@/lib/savedDcStorage';
 import { getNotificationConfig } from '@/lib/notificationConfig';
+import { getTodayBankReminders } from '@/lib/bankReminders';
 import {
   Activity,
   Plus,
@@ -42,6 +43,8 @@ import {
   BellRing,
   IndianRupee,
 } from 'lucide-react';
+
+import { DcTrackerNotifications } from '@/components/ortho/DcTrackerNotifications';
 
 type TopToolbarProps = {
   theme: string;
@@ -114,6 +117,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           count += returnedDcs.length;
         }
 
+        // 4. Bank Account reminders (Today's untagged debits & unmapped credits for 1538 account)
+        const bankReminders = getTodayBankReminders();
+        count += bankReminders.count;
+
         setRemindersCount(count);
       } catch {
         setRemindersCount(0);
@@ -127,15 +134,19 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     window.addEventListener('srrortho:saved_dcs_updated', handleUpdate);
     window.addEventListener('srrortho:notification_config_changed', handleUpdate);
     window.addEventListener('srrortho:cash_invoice_updated', handleUpdate);
+    window.addEventListener('srrortho:bank_transactions_updated', handleUpdate);
+    window.addEventListener('popstate', handleUpdate);
     window.addEventListener('storage', handleUpdate);
 
     return () => {
       window.removeEventListener('srrortho:saved_dcs_updated', handleUpdate);
       window.removeEventListener('srrortho:notification_config_changed', handleUpdate);
       window.removeEventListener('srrortho:cash_invoice_updated', handleUpdate);
+      window.removeEventListener('srrortho:bank_transactions_updated', handleUpdate);
+      window.removeEventListener('popstate', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
-  }, []);
+  }, [location.pathname, location.search]);
 
   const isProcedureList = pathname === '/' && currentMode === 'procedure';
   const isManualDc = pathname === '/' && currentMode === 'manual';
@@ -167,7 +178,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     }`;
 
   return (
-    <header className="sticky top-0 z-30 w-full mb-3 sm:mb-4">
+    <header className="sticky top-0 z-30 w-full mb-2.5">
       <div className="w-full h-14 sm:h-16 rounded-2xl border border-white/20 dark:border-teal-500/30 bg-gradient-to-r from-teal-700 via-teal-800 to-cyan-900 dark:from-slate-950 dark:via-teal-950 dark:to-slate-950 backdrop-blur-xl shadow-lg px-3 sm:px-4 flex items-center justify-between gap-2.5 sm:gap-3 text-white select-none">
         
         {/* Left Side: Back button, Logo & Brand */}
@@ -591,6 +602,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Global Reminders Host mounted on all modules */}
+      <DcTrackerNotifications />
     </header>
   );
 };

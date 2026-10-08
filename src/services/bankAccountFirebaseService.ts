@@ -504,6 +504,9 @@ export async function saveBankTransactionToFirestore(
         txs.unshift(updatedTx);
       }
       localStorage.setItem(LOCAL_STORAGE_TRANSACTIONS_KEY, JSON.stringify(txs));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('srrortho:bank_transactions_updated', { detail: txs }));
+      }
     } catch (e) {
       console.warn('Failed to update transactions cache', e);
     }
@@ -919,6 +922,7 @@ export async function unlinkBankTransactionFromCashInvoice(
       linkedInvoiceNumber: undefined,
       linkedCustomerName: undefined,
       linkedHospital: undefined,
+      linkedDcNumbers: undefined,
       updatedAt: Date.now(),
     };
 
@@ -1074,3 +1078,151 @@ export async function recordCashPaymentToCashInHand(
 
 
 
+
+/**
+ * Helper to check if a Bank Transaction matches a specific Delivery Challan (DC)
+ * across all reference fields (DC No, Invoice Ref, UTR, Part Payments, etc.)
+ */
+export function isBankTxMatchingDc(tx: Partial<BankTransaction>, dc: Partial<SavedDc>): boolean {
+  if (!tx || !dc) return false;
+
+  const dcId = String(dc.id || '').trim().toLowerCase();
+  const dcNoClean = String(dc.dcNo || '').trim().toLowerCase();
+  const rawDcNo = dcNoClean.replace(/^dc\s*#?\s*/i, '');
+  const invRefClean = String(dc.invoiceRef || '').trim().toLowerCase();
+  const invRefCleanUnderscore = invRefClean.replace(/\//g, '_');
+  const utrClean = String((dc as any).utrNo || '').trim().toLowerCase();
+
+  const tInvNum = String(tx.linkedInvoiceNumber || '').trim().toLowerCase();
+  const cleanTInvNum = tInvNum
+    .replace(/^cash memo:\s*/i, '')
+    .replace(/^memo:\s*/i, '')
+    .replace(/^dc\s*#?\s*/i, '')
+    .trim();
+
+  const tInvId = String(tx.linkedInvoiceId || '').trim().toLowerCase();
+  const cleanTInvId = tInvId
+    .replace(/^cash_memo_\s*/i, '')
+    .replace(/^memo_\s*/i, '')
+    .replace(/^dc_\s*/i, '')
+    .trim();
+
+  const tRefNo = String(tx.referenceNumber || '').trim().toLowerCase();
+  const tDcNos = (tx.linkedDcNumbers || []).map((n: any) =>
+    String(n || '').replace(/^dc\s*#?\s*/i, '').trim().toLowerCase()
+  );
+
+  // 1. Direct ID match
+  if (dcId && (tInvId === dcId || tInvNum === dcId || cleanTInvId === dcId)) return true;
+
+  // 2. DC number match
+  if (dcNoClean || rawDcNo) {
+    const targetNos = [dcNoClean, rawDcNo, `dc #${rawDcNo}`, `dc ${rawDcNo}`];
+    if (
+      targetNos.includes(tInvNum) ||
+      targetNos.includes(cleanTInvNum) ||
+      targetNos.includes(tInvId) ||
+      targetNos.includes(cleanTInvId) ||
+      tDcNos.some((n) => n === dcNoClean || n === rawDcNo) ||
+      tRefNo === `cash-${rawDcNo}` ||
+      tRefNo === `cash-${dcNoClean}`
+    ) {
+      return true;
+    }
+  }
+
+  // 3. Invoice Ref / Cash Memo match
+  if (invRefClean) {
+    if (
+      tInvNum === invRefClean ||
+      cleanTInvNum === invRefClean ||
+      tInvNum.includes(invRefClean) ||
+      tInvId === invRefClean ||
+      tInvId === invRefCleanUnderscore ||
+      cleanTInvId === invRefClean ||
+      cleanTInvId === invRefCleanUnderscore ||
+      tRefNo === `cash-${invRefClean}` ||
+      tRefNo === `cash-${invRefCleanUnderscore}`
+    ) {
+      return true;
+    }
+  }
+
+  // 4. UTR number match
+  if (utrClean && tRefNo && (tRefNo === utrClean || utrClean.includes(tRefNo))) {
+    return true;
+  }
+
+  // 5. Part Payment Installments UTR / Ref match
+  if (Array.isArray((dc as any).partPayments) && (dc as any).partPayments.length > 0) {
+    for (const inst of (dc as any).partPayments) {
+      const instUtr = (inst.utrNo || '').trim().toLowerCase();
+      if (instUtr && tRefNo && (tRefNo === instUtr || instUtr.includes(tRefNo))) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Automatically find and unlink any bank transactions whose linked DC / Cash Invoice no longer exists (e.g. deleted DCs)
+ */
+export async function cleanOrphanedBankTransactionLinks(): Promise<number> {
+  try {
+    const txs = await fetchBankTransactionsFromFirestore();
+    const linkedTxs = txs.filter((t) => Boolean(t.linkedInvoiceNumber || t.linkedInvoiceId || (t.linkedDcNumbers && t.linkedDcNumbers.length > 0)));
+    if (linkedTxs.length === 0) return 0;
+
+    const dcs = await fetchDcsFromFirestore().catch(() => []);
+    const invoices = await fetchCashInvoicesFromFirestore().catch(() => []);
+
+    // Filter invoices to only ACTIVE invoices (standalone OR whose parent DC exists)
+    const activeInvoices = invoices.filter((inv) => {
+      const invDcNo = inv.dcNumber ? String(inv.dcNumber).trim().toLowerCase() : '';
+      if (!invDcNo) return true; // Standalone invoice
+      return dcs.some((dc) => {
+        const dcNoClean = String(dc.dcNo || '').trim().toLowerCase();
+        const dcInvRef = String(dc.invoiceRef || '').trim().toLowerCase();
+        const invNoClean = String(inv.invNumber || '').trim().toLowerCase();
+        return (dcNoClean && dcNoClean === invDcNo) || (dcInvRef && dcInvRef === invNoClean);
+      });
+    });
+
+    let unlinkedCount = 0;
+    for (const tx of linkedTxs) {
+      const matchesActiveDc = dcs.some((dc) => isBankTxMatchingDc(tx, dc));
+
+      let matchesActiveInvoice = false;
+      if (!matchesActiveDc && (tx.linkedInvoiceNumber || tx.linkedInvoiceId)) {
+        const ref1 = String(tx.linkedInvoiceNumber || '').toLowerCase().trim();
+        const ref2 = String(tx.linkedInvoiceId || '').toLowerCase().trim();
+        matchesActiveInvoice = activeInvoices.some((inv) => {
+          const invNo = String(inv.invNumber || '').toLowerCase().trim();
+          const invNoUnderscore = invNo.replace(/\//g, '_');
+          return Boolean(invNo) && (ref1.includes(invNo) || ref2.includes(invNoUnderscore));
+        });
+      }
+
+      if (!matchesActiveDc && !matchesActiveInvoice) {
+        await unlinkBankTransactionFromCashInvoice(tx.id, false);
+        unlinkedCount++;
+      }
+    }
+
+    if (unlinkedCount > 0) {
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('srrortho:bank_transactions_updated'));
+        }
+      } catch {
+        // ignore if server environment
+      }
+    }
+    return unlinkedCount;
+  } catch (err) {
+    console.warn('Error cleaning orphaned bank transaction links:', err);
+    return 0;
+  }
+}

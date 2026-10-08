@@ -107,6 +107,40 @@ const CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
 };
 
 /**
+ * Safely parses various date formats (YYYY-MM-DD, DD-MM-YYYY, YYYY/MM/DD, DD/MM/YYYY, ISO strings)
+ */
+export function parseTransactionDate(dateStr?: string): Date {
+  if (!dateStr) return new Date(NaN);
+  const clean = dateStr.trim();
+
+  if (clean.includes("T")) {
+    const parsed = new Date(clean);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+
+  // Handle YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = clean.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10) - 1;
+    const day = parseInt(ymdMatch[3], 10);
+    return new Date(year, month, day);
+  }
+
+  // Handle DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = clean.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    return new Date(year, month, day);
+  }
+
+  const d = new Date(clean);
+  return d;
+}
+
+/**
  * Predicts personnel name and expense category for a given debit transaction.
  * Learns from direct personnel name matching, full-text search, and historical tagged debit transactions.
  */
@@ -115,8 +149,9 @@ export function predictExpenseTag(
   availablePersonnelNames?: string[],
   allTransactions?: BankTransaction[]
 ): ExpenseTagSuggestion | null {
-  if (tx.type !== "debit" && tx.amount >= 0) {
-    // Only analyze debits for expense tagging
+  const isDebit = tx.type === "debit" || (tx.type as string)?.toLowerCase() === "debit";
+  if (!isDebit) {
+    return null;
   }
 
   const personnelNames = availablePersonnelNames || getDeliveryTeamPersonnelNames();
