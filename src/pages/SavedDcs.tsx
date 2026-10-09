@@ -335,6 +335,7 @@ const SavedDcs = () => {
     dc: SavedDc | null;
   }>({ type: null, dc: null });
   const [returnedByInput, setReturnedByInput] = useState("");
+  const [verifiedByInput, setVerifiedByInput] = useState("");
   const [invoiceRefInput, setInvoiceRefInput] = useState("");
   const [invoiceUrlInput, setInvoiceUrlInput] = useState("");
   const [returnedRemarksInput, setReturnedRemarksInput] = useState("");
@@ -2165,6 +2166,7 @@ const SavedDcs = () => {
     setDetailsDialogOpen(false);
     setActionDialog({ type, dc });
     setReturnedByInput(dc.returnedBy || "");
+    setVerifiedByInput(dc.verifiedBy || "");
     setInvoiceRefInput(dc.invoiceRef || "");
     setInvoiceUrlInput(dc.invoiceUrl || "");
     setReturnedRemarksInput(dc.returnedRemarks || "");
@@ -2178,6 +2180,7 @@ const SavedDcs = () => {
   const closeActionDialog = () => {
     setActionDialog({ type: null, dc: null });
     setReturnedByInput("");
+    setVerifiedByInput("");
     setInvoiceRefInput("");
     setInvoiceUrlInput("");
     setReturnedRemarksInput("");
@@ -2190,6 +2193,7 @@ const SavedDcs = () => {
 
   const handleConfirmReturn = async (dc: SavedDc) => {
     const returnedBy = returnedByInput.trim();
+    const verifiedBy = verifiedByInput.trim();
     if (!returnedBy) {
       toast({ title: "Returned By is required" });
       return;
@@ -2210,6 +2214,7 @@ const SavedDcs = () => {
       try {
         await executeDelinkPayment(dc, "returned", {
           returnedBy,
+          ...(verifiedBy ? { verifiedBy } : {}),
           returnedAt: new Date().toISOString(),
           returnedRemarks: returnedRemarksInput.trim() || "",
         });
@@ -2237,11 +2242,13 @@ const SavedDcs = () => {
             action: "MARK_RETURNED",
             updates: {
               returnedBy,
+              ...(verifiedBy ? { verifiedBy } : {}),
               returnedAt: new Date().toISOString(),
               returnedRemarks: returnedRemarksInput.trim() || "",
             },
             meta: {
               returnedBy,
+              ...(verifiedBy ? { verifiedBy } : {}),
               returnedAt: new Date().toISOString(),
               returnedRemarks: returnedRemarksInput.trim() || "",
             },
@@ -4436,6 +4443,11 @@ const SavedDcs = () => {
                                                     )}
                                                   <span className="truncate">
                                                     {dc.returnedBy}
+                                                    {dc.verifiedBy && (
+                                                      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block truncate">
+                                                        ✓ Ver: {dc.verifiedBy}
+                                                      </span>
+                                                    )}
                                                   </span>
                                                 </>
                                               ) : (
@@ -4706,6 +4718,23 @@ const SavedDcs = () => {
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                     Click dropdown above to search team members or select Courier options.
+                  </p>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Verified By
+                  </Label>
+                  <div className="mt-1.5">
+                    <PersonnelSelect
+                      value={verifiedByInput}
+                      onChange={setVerifiedByInput}
+                      placeholder="Select or enter verifier (e.g. Delivery personnel)..."
+                      showQuickPicks={true}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Verifiers are usually delivery team members. Click quick picks or search roster.
                   </p>
                 </div>
 
@@ -7535,10 +7564,22 @@ const SavedDcs = () => {
                                               </strong>
                                             </div>
                                           )}
+                                           {((h.meta?.verifiedBy as string) ||
+                                             selectedDc.verifiedBy) && (
+                                             <div>
+                                               Verified by:{" "}
+                                               <strong className="text-emerald-700 dark:text-emerald-400">
+                                                 {(h.meta
+                                                   ?.verifiedBy as string) ||
+                                                   selectedDc.verifiedBy}
+                                               </strong>
+                                             </div>
+                                           )}
                                           {((h.meta
                                             ?.returnedRemarks as string) ||
                                             (h.meta?.cleared as any)
                                               ?.returnedRemarks) && (
+                                            
                                             <div className="italic text-slate-500">
                                               "
                                               {(h.meta

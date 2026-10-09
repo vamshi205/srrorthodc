@@ -57,6 +57,7 @@ export type SavedDc = {
   returnedBy?: string;
   returnedAt?: string;
   returnedRemarks?: string;
+  verifiedBy?: string;
   invoiceRef?: string;
   invoiceRemarks?: string;
   invoiceUrl?: string;
