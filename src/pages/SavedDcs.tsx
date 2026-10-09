@@ -64,6 +64,7 @@ import {
   ChevronDown,
   ChevronUp,
   Ban,
+  Link,
 } from "lucide-react";
 import { extractHdfcNarration } from "@/services/gmailConnectorService";
 import { Button } from "@/components/ui/button";
@@ -143,6 +144,7 @@ import { CashInvoicePreview } from "@/components/cash-invoice/CashInvoicePreview
 import { printCashMemo } from "@/lib/cashInvoicePrint";
 import { DcTrackerNotifications } from "@/components/ortho/DcTrackerNotifications";
 import { CollectPaymentsScroller } from "@/components/ortho/CollectPaymentsScroller";
+import { DcWorkflowMap } from "@/components/ortho/DcWorkflowMap";
 import {
   PersonnelSelect,
   TRANSPORT_MODES,
@@ -469,7 +471,7 @@ const SavedDcs = () => {
       title: "Moving Queue...",
       targetQueueName,
       initialMessage: message,
-      successMessage: `Moved to ${targetQueueName} Successfully! ✅`,
+      successMessage: `Moved to ${targetQueueName} Successfully!`,
       iconType: "move",
       targetQueueKey,
       actionFn,
@@ -529,6 +531,53 @@ const SavedDcs = () => {
     });
   }, [bankAccountsList]);
 
+  // 🔒 Sensitive Account Protection (HDFC 6569)
+  const isAccount6569 = (
+    accIdentifier?: string | BankAccount | null,
+  ): boolean => {
+    if (!accIdentifier) return false;
+    if (typeof accIdentifier === "string") {
+      const clean = accIdentifier.toLowerCase();
+      return clean.includes("6569") || clean.includes("acc_hdfc_main_6569");
+    }
+    const idClean = (accIdentifier.id || "").toLowerCase();
+    const numClean = (accIdentifier.accountNumber || "").toLowerCase();
+    const nameClean = (accIdentifier.accountName || "").toLowerCase();
+    return (
+      idClean.includes("6569") ||
+      numClean.includes("6569") ||
+      nameClean.includes("6569")
+    );
+  };
+
+  const [is6569Unlocked, setIs6569Unlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem("srrortho:unlocked_acc_6569") === "true";
+  });
+  const [is6569AuthDialogOpen, setIs6569AuthDialogOpen] =
+    useState<boolean>(false);
+  const [authPasswordInput, setAuthPasswordInput] = useState<string>("");
+
+  const handleUnlock6569 = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const input = authPasswordInput.trim();
+    const validPasswords = [
+      "srrPadma123$a",
+      "padma123",
+      "6569",
+      "admin123",
+      "srrortho",
+    ];
+    if (validPasswords.includes(input)) {
+      sessionStorage.setItem("srrortho:unlocked_acc_6569", "true");
+      setIs6569Unlocked(true);
+      setIs6569AuthDialogOpen(false);
+      setAuthPasswordInput("");
+      toast.success("🔓 HDFC Main (6569) account unlocked!");
+    } else {
+      toast.error("Incorrect admin password");
+    }
+  };
+
   const filteredBankCredits = useMemo(() => {
     const cashAccIds = new Set(
       bankAccountsList
@@ -540,15 +589,26 @@ const SavedDcs = () => {
         )
         .map((a) => a.id),
     );
-    const nonCashCredits = availableBankCredits.filter(
+    let nonCashCredits = availableBankCredits.filter(
       (tx) => !tx.accountId || !cashAccIds.has(tx.accountId),
     );
+
+    // 🔒 If 6569 is locked, filter out 6569 statement credits entirely unless unlocked!
+    if (!is6569Unlocked) {
+      nonCashCredits = nonCashCredits.filter((tx) => {
+        const is6569 =
+          tx.accountSuffix === "6569" ||
+          (tx.accountId && isAccount6569(tx.accountId)) ||
+          (tx.description && tx.description.includes("6569"));
+        return !is6569;
+      });
+    }
 
     if (selectedBankAccountId === "all") return nonCashCredits;
     return nonCashCredits.filter(
       (tx) => tx.accountId === selectedBankAccountId,
     );
-  }, [availableBankCredits, selectedBankAccountId, bankAccountsList]);
+  }, [availableBankCredits, selectedBankAccountId, bankAccountsList, is6569Unlocked]);
 
   const activeViewingCashMemo = useMemo(() => {
     if (!viewingCashMemoRef) return null;
@@ -987,6 +1047,8 @@ const SavedDcs = () => {
     () =>
       savedDcs.map((dc) => {
         let effectiveCashAmount = dc.cashAmount;
+        let effectiveBilledAmount = dc.billedAmount;
+        let effectiveHospitalMargin = dc.hospitalMargin;
         if (dc.status === "cash" && dc.invoiceRef) {
           const invClean = dc.invoiceRef.trim().toLowerCase();
           const matchInv = cashInvoices.find(
@@ -997,10 +1059,16 @@ const SavedDcs = () => {
             (Number(matchInv.grandTotal) || Number(matchInv.actualReceivable))
           ) {
             const trueTotal = Number(
-              matchInv.grandTotal || matchInv.actualReceivable,
+              (matchInv.isHikedBill && Number(matchInv.actualReceivable) > 0
+                ? matchInv.actualReceivable
+                : matchInv.grandTotal || matchInv.actualReceivable),
             );
             if (trueTotal > 0) {
               effectiveCashAmount = trueTotal;
+              if (matchInv.isHikedBill) {
+                if (matchInv.grandTotal) effectiveBilledAmount = matchInv.grandTotal;
+                if (matchInv.hospitalMargin) effectiveHospitalMargin = matchInv.hospitalMargin;
+              }
             }
           }
         }
@@ -1008,6 +1076,8 @@ const SavedDcs = () => {
         return {
           ...dc,
           cashAmount: effectiveCashAmount,
+          billedAmount: effectiveBilledAmount,
+          hospitalMargin: effectiveHospitalMargin,
           status: (dc.status ?? "pending") as SavedDcStatus,
           receivedBy: dc.receivedBy ?? "",
           deliveredBy: dc.deliveredBy ?? "",
@@ -1099,36 +1169,97 @@ const SavedDcs = () => {
     return val.toLocaleString("en-IN");
   };
 
+  const getDcFinancialBreakdown = (dc: SavedDc | null | undefined) => {
+    if (!dc) {
+      return { hasCut: false, billedAmount: 0, hospitalMargin: 0, netCashAmount: 0 };
+    }
+
+    const margin = Number(dc.hospitalMargin) || 0;
+    const rawCash = Number(dc.cashAmount) || 0;
+    const rawBilled = Number(dc.billedAmount) || 0;
+
+    const hasCut = margin > 0 || (rawBilled > 0 && rawCash > 0 && rawBilled > rawCash);
+
+    if (!hasCut) {
+      return {
+        hasCut: false,
+        billedAmount: rawBilled || rawCash,
+        hospitalMargin: 0,
+        netCashAmount: rawCash || rawBilled,
+      };
+    }
+
+    const hospitalMargin = margin > 0 ? margin : rawBilled - rawCash;
+    let billedAmount = rawBilled;
+    let netCashAmount = rawCash;
+
+    if (billedAmount <= 0 && rawCash > 0 && hospitalMargin > 0) {
+      if (rawCash > hospitalMargin) {
+        billedAmount = rawCash;
+        netCashAmount = rawCash - hospitalMargin;
+      } else {
+        netCashAmount = rawCash;
+        billedAmount = rawCash + hospitalMargin;
+      }
+    } else if (billedAmount > 0 && netCashAmount === billedAmount && hospitalMargin > 0) {
+      netCashAmount = Math.max(0, billedAmount - hospitalMargin);
+    } else if (billedAmount > 0 && netCashAmount <= 0) {
+      netCashAmount = Math.max(0, billedAmount - hospitalMargin);
+    }
+
+    return {
+      hasCut: true,
+      billedAmount,
+      hospitalMargin,
+      netCashAmount,
+    };
+  };
+
   const openPaymentDialog = (dc: SavedDc) => {
     setPaymentDialog({ open: true, dc });
 
+    const fin = getDcFinancialBreakdown(dc);
+
     // Check if previously part-paid to calculate remaining balance default
     let prevPaid = dc.paidAmount || 0;
-    let origTotal = dc.originalInvoiceTotal || dc.cashAmount || 0;
+    let origTotal = fin.hasCut ? fin.netCashAmount : dc.originalInvoiceTotal || fin.netCashAmount || fin.billedAmount || 0;
+
     if (dc.cashRemarks && dc.cashRemarks.includes("Part Payment Received")) {
       const match = dc.cashRemarks.match(
         /Part Payment Received:\s*₹?([\d,]+)\s*of\s*₹?([\d,]+)/i,
       );
       if (match) {
         prevPaid = parseFloat(match[1].replace(/,/g, "")) || prevPaid;
-        origTotal = parseFloat(match[2].replace(/,/g, "")) || origTotal;
+        const parsedOrig = parseFloat(match[2].replace(/,/g, "")) || origTotal;
+        if (fin.hasCut && (parsedOrig === fin.billedAmount || parsedOrig > fin.netCashAmount)) {
+          origTotal = fin.netCashAmount;
+        } else {
+          origTotal = parsedOrig;
+        }
       }
     }
 
     const remainingDue =
       origTotal > prevPaid && prevPaid > 0 ? origTotal - prevPaid : origTotal;
 
-    setPaymentAmountInput(
-      remainingDue > 0
-        ? String(remainingDue)
-        : dc.cashAmount
-          ? String(dc.cashAmount)
-          : "",
-    );
+    const defaultPaymentAmt = fin.hasCut
+      ? fin.netCashAmount
+      : remainingDue > 0
+        ? remainingDue
+        : fin.netCashAmount || fin.billedAmount || 0;
+
+    setPaymentAmountInput(defaultPaymentAmt ? String(defaultPaymentAmt) : "");
+
     setPaymentRemarksInput("");
     setPaymentMethod(dc.paymentMethod || "cash");
     setPaymentCollectedBy(dc.collectedBy || "");
-    setPartialSettlementType("pay_more");
+    if (fin.hasCut) {
+      setPartialSettlementType("final_settlement");
+      setFinalSettlementReason("hospital_commission");
+    } else {
+      setPartialSettlementType("pay_more");
+      setFinalSettlementReason("discount");
+    }
     setSelectedCreditTxId("not_found");
     setSelectedBankAccountId("all");
   };
@@ -1228,12 +1359,21 @@ const SavedDcs = () => {
 
     let currentInstallment = parseFloat(paymentAmountInput) || 0;
     let prevPaid = dc.paidAmount || 0;
+
+    const hasHospitalCut = Boolean(
+      (dc.hospitalMargin && dc.hospitalMargin > 0) ||
+      (dc.billedAmount && dc.cashAmount && dc.billedAmount > dc.cashAmount)
+    );
+
     let originalInvoiceTotal =
+      (hasHospitalCut ? (dc.cashAmount || (dc.billedAmount && dc.hospitalMargin ? dc.billedAmount - dc.hospitalMargin : undefined)) : undefined) ||
+      (hasHospitalCut && dc.hospitalMargin && dc.cashAmount
+        ? dc.cashAmount + dc.hospitalMargin
+        : undefined) ||
       dc.originalInvoiceTotal ||
+      dc.billedAmount ||
       dc.cashAmount ||
-      (dc.billedAmount
-        ? dc.billedAmount - (dc.hospitalMargin || 0)
-        : currentInstallment);
+      currentInstallment;
 
     if (dc.cashRemarks && dc.cashRemarks.includes("Part Payment Received")) {
       const match = dc.cashRemarks.match(
@@ -1242,7 +1382,9 @@ const SavedDcs = () => {
       if (match) {
         prevPaid = parseFloat(match[1].replace(/,/g, "")) || prevPaid;
         originalInvoiceTotal =
-          parseFloat(match[2].replace(/,/g, "")) || originalInvoiceTotal;
+          (hasHospitalCut && parseFloat(match[2].replace(/,/g, "")) === dc.billedAmount
+            ? (dc.cashAmount || (dc.billedAmount && dc.hospitalMargin ? dc.billedAmount - dc.hospitalMargin : parseFloat(match[2].replace(/,/g, ""))))
+            : parseFloat(match[2].replace(/,/g, "")) || originalInvoiceTotal);
       }
     }
 
@@ -1275,10 +1417,15 @@ const SavedDcs = () => {
         ? availableBankCredits.find((t) => t.id === selectedCreditTxId)
         : null;
 
-    const hasHiked = dc.billedAmount && dc.billedAmount > paidAmount;
-    const margin = hasHiked
-      ? Math.round((dc.billedAmount! - paidAmount) * 100) / 100
-      : dc.hospitalMargin;
+    const hasHiked = Boolean(
+      dc.billedAmount &&
+      ((dc.cashAmount && dc.billedAmount > dc.cashAmount) || dc.billedAmount > paidAmount)
+    );
+    const margin = dc.hospitalMargin
+      ? dc.hospitalMargin
+      : hasHiked && dc.billedAmount
+        ? Math.round((dc.billedAmount - (dc.cashAmount || paidAmount)) * 100) / 100
+        : undefined;
     const methodLabel = paymentMethod === "cash" ? "Cash" : "Bank Transfer";
     const collectedInfo =
       paymentMethod === "cash" && paymentCollectedBy.trim()
@@ -1325,7 +1472,7 @@ const SavedDcs = () => {
         ? `Recording physical cash collection of ₹${currentInstAmt.toLocaleString("en-IN")} into Cash In Hand account...`
         : `Linking bank payment of ₹${currentInstAmt.toLocaleString("en-IN")}...`,
       successMessage: isFullPay
-        ? `Payment Received & DC #${dc.dcNo} Settled Successfully! 💵`
+        ? `Payment Received & DC #${dc.dcNo} Settled Successfully!`
         : `Part Payment of ₹${currentInstAmt.toLocaleString("en-IN")} Recorded!`,
       actionFn: async () => {
         setIsActionLoading(true);
@@ -1358,6 +1505,7 @@ const SavedDcs = () => {
               : "MOVE_TO_CASH",
           updates: {
             cashAmount: originalInvoiceTotal,
+            billedAmount: dc.billedAmount,
             paidAmount,
             originalInvoiceTotal,
             isPartialPayment,
@@ -2123,7 +2271,7 @@ const SavedDcs = () => {
       title: "Linking GoGSTBill Invoice",
       targetQueueName: "Completed Queue",
       initialMessage: "Linking tax invoice & updating settlement status...",
-      successMessage: "Invoice Linked & Moved to Completed! 📄",
+      successMessage: "Invoice Linked & Moved to Completed!",
       iconType: "invoice",
       targetQueueKey: "completed",
       actionFn: async () => {
@@ -2174,7 +2322,7 @@ const SavedDcs = () => {
       title: "Moving to Cash Queue",
       targetQueueName: "Cash Queue",
       initialMessage: "Setting cash receivable & queueing for collection...",
-      successMessage: "Moved to Cash Queue Successfully! 💰",
+      successMessage: "Moved to Cash Queue Successfully!",
       iconType: "cash",
       targetQueueKey: "cash",
       actionFn: async () => {
@@ -2219,7 +2367,7 @@ const SavedDcs = () => {
       title: "Creating Cash Invoice",
       targetQueueName: "Cash Invoice Editor",
       initialMessage: "Verifying records & prefilling items into Cash Memo editor...",
-      successMessage: "Opening Cash Invoice Editor... 📄",
+      successMessage: "Opening Cash Invoice Editor...",
       iconType: "cash",
       actionFn: async () => {
         setIsActionLoading(true);
@@ -2294,7 +2442,7 @@ const SavedDcs = () => {
       title: "Cancelling Case",
       targetQueueName: "Cancelled Queue",
       initialMessage: "Cancelling challan & archiving case records...",
-      successMessage: "Case Cancelled & Archived! ❌",
+      successMessage: "Case Cancelled & Archived!",
       iconType: "cancel",
       targetQueueKey: "cancelled",
       actionFn: async () => {
@@ -2499,7 +2647,9 @@ const SavedDcs = () => {
                 (Number(match.grandTotal) || Number(match.actualReceivable))
               ) {
                 originalCashAmount = Number(
-                  match.grandTotal || match.actualReceivable,
+                  (match.isHikedBill && Number(match.actualReceivable) > 0
+                    ? match.actualReceivable
+                    : match.grandTotal || match.actualReceivable),
                 );
               }
             } catch {}
@@ -2748,7 +2898,7 @@ const SavedDcs = () => {
     return (
       <DropdownMenuContent
         align="end"
-        className="w-64 p-1.5 shadow-2xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md max-h-[82vh] overflow-y-auto z-50 text-xs"
+        className="w-64 p-1.5 shadow-2xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95  max-h-[82vh] overflow-y-auto z-50 text-xs"
       >
         {/* QUICK ACTIONS */}
         <div className="px-2.5 py-1 text-[10px] font-extrabold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
@@ -2965,7 +3115,7 @@ const SavedDcs = () => {
                   >
                     <Receipt className="h-3.5 w-3.5 text-blue-600 shrink-0" />
                     <span className="truncate">
-                      View Cash Memo ({dc.invoiceRef})
+                      View Cash Invoice ({dc.invoiceRef})
                     </span>
                   </DropdownMenuItem>
                 </>
@@ -3119,6 +3269,18 @@ const SavedDcs = () => {
           <Card className="bg-card text-card-foreground shadow-none border rounded-xl">
             {(isLoading || savedDcs.length > 0) && (
               <CardHeader className="p-3 sm:p-4 space-y-3 sm:space-y-4">
+                {/* DC Workflow Map (Hidden for now)
+                <DcWorkflowMap
+                  activeQueue={activeQueue}
+                  onSelectQueue={(queue) => {
+                    setActiveQueue(queue);
+                    setSearchParams({ queue });
+                    setSelectedDcId(null);
+                  }}
+                  statusCounts={statusCounts}
+                />
+                */}
+
                 {/* Row 1: Search Bar (Expanded), Quick Time Pills, Date Filter Icon & Export CSV Icon */}
                 <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2.5 bg-slate-50 dark:bg-slate-900/60 p-2.5 sm:p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs">
                   {/* Prominent Full-Width Search Input till filter controls */}
@@ -3295,6 +3457,26 @@ const SavedDcs = () => {
                       )}
                     </TabsTrigger>
 
+                    {/* Cash Tab */}
+                    <TabsTrigger
+                      value="cash"
+                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-800 dark:data-[state=active]:text-emerald-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-emerald-200/80 dark:data-[state=active]:border-emerald-900/40"
+                    >
+                      <Wallet className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span className="hidden sm:inline">Cash Queue</span>
+                      {statusCounts.cash > 0 && (
+                        <Badge
+                          className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                            activeQueue === "cash"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                              : "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          }`}
+                        >
+                          {statusCounts.cash > 99 ? "99+" : statusCounts.cash}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+
                     {/* Completed Tab */}
                     <TabsTrigger
                       value="completed"
@@ -3311,26 +3493,6 @@ const SavedDcs = () => {
                           }`}
                         >
                           {statusCounts.completed > 99 ? "99+" : statusCounts.completed}
-                        </Badge>
-                      )}
-                    </TabsTrigger>
-
-                    {/* Cash Tab */}
-                    <TabsTrigger
-                      value="cash"
-                      className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-emerald-800 dark:data-[state=active]:text-emerald-300 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-emerald-200/80 dark:data-[state=active]:border-emerald-900/40"
-                    >
-                      <Wallet className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                      <span className="hidden sm:inline">Cash</span>
-                      {statusCounts.cash > 0 && (
-                        <Badge
-                          className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
-                            activeQueue === "cash"
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                              : "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                          }`}
-                        >
-                          {statusCounts.cash > 99 ? "99+" : statusCounts.cash}
                         </Badge>
                       )}
                     </TabsTrigger>
@@ -3427,20 +3589,12 @@ const SavedDcs = () => {
 
                       return (
                         <div
-                          className={`sticky top-[80px] z-20 mb-4 mt-2 p-3 px-4 text-slate-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 dark:text-slate-100 relative overflow-hidden backdrop-blur-md ${getStatusCardTheme()}`}
+                          className={`sticky top-[80px] z-20 mb-4 mt-2 p-3 px-4 text-slate-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 dark:text-slate-100 relative overflow-hidden  ${getStatusCardTheme()}`}
                         >
                           {/* Linear Blueprint Micro-Grid Pattern Overlay */}
-                          <div className="absolute inset-0 pointer-events-none opacity-40 dark:opacity-20 mix-blend-overlay">
-                            <div
-                              className="absolute inset-0"
-                              style={{
-                                backgroundImage: `linear-gradient(to right, rgba(15, 118, 110, 0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(15, 118, 110, 0.15) 1px, transparent 1px)`,
-                                backgroundSize: "16px 16px",
-                              }}
-                            />
-                          </div>
+                          
                           {/* Top-Right Glow Ambient Light */}
-                          <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-teal-500/10 dark:bg-teal-400/15 blur-2xl pointer-events-none" />
+                          
                           {/* Left Status Info */}
                           <div className="flex items-center gap-2.5 flex-wrap min-w-0">
                             <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-black px-2.5 py-1 shadow-2xs">
@@ -3525,14 +3679,14 @@ const SavedDcs = () => {
                             {hasPartPayments && (
                               <Button
                                 size="sm"
-                                className="h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                className="group h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:scale-105 hover:-translate-y-0.5 active:scale-95 active:translate-y-0 cursor-pointer hover:brightness-110"
                                 onClick={() => {
                                   setDetailsModalTab("payment");
                                   setIsTrackPartPaymentsOpen(true);
                                   setDetailsDialogOpen(true);
                                 }}
                               >
-                                <Banknote className="w-3.5 h-3.5" /> Payment Info ({selectedDc.partPayments!.length})
+                                <Banknote className="w-3.5 h-3.5 group-hover:scale-110 group-hover:-translate-y-0.5 transition-transform duration-200" /> Payment Info ({selectedDc.partPayments!.length})
                               </Button>
                             )}
 
@@ -3541,7 +3695,7 @@ const SavedDcs = () => {
                               <>
                                 <Button
                                   size="sm"
-                                  className="h-8 text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                  className="h-8 text-xs font-semibold bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white rounded-lg gap-1.5 shadow-xs transition-colors cursor-pointer"
                                   onClick={() =>
                                     openActionDialog("return", selectedDc)
                                   }
@@ -3550,12 +3704,12 @@ const SavedDcs = () => {
                                 </Button>
                                 <Button
                                   size="sm"
-                                  className="h-8 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                  className="group h-8 text-xs font-semibold bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:scale-105 hover:-translate-y-0.5 active:scale-95 active:translate-y-0 cursor-pointer hover:brightness-110"
                                   onClick={() =>
                                     openActionDialog("purchase", selectedDc)
                                   }
                                 >
-                                  <ShoppingBag className="w-3.5 h-3.5" /> Direct Purchase
+                                  <ShoppingBag className="w-3.5 h-3.5 group-hover:-rotate-12 group-hover:scale-110 transition-transform duration-200" /> Direct Purchase
                                 </Button>
                               </>
                             )}
@@ -3566,21 +3720,21 @@ const SavedDcs = () => {
                                   <>
                                     <Button
                                       size="sm"
-                                      className="h-8 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                      className="h-8 text-xs font-semibold bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg gap-1.5 shadow-xs transition-colors cursor-pointer"
                                       onClick={() =>
                                         handleCreateCashMemoForDc(selectedDc)
                                       }
                                     >
-                                      <Receipt className="w-3.5 h-3.5" /> Cash Memo
+                                      <Receipt className="w-3.5 h-3.5" /> Cash Invoice
                                     </Button>
                                     <Button
                                       size="sm"
-                                      className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                      className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg gap-1.5 shadow-xs transition-colors cursor-pointer"
                                       onClick={() =>
                                         openActionDialog("invoice", selectedDc)
                                       }
                                     >
-                                      <FileText className="w-3.5 h-3.5" /> Tax Invoice
+                                      <Link className="w-3.5 h-3.5" /> Link Invoice
                                     </Button>
                                   </>
                                 )}
@@ -3591,31 +3745,31 @@ const SavedDcs = () => {
                             {selectedDc.invoiceRef && selectedIsCashMemo && (
                               <Button
                                 size="sm"
-                                className="h-8 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                className="group h-8 text-xs font-semibold bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:scale-105 hover:-translate-y-0.5 active:scale-95 active:translate-y-0 cursor-pointer hover:brightness-110"
                                 onClick={() => {
                                   setViewingCashMemoRef(selectedDc.invoiceRef!);
                                   setCashMemoModalOpen(true);
                                 }}
                               >
-                                <Receipt className="w-3.5 h-3.5" /> View Memo
+                                <Receipt className="w-3.5 h-3.5 group-hover:rotate-12 group-hover:scale-110 transition-transform duration-200" /> View Cash Invoice
                               </Button>
                             )}
 
                             {/* Cash Queue specific Record Payment button */}
                             {selectedDc.status === "cash" && (
                               <Button
-                                size="sm"
-                                className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1.5 shadow-xs"
-                                onClick={() => openPaymentDialog(selectedDc)}
-                              >
-                                <Wallet className="w-3.5 h-3.5" /> Pay
-                              </Button>
+                                  size="sm"
+                                  className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg gap-1.5 shadow-xs transition-colors cursor-pointer"
+                                  onClick={() => openPaymentDialog(selectedDc)}
+                                >
+                                  <Wallet className="w-3.5 h-3.5" /> Pay
+                                </Button>
                             )}
 
                             {selectedDc.invoiceRef && selectedIsTaxInvoice && (
                               <Button
                                 size="sm"
-                                className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1.5 shadow-xs"
+                                className="group h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:scale-105 hover:-translate-y-0.5 active:scale-95 active:translate-y-0 cursor-pointer hover:brightness-110"
                                 onClick={() =>
                                   selectedDc.invoiceUrl
                                     ? window.open(
@@ -3625,7 +3779,7 @@ const SavedDcs = () => {
                                     : openActionDialog("invoice", selectedDc)
                                 }
                               >
-                                <ExternalLink className="w-3.5 h-3.5" /> GoGSTBill
+                                <ExternalLink className="w-3.5 h-3.5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform duration-200" /> GoGSTBill
                               </Button>
                             )}
 
@@ -3726,7 +3880,7 @@ const SavedDcs = () => {
                                   key={dc.id}
                                   className={`group p-3 transition-colors duration-150 cursor-pointer relative overflow-hidden ${
                                     isSelected
-                                      ? "bg-gradient-to-r from-teal-50/90 via-teal-50/50 to-transparent dark:from-teal-950/50 dark:via-teal-950/20 dark:to-transparent border-l-4 border-l-teal-600 font-semibold shadow-2xs"
+                                      ? "bg-gradient-to-r from-teal-50/90 via-teal-50/50 to-transparent dark:from-teal-950/50 dark:via-teal-950/20 dark:to-transparent font-semibold shadow-2xs"
                                       : "bg-white border-l-4 border-l-transparent hover:border-l-teal-500 hover:bg-slate-50 dark:bg-slate-950 dark:hover:bg-slate-900"
                                   }`}
                                   onClick={() => setSelectedDcId(dc.id)}
@@ -4099,7 +4253,7 @@ const SavedDcs = () => {
                                                               "",
                                                             ),
                                                           )
-                                                        : dc.cashAmount || 0;
+                                                        : (getDcFinancialBreakdown(dc).hasCut ? getDcFinancialBreakdown(dc).netCashAmount : dc.cashAmount || 0);
 
                                                       if (
                                                         isPart &&
@@ -4108,7 +4262,7 @@ const SavedDcs = () => {
                                                       ) {
                                                         const dueAmt = Math.max(
                                                           0,
-                                                          origAmt - paidAmt,
+                                                          (getDcFinancialBreakdown(dc).hasCut && (origAmt === getDcFinancialBreakdown(dc).billedAmount || origAmt > getDcFinancialBreakdown(dc).netCashAmount) ? getDcFinancialBreakdown(dc).netCashAmount : origAmt) - paidAmt,
                                                         );
                                                          return (
                                                            <span
@@ -4116,19 +4270,20 @@ const SavedDcs = () => {
                                                              title={`Part Payment Recorded: Paid ₹${paidAmt.toLocaleString("en-IN")} of Original Invoice ₹${origAmt.toLocaleString("en-IN")}. Balance Due: ₹${dueAmt.toLocaleString("en-IN")}`}
                                                            >
                                                              <span className="truncate">
-                                                               ⚡ PART: ₹{formatCompact(paidAmt)} / ₹{formatCompact(origAmt)} (DUE ₹{formatCompact(dueAmt)})
+                                                               ⚡ PART: ₹{formatCompact(paidAmt)} / ₹{formatCompact(getDcFinancialBreakdown(dc).hasCut && (origAmt === getDcFinancialBreakdown(dc).billedAmount || origAmt > getDcFinancialBreakdown(dc).netCashAmount) ? getDcFinancialBreakdown(dc).netCashAmount : origAmt)} (DUE ₹{formatCompact(dueAmt)})
                                                              </span>
                                                            </span>
                                                         );
                                                       }
 
+                                                      const fin = getDcFinancialBreakdown(dc);
                                                       return (
                                                         <span
                                                           className={`inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border whitespace-nowrap ${
                                                             getCashMemoAgingDays(
                                                               dc,
                                                             ) > 15
-                                                              ? "bg-rose-100 text-rose-800 border-rose-300 animate-pulse"
+                                                              ? "bg-rose-100 text-rose-800 border-rose-300 "
                                                               : getCashMemoAgingDays(
                                                                     dc,
                                                                   ) > 7
@@ -4136,70 +4291,62 @@ const SavedDcs = () => {
                                                                 : "bg-blue-50 text-blue-700 border-blue-200"
                                                           }`}
                                                           title={
-                                                            dc.billedAmount &&
-                                                            dc.billedAmount >
-                                                              (dc.cashAmount ||
-                                                                0)
-                                                              ? `Our Expected Cash: ₹${(dc.cashAmount || 0).toLocaleString("en-IN")} (Printed Bill: ₹${dc.billedAmount.toLocaleString("en-IN")} | Hospital Cut: ₹${(dc.hospitalMargin || dc.billedAmount - (dc.cashAmount || 0)).toLocaleString("en-IN")}) • Unpaid for ${getCashMemoAgingDays(dc)} days`
+                                                            fin.hasCut
+                                                              ? `Our Expected Cash: ₹${fin.netCashAmount.toLocaleString("en-IN")} (Printed Bill: ₹${fin.billedAmount.toLocaleString("en-IN")} | Hospital Cut: ₹${fin.hospitalMargin.toLocaleString("en-IN")}) • Unpaid for ${getCashMemoAgingDays(dc)} days`
                                                               : `Unpaid for ${getCashMemoAgingDays(dc)} days`
                                                           }
                                                         >
                                                           ● UNPAID{" "}
-                                                          {dc.cashAmount
-                                                            ? `₹${dc.cashAmount}`
-                                                            : ""}{" "}
+                                                          ₹{fin.netCashAmount.toLocaleString("en-IN")}{" "}
                                                           (
                                                           {getCashMemoAgingDays(
                                                             dc,
                                                           )}
                                                           d)
-                                                          {dc.billedAmount &&
-                                                            dc.billedAmount >
-                                                              (dc.cashAmount ||
-                                                                0) && (
-                                                              <span
-                                                                className="text-[8px] font-extrabold text-amber-800 bg-amber-200/90 px-1 py-0.2 rounded ml-0.5"
-                                                                title={`Printed Hiked Bill: ₹${dc.billedAmount}`}
-                                                              >
-                                                                Hiked
-                                                              </span>
-                                                            )}
+                                                          {fin.hasCut && (
+                                                            <span
+                                                              className="text-[8px] font-extrabold text-amber-900 bg-amber-200/90 border border-amber-400 px-1 py-0.2 rounded ml-0.5 whitespace-nowrap"
+                                                              title={`Printed Bill: ₹${fin.billedAmount.toLocaleString("en-IN")} | Net Receivable: ₹${fin.netCashAmount.toLocaleString("en-IN")} | Hospital Cut: ₹${fin.hospitalMargin.toLocaleString("en-IN")}`}
+                                                            >
+                                                              Cut: ₹{fin.hospitalMargin.toLocaleString("en-IN")}
+                                                            </span>
+                                                          )}
                                                         </span>
                                                       );
                                                     })()}
-                                                  {dc.status === "completed" &&
-                                                    dc.cashAmount && (
-                                                      <span
-                                                        className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full max-w-full truncate"
-                                                        title={
-                                                          dc.billedAmount &&
-                                                          dc.billedAmount >
-                                                            (dc.cashAmount || 0)
-                                                            ? `Paid Cash: ₹${dc.cashAmount} (Printed Bill: ₹${dc.billedAmount} | Hospital Cut: ₹${dc.hospitalMargin || dc.billedAmount - (dc.cashAmount || 0)})`
-                                                            : "Cash Memo Paid"
-                                                        }
-                                                      >
-                                                        {dc.isPartialPayment ||
-                                                        (dc.paidAmount &&
-                                                          dc.originalInvoiceTotal &&
-                                                          dc.paidAmount <
-                                                            dc.originalInvoiceTotal) ||
-                                                        (dc.cashRemarks &&
-                                                          dc.cashRemarks.includes(
-                                                            "Part Payment Received",
-                                                          ))
-                                                          ? `⚡ PART: ₹${formatCompact(dc.paidAmount || 0)} / ₹${formatCompact(dc.originalInvoiceTotal || dc.cashAmount || 0)}`
-                                                          : `✓ PAID ₹${formatCompact(dc.cashAmount || 0)}`}
-                                                        {dc.billedAmount &&
-                                                          dc.billedAmount >
-                                                            (dc.cashAmount ||
-                                                              0) && (
-                                                            <span className="text-[8px] font-bold text-emerald-950 bg-emerald-200 px-1 rounded ml-0.5">
-                                                              Hiked
+                                                  {dc.status === "completed" && (
+                                                    (() => {
+                                                      const fin = getDcFinancialBreakdown(dc);
+                                                      if (!fin.netCashAmount && !dc.cashAmount) return null;
+                                                      return (
+                                                        <span
+                                                          className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full max-w-full truncate"
+                                                          title={
+                                                            fin.hasCut
+                                                              ? `Paid Cash: ₹${fin.netCashAmount.toLocaleString("en-IN")} (Printed Bill: ₹${fin.billedAmount.toLocaleString("en-IN")} | Hospital Cut: ₹${fin.hospitalMargin.toLocaleString("en-IN")})`
+                                                              : "Cash Memo Paid"
+                                                          }
+                                                        >
+                                                          {dc.isPartialPayment ||
+                                                          (dc.paidAmount &&
+                                                            dc.originalInvoiceTotal &&
+                                                            dc.paidAmount <
+                                                              dc.originalInvoiceTotal) ||
+                                                          (dc.cashRemarks &&
+                                                            dc.cashRemarks.includes(
+                                                              "Part Payment Received",
+                                                            ))
+                                                            ? `⚡ PART: ₹${formatCompact(dc.paidAmount || 0)} / ₹${formatCompact(dc.originalInvoiceTotal || fin.netCashAmount || 0)}`
+                                                            : `✓ PAID ₹${formatCompact(dc.paidAmount || fin.netCashAmount || 0)}`}
+                                                          {fin.hasCut && (
+                                                            <span className="text-[8px] font-extrabold text-emerald-950 bg-emerald-200 border border-emerald-400 px-1 rounded ml-0.5 whitespace-nowrap">
+                                                              Cut: ₹{fin.hospitalMargin.toLocaleString("en-IN")}
                                                             </span>
                                                           )}
-                                                      </span>
-                                                    )}
+                                                        </span>
+                                                      );
+                                                    })()
+                                                  )}
                                                 </div>
                                               )
                                             ) : (
@@ -5837,7 +5984,7 @@ const SavedDcs = () => {
                       <Banknote className="w-3.5 h-3.5" />
                       <span>Payment Info</span>
                       {(selectedDc.paidAmount || (selectedDc.partPayments && selectedDc.partPayments.length > 0)) ? (
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+                        <span className="w-2 h-2 rounded-full bg-emerald-400  ml-0.5" />
                       ) : null}
                     </TabsTrigger>
                   )}
@@ -5874,13 +6021,66 @@ const SavedDcs = () => {
                   ) : selectedDc.status === "completed" ||
                     Boolean(selectedDc.paidAt || linkedBankTx || (selectedDc.partPayments && selectedDc.partPayments.length > 0)) ? (
                       <div className="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-background from-emerald-50 via-teal-50/50 to-emerald-50/20 dark:from-emerald-950/40 dark:to-slate-900 p-3.5 space-y-2.5 shadow-none">
+                        {/* Hiked Cash Bill & Hospital Cut Breakdown Banner */}
+                        {(() => {
+                          const fin = getDcFinancialBreakdown(selectedDc);
+                          if (!fin.hasCut) return null;
+                          const actualReceived =
+                            selectedDc.paidAmount ||
+                            (selectedDc.partPayments
+                              ? selectedDc.partPayments.reduce(
+                                  (s, p) => s + (p.amount || 0),
+                                  0,
+                                )
+                              : 0);
+
+                          return (
+                            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/80 p-2.5 space-y-1.5">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                                  <Receipt className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                  Hiked Cash Bill & Hospital Cut Breakdown
+                                </span>
+                                <span className="text-[10px] bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300/60 px-2 py-0.5 rounded-full font-bold">
+                                  Margin Deducted
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
+                                <div className="bg-white dark:bg-slate-900 py-1 px-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                                  <span className="block text-[9px] text-slate-400 font-semibold uppercase">Printed Bill</span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-200 font-mono text-xs">
+                                    ₹{fin.billedAmount.toLocaleString("en-IN")}
+                                  </span>
+                                </div>
+                                <div className="bg-white dark:bg-slate-900 py-1 px-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                                  <span className="block text-[9px] text-slate-400 font-semibold uppercase">Hospital Cut</span>
+                                  <span className="font-bold text-rose-600 dark:text-rose-400 font-mono text-xs">
+                                    -₹{fin.hospitalMargin.toLocaleString("en-IN")}
+                                  </span>
+                                </div>
+                                <div className="bg-emerald-50 dark:bg-emerald-950/40 py-1 px-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                                  <span className="block text-[9px] text-emerald-800 dark:text-emerald-300 font-bold uppercase">Net SRR Target</span>
+                                  <span className="font-black text-emerald-700 dark:text-emerald-400 font-mono text-xs">
+                                    ₹{fin.netCashAmount.toLocaleString("en-IN")}
+                                  </span>
+                                </div>
+                                <div className="bg-emerald-100 dark:bg-emerald-950/80 py-1 px-1.5 rounded-lg border border-emerald-300 dark:border-emerald-700">
+                                  <span className="block text-[9px] text-emerald-900 dark:text-emerald-200 font-extrabold uppercase">Cash Collected</span>
+                                  <span className="font-black text-emerald-800 dark:text-emerald-300 font-mono text-xs">
+                                    ₹{actualReceived.toLocaleString("en-IN")}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {/* Part Payment Alert Banner if Partial Payment */}
                         {(() => {
+                          const fin = getDcFinancialBreakdown(selectedDc);
                           let isPart = Boolean(selectedDc.isPartialPayment);
                           let paid = selectedDc.paidAmount ?? 0;
-                          let orig =
-                            selectedDc.originalInvoiceTotal ??
-                            (selectedDc.cashAmount || 0);
+                          let orig = fin.hasCut ? fin.netCashAmount : (selectedDc.originalInvoiceTotal ?? (selectedDc.cashAmount || 0));
 
                           // Fallback parsing from cashRemarks string if stored prior: e.g. "Part Payment Received: ₹6 of ₹1,200"
                           if (
@@ -5896,8 +6096,10 @@ const SavedDcs = () => {
                             if (match) {
                               paid =
                                 parseFloat(match[1].replace(/,/g, "")) || paid;
-                              orig =
-                                parseFloat(match[2].replace(/,/g, "")) || orig;
+                              if (!fin.hasCut) {
+                                orig =
+                                  parseFloat(match[2].replace(/,/g, "")) || orig;
+                              }
                             }
                           }
 
@@ -5915,36 +6117,26 @@ const SavedDcs = () => {
                             selectedDc.partPayments || [];
 
                           return (
-                            <div className="rounded-lg border border-amber-300/80 bg-amber-50/70 dark:bg-amber-950/40 dark:border-amber-800 p-2.5 text-xs text-amber-950 dark:text-amber-200 space-y-2">
-                              {/* Header + Stats in a compact row */}
-                              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 dark:border-amber-800/80 pb-2">
+                            <div className="rounded-lg border border-amber-300/80 bg-amber-50/70 dark:bg-amber-950/40 dark:border-amber-800 p-3 text-xs text-amber-950 dark:text-amber-200 space-y-3">
+                              {/* Header Row */}
+                              <div className="flex items-center justify-between gap-2 border-b border-amber-200/80 dark:border-amber-800/80 pb-2">
                                 <div className="flex items-center gap-1.5 font-bold">
                                   <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                                  <span className="text-amber-900 dark:text-amber-100">Part Payment Settlement</span>
+                                  <span className="text-amber-900 dark:text-amber-100 font-extrabold text-xs">
+                                    Part Payment & Collection Settlement
+                                  </span>
                                   {selectedDc.invoiceRef && (
                                     <span className="text-[10px] font-mono font-bold text-amber-900 dark:text-amber-200 bg-amber-200/80 dark:bg-amber-900/80 px-1.5 py-0.5 rounded border border-amber-400/60 ml-0.5">
                                       Memo #{selectedDc.invoiceRef}
                                     </span>
                                   )}
-                                  <Badge className="bg-amber-500 text-white font-bold text-[9px] px-1.5 py-0">
-                                    PART PAID
-                                  </Badge>
                                 </div>
-
-                                <div className="flex items-center gap-2 font-mono text-[11px] font-semibold flex-wrap">
-                                  <span className="text-slate-600 dark:text-slate-400">
-                                    Invoice: <b className="text-slate-900 dark:text-slate-100">₹{orig.toLocaleString("en-IN")}</b>
-                                  </span>
-                                  <span className="text-slate-300 dark:text-slate-700">•</span>
-                                  <span className="text-emerald-700 dark:text-emerald-400">
-                                    Settled: <b>₹{paid.toLocaleString("en-IN")}</b>
-                                  </span>
-                                  <span className="text-slate-300 dark:text-slate-700">•</span>
-                                  <span className="text-rose-700 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/80 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900">
-                                    Unpaid Balance: <b>₹{due.toLocaleString("en-IN")}</b>
-                                  </span>
-                                </div>
+                                <Badge className={`font-bold text-[9px] px-2 py-0.5 ${due === 0 ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"}`}>
+                                  {due === 0 ? "FULL SETTLEMENT" : "PART PAID"}
+                                </Badge>
                               </div>
+
+
 
                               {/* Installment Breakdown Rows */}
                               {partPaymentsList.length > 0 && (
@@ -6708,7 +6900,7 @@ const SavedDcs = () => {
                                 onClick={() =>
                                   openActionDialog("return", selectedDc)
                                 }
-                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-indigo-200/90 bg-indigo-50/60 hover:bg-indigo-100 hover:border-indigo-300 text-indigo-900 transition-all text-center group shadow-none hover:shadow-none"
+                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-indigo-200/90 bg-indigo-50/60 hover:bg-indigo-100 hover:border-indigo-300 text-indigo-900 transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] text-center group shadow-none hover:shadow-xs cursor-pointer"
                               >
                                 <div className="h-7 w-7 rounded-full bg-indigo-100 group-hover:bg-indigo-200 flex items-center justify-center mb-1 text-indigo-700 transition-colors">
                                   <RotateCcw className="h-4 w-4" />
@@ -6728,7 +6920,7 @@ const SavedDcs = () => {
                                   setDetailsDialogOpen(false);
                                   handleCreateCashMemoForDc(selectedDc);
                                 }}
-                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all text-center group shadow-none hover:shadow-none"
+                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] text-center group shadow-none hover:shadow-xs cursor-pointer"
                               >
                                 <span className="absolute -top-1.5 right-2 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-500 text-white shadow-none">
                                   Purchase
@@ -6751,7 +6943,7 @@ const SavedDcs = () => {
                                   setDetailsDialogOpen(false);
                                   openActionDialog("invoice", selectedDc);
                                 }}
-                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all text-center group shadow-none hover:shadow-none"
+                                className="relative flex flex-col items-center justify-center p-2.5 rounded-lg border border-amber-300/90 bg-amber-50/60 hover:bg-amber-100 hover:border-amber-400 text-amber-950 transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] text-center group shadow-none hover:shadow-xs cursor-pointer"
                               >
                                 <span className="absolute -top-1.5 right-2 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-500 text-white shadow-none">
                                   Purchase
@@ -6773,7 +6965,7 @@ const SavedDcs = () => {
                                 onClick={() =>
                                   openActionDialog("cancel", selectedDc)
                                 }
-                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-rose-200/90 bg-rose-50/50 hover:bg-rose-100 hover:border-rose-300 text-rose-900 transition-all text-center group shadow-none hover:shadow-none"
+                                className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-rose-200/90 bg-rose-50/50 hover:bg-rose-100 hover:border-rose-300 text-rose-900 transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] text-center group shadow-none hover:shadow-xs cursor-pointer"
                               >
                                 <div className="h-7 w-7 rounded-full bg-rose-100 group-hover:bg-rose-200 flex items-center justify-center mb-1 text-rose-700 transition-colors">
                                   <AlertCircle className="h-4 w-4" />
@@ -6812,7 +7004,7 @@ const SavedDcs = () => {
                                 </div>
                                 <Button
                                   size="sm"
-                                  className="mt-2.5 h-7 w-full text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shadow-none"
+                                  className="mt-2.5 h-7 w-full text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shadow-none transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                                   onClick={() =>
                                     handleCreateCashMemoForDc(selectedDc)
                                   }
@@ -6826,7 +7018,7 @@ const SavedDcs = () => {
                               <div className="rounded-lg border border-purple-200/80 bg-purple-50/40 p-2.5 flex flex-col justify-between hover:border-purple-300 transition-colors">
                                 <div>
                                   <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-900">
-                                    <FileText className="h-3.5 w-3.5 text-slate-600" />
+                                    <Link className="h-3.5 w-3.5 text-purple-600 group-hover:rotate-45 transition-transform duration-300" />
                                     Link GoGSTBill
                                   </div>
                                   <p className="text-[11px] text-slate-600 mt-1 leading-snug">
@@ -6837,7 +7029,7 @@ const SavedDcs = () => {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="mt-2.5 h-7 w-full text-xs font-medium border-purple-300 text-purple-700 bg-white hover:bg-purple-50 gap-1.5"
+                                  className="mt-2.5 h-7 w-full text-xs font-medium border-purple-300 text-purple-700 bg-white hover:bg-purple-50 gap-1.5 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                                   onClick={() =>
                                     openActionDialog("invoice", selectedDc)
                                   }
@@ -6886,7 +7078,7 @@ const SavedDcs = () => {
                               {selectedIsCashMemo && (
                                 <Button
                                   size="sm"
-                                  className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-none"
+                                  className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-none transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                                   onClick={() => {
                                     setDetailsDialogOpen(false);
                                     setViewingCashMemoRef(
@@ -6901,10 +7093,10 @@ const SavedDcs = () => {
                               )}
                               <Button
                                 size="sm"
-                                className="h-7 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-none"
+                                className="h-7 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-none transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] hover:shadow-sm cursor-pointer"
                                 onClick={() => openPaymentDialog(selectedDc)}
                               >
-                                <Wallet className="h-3.5 w-3.5 mr-1" /> Mark as Paid / Record Payment
+                                <Wallet className="h-3.5 w-3.5 mr-1 animate-bounce" /> Mark as Paid / Record Payment
                               </Button>
                             </div>
                           </div>
@@ -7075,103 +7267,96 @@ const SavedDcs = () => {
                           </div>
                         )}
                         {!selectedIsTaxInvoice && (
-                          <>
-                            {Boolean(
-                              (selectedDc as any).billedAmount &&
-                              (selectedDc as any).billedAmount >
-                                ((selectedDc as any).cashAmount || 0),
-                            ) && (
+                          (() => {
+                            const fin = getDcFinancialBreakdown(selectedDc);
+                            return (
                               <>
+                                {fin.hasCut && (
+                                  <>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-slate-500">
+                                        Printed Bill (Hiked)
+                                      </span>
+                                      <span className="font-semibold text-slate-600 line-through">
+                                        ₹{fin.billedAmount.toLocaleString("en-IN")}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-amber-700 font-medium">
+                                        Hospital Cut / Margin
+                                      </span>
+                                      <span className="font-bold text-amber-700">
+                                        - ₹{fin.hospitalMargin.toLocaleString("en-IN")}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
                                 <div className="flex items-center justify-between gap-3">
                                   <span className="text-slate-500">
-                                    Printed Bill (Hiked)
+                                    {selectedDc.status === "cash"
+                                      ? "Net Cash Due"
+                                      : selectedDc.isPartialPayment ||
+                                          (selectedDc.paidAmount &&
+                                            selectedDc.originalInvoiceTotal &&
+                                            selectedDc.paidAmount <
+                                              selectedDc.originalInvoiceTotal) ||
+                                          selectedDc.cashRemarks?.includes(
+                                            "Part Payment Received",
+                                          )
+                                        ? "Settled Part Paid Amount"
+                                        : fin.hasCut
+                                          ? "Our Net Cash"
+                                          : "Cash Amount"}
                                   </span>
-                                  <span className="font-semibold text-slate-600 line-through">
-                                    ₹
-                                    {(
-                                      selectedDc as any
-                                    ).billedAmount.toLocaleString("en-IN")}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="text-amber-700 font-medium">
-                                    Hospital Cut / Margin
-                                  </span>
-                                  <span className="font-bold text-amber-700">
-                                    - ₹
-                                    {(
-                                      (selectedDc as any).hospitalMargin ||
-                                      (selectedDc as any).billedAmount -
-                                        ((selectedDc as any).cashAmount || 0)
-                                    ).toLocaleString("en-IN")}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-slate-500">
-                                {selectedDc.status === "cash"
-                                  ? "Net Cash Due"
-                                  : selectedDc.isPartialPayment ||
-                                      (selectedDc.paidAmount &&
-                                        selectedDc.originalInvoiceTotal &&
-                                        selectedDc.paidAmount <
-                                          selectedDc.originalInvoiceTotal) ||
-                                      selectedDc.cashRemarks?.includes(
-                                        "Part Payment Received",
-                                      )
-                                    ? "Settled Part Paid Amount"
-                                    : (selectedDc as any).billedAmount
-                                      ? "Our Net Cash"
-                                      : "Cash Amount"}
-                              </span>
-                              <span
-                                className={`font-bold ${selectedDc.status === "cash" ? "text-amber-800 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-400"}`}
-                              >
-                                {(() => {
-                                  if (selectedDc.status === "cash") {
-                                    const orig =
-                                      selectedDc.originalInvoiceTotal ||
-                                      selectedDc.cashAmount ||
-                                      0;
-                                    const paid = selectedDc.paidAmount || 0;
-                                    const remaining = Math.max(0, orig - paid);
-                                    return `₹${remaining.toLocaleString("en-IN")}`;
-                                  }
-                                  const isPart =
-                                    selectedDc.isPartialPayment ||
-                                    (selectedDc.paidAmount &&
-                                      selectedDc.originalInvoiceTotal &&
-                                      selectedDc.paidAmount <
-                                        selectedDc.originalInvoiceTotal) ||
-                                    selectedDc.cashRemarks?.includes(
-                                      "Part Payment Received",
-                                    );
-                                  if (isPart) {
-                                    let paid = selectedDc.paidAmount ?? 0;
-                                    if (
-                                      selectedDc.cashRemarks &&
-                                      selectedDc.cashRemarks.includes(
-                                        "Part Payment Received",
-                                      )
-                                    ) {
-                                      const match =
-                                        selectedDc.cashRemarks.match(
-                                          /Part Payment Received:\s*₹?([\d,]+)\s*of/i,
+                                  <span
+                                    className={`font-bold ${selectedDc.status === "cash" ? "text-amber-800 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-400"}`}
+                                  >
+                                    {(() => {
+                                      if (selectedDc.status === "cash") {
+                                        const orig = fin.hasCut
+                                          ? fin.netCashAmount
+                                          : selectedDc.originalInvoiceTotal ||
+                                            fin.netCashAmount ||
+                                            0;
+                                        const paid = selectedDc.paidAmount || 0;
+                                        const remaining = Math.max(0, orig - paid);
+                                        return `₹${(fin.hasCut ? fin.netCashAmount : remaining).toLocaleString("en-IN")}`;
+                                      }
+                                      const isPart =
+                                        selectedDc.isPartialPayment ||
+                                        (selectedDc.paidAmount &&
+                                          selectedDc.originalInvoiceTotal &&
+                                          selectedDc.paidAmount <
+                                            selectedDc.originalInvoiceTotal) ||
+                                        selectedDc.cashRemarks?.includes(
+                                          "Part Payment Received",
                                         );
-                                      if (match)
-                                        paid =
-                                          parseFloat(
-                                            match[1].replace(/,/g, ""),
-                                          ) || paid;
-                                    }
-                                    return `₹${paid.toLocaleString("en-IN")} (Part Paid)`;
-                                  }
-                                  return typeof (selectedDc as any)
-                                    .cashAmount === "number"
-                                    ? `₹${(selectedDc as any).cashAmount.toLocaleString("en-IN")}`
-                                    : "-";
-                                })()}
+                                      if (isPart) {
+                                        let paid = selectedDc.paidAmount ?? 0;
+                                        if (
+                                          selectedDc.cashRemarks &&
+                                          selectedDc.cashRemarks.includes(
+                                            "Part Payment Received",
+                                          )
+                                        ) {
+                                          const match =
+                                            selectedDc.cashRemarks.match(
+                                              /Part Payment Received:\s*₹?([\d,]+)\s*of/i,
+                                            );
+                                          if (match)
+                                            paid =
+                                              parseFloat(
+                                                match[1].replace(/,/g, ""),
+                                              ) || paid;
+                                        }
+                                        return `₹${paid.toLocaleString("en-IN")} (Part Paid)`;
+                                      }
+                                      return fin.netCashAmount
+                                        ? `₹${fin.netCashAmount.toLocaleString("en-IN")}`
+                                        : typeof (selectedDc as any).cashAmount === "number"
+                                          ? `₹${(selectedDc as any).cashAmount.toLocaleString("en-IN")}`
+                                          : "-";
+                                    })()}
                                 {selectedDc.status === "cash"
                                   ? " (Unpaid)"
                                   : ""}
@@ -7211,7 +7396,9 @@ const SavedDcs = () => {
                               </Button>
                             )}
                           </>
-                        )}
+                        );
+                      })()
+                    )}
                       </div>
                     </div>
                   )}
@@ -7738,8 +7925,11 @@ const SavedDcs = () => {
                     Admin Password *
                   </Label>
                   <Input
+                    id="protected-delete-admin-password"
+                    name="protected-delete-admin-password-field"
                     type="password"
-                    autoComplete="off"
+                    autoComplete="new-password"
+                    aria-autocomplete="none"
                     data-lpignore="true"
                     data-1p-ignore="true"
                     data-bwignore="true"
@@ -8149,83 +8339,70 @@ const SavedDcs = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
               {/* LEFT COLUMN: RECEIVABLE DETAILS & PAYMENT INPUTS */}
-              <div
-                className={`${paymentMethod === "bank_transfer" ? "lg:col-span-5" : "lg:col-span-12 max-w-xl mx-auto w-full"} space-y-4`}
-              >
+              <div className="lg:col-span-6 space-y-4">
                 {/* Financial Receivable Banner */}
-                {Boolean(
-                  paymentDialog.dc?.billedAmount &&
-                  paymentDialog.dc.billedAmount >
-                    (paymentDialog.dc.cashAmount || 0),
-                ) ? (
-                  <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                        <Receipt className="w-3.5 h-3.5 text-slate-600" />
-                        Hiked Bill Settlement
-                      </span>
-                      <span className="text-[10px] bg-amber-200/70 dark:bg-amber-900/60 px-2 py-0.5 rounded-full font-bold text-amber-900 dark:text-amber-200">
-                        Margin Deducted
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-amber-200/60 dark:border-amber-900/30">
-                      <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
-                        <span className="block text-[10px] text-slate-500 uppercase font-semibold">
-                          Printed Bill
+                {(() => {
+                  const fin = getDcFinancialBreakdown(paymentDialog.dc);
+                  const prevPaid = paymentDialog.dc?.paidAmount || 0;
+                  if (fin.hasCut) {
+                    return (
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                            <Receipt className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            Hiked Bill Settlement
+                          </span>
+                          <span className="text-[10px] bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300/60 px-2 py-0.5 rounded-full font-bold">
+                            Margin Deducted
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
+                          <div className="bg-white dark:bg-slate-900 py-1 px-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                            <span className="block text-[9px] text-slate-400 font-semibold uppercase">Printed Bill</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 font-mono text-xs">
+                              ₹{fin.billedAmount.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900 py-1 px-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                            <span className="block text-[9px] text-slate-400 font-semibold uppercase">Hospital Cut</span>
+                            <span className="font-bold text-rose-600 dark:text-rose-400 font-mono text-xs">
+                              -₹{fin.hospitalMargin.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                          <div className="bg-emerald-50 dark:bg-emerald-950/40 py-1 px-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                            <span className="block text-[9px] text-emerald-800 dark:text-emerald-300 font-bold uppercase">Net SRR Target</span>
+                            <span className="font-black text-emerald-700 dark:text-emerald-400 font-mono text-xs">
+                              ₹{fin.netCashAmount.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                          <div className="bg-emerald-100 dark:bg-emerald-950/80 py-1 px-1.5 rounded-lg border border-emerald-300 dark:border-emerald-700">
+                            <span className="block text-[9px] text-emerald-900 dark:text-emerald-200 font-extrabold uppercase">Cash Collected</span>
+                            <span className="font-black text-emerald-800 dark:text-emerald-300 font-mono text-xs">
+                              ₹{prevPaid.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/60 p-3.5 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Outstanding Receivable
                         </span>
-                        <span className="font-bold text-slate-700 dark:text-slate-300">
-                          ₹
-                          {paymentDialog.dc?.billedAmount?.toLocaleString(
-                            "en-IN",
-                          )}
+                        <span className="text-xs text-slate-600 dark:text-slate-400">
+                          Total payment due for this DC
                         </span>
                       </div>
-                      <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 text-center">
-                        <span className="block text-[10px] text-amber-700 dark:text-amber-400 uppercase font-semibold">
-                          Hospital Cut
-                        </span>
-                        <span className="font-bold text-amber-800 dark:text-amber-300">
-                          -₹
-                          {(
-                            paymentDialog.dc?.hospitalMargin ||
-                            paymentDialog.dc!.billedAmount! -
-                              (paymentDialog.dc!.cashAmount || 0)
-                          ).toLocaleString("en-IN")}
-                        </span>
-                      </div>
-                      <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-900/30 text-center">
-                        <span className="block text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold">
-                          Net Due
-                        </span>
-                        <span className="font-black text-emerald-800 dark:text-emerald-300">
-                          ₹
-                          {(paymentDialog.dc?.cashAmount || 0).toLocaleString(
-                            "en-IN",
-                          )}
+                      <div className="text-right">
+                        <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono">
+                          ₹{fin.netCashAmount.toLocaleString("en-IN")}
                         </span>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/60 p-3.5 flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                        Outstanding Receivable
-                      </span>
-                      <span className="text-xs text-slate-600 dark:text-slate-400">
-                        Total payment due for this DC
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 font-mono">
-                        ₹
-                        {(paymentDialog.dc?.cashAmount || 0).toLocaleString(
-                          "en-IN",
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Collapsible History of Prior Part Payments (if any exist) */}
                 {paymentDialog.dc?.partPayments &&
@@ -8431,11 +8608,21 @@ const SavedDcs = () => {
                       onClick={() => {
                         if (paymentMethod !== "cash") {
                           setPaymentMethod("cash");
-                          setPaymentAmountInput("");
+                          const isDcCut = Boolean(
+                            (paymentDialog.dc?.hospitalMargin && paymentDialog.dc.hospitalMargin > 0) ||
+                            (paymentDialog.dc?.billedAmount && paymentDialog.dc?.cashAmount && paymentDialog.dc.billedAmount > paymentDialog.dc.cashAmount)
+                          );
+                          if (isDcCut) {
+                            setPaymentAmountInput(paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "");
+                            setPartialSettlementType("final_settlement");
+                            setFinalSettlementReason("hospital_commission");
+                          } else {
+                            setPaymentAmountInput("");
+                            setPartialSettlementType("pay_more");
+                            setFinalSettlementReason("discount");
+                          }
                           setPaymentRemarksInput("");
                           setPaymentCollectedBy("");
-                          setPartialSettlementType("pay_more");
-                          setFinalSettlementReason("discount");
                           setSettlementDoctorName("");
                           setSelectedCreditTxId("not_found");
                         }
@@ -8459,11 +8646,21 @@ const SavedDcs = () => {
                       onClick={() => {
                         if (paymentMethod !== "bank_transfer") {
                           setPaymentMethod("bank_transfer");
-                          setPaymentAmountInput("");
+                          const isDcCut = Boolean(
+                            (paymentDialog.dc?.hospitalMargin && paymentDialog.dc.hospitalMargin > 0) ||
+                            (paymentDialog.dc?.billedAmount && paymentDialog.dc?.cashAmount && paymentDialog.dc.billedAmount > paymentDialog.dc.cashAmount)
+                          );
+                          if (isDcCut) {
+                            setPaymentAmountInput(paymentDialog.dc?.cashAmount ? String(paymentDialog.dc.cashAmount) : "");
+                            setPartialSettlementType("final_settlement");
+                            setFinalSettlementReason("hospital_commission");
+                          } else {
+                            setPaymentAmountInput("");
+                            setPartialSettlementType("pay_more");
+                            setFinalSettlementReason("discount");
+                          }
                           setPaymentRemarksInput("");
                           setPaymentCollectedBy("");
-                          setPartialSettlementType("pay_more");
-                          setFinalSettlementReason("discount");
                           setSettlementDoctorName("");
                         }
                       }}
@@ -8655,7 +8852,7 @@ const SavedDcs = () => {
 
               {/* RIGHT COLUMN: BANK CREDIT LINKING & MATCHING PANEL (When Bank Transfer is active) */}
               {paymentMethod === "bank_transfer" && (
-                <div className="lg:col-span-7 bg-slate-50/80 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="lg:col-span-6 bg-slate-50/80 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                       <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -8682,9 +8879,13 @@ const SavedDcs = () => {
                       {/* 1. BANK ACCOUNTS TABS (1538 ALWAYS FIRST ON THE LEFT!) */}
                       {sortedBankAccounts.map((acc) => {
                         const isSelected = selectedBankAccountId === acc.id;
-                        const count = availableBankCredits.filter(
-                          (t) => t.accountId === acc.id,
-                        ).length;
+                        const is6569Acc = isAccount6569(acc);
+                        const isLocked6569 = is6569Acc && !is6569Unlocked;
+                        const count = isLocked6569
+                          ? "🔒"
+                          : availableBankCredits.filter(
+                              (t) => t.accountId === acc.id,
+                            ).length;
                         const accSuffix = acc.accountNumber
                           ? acc.accountNumber.slice(-4)
                           : acc.accountName.match(/\d{4}/)?.[0] || "";
@@ -8695,17 +8896,26 @@ const SavedDcs = () => {
                           <button
                             key={acc.id}
                             type="button"
-                            onClick={() => setSelectedBankAccountId(acc.id)}
+                            onClick={() => {
+                              if (isLocked6569) {
+                                setIs6569AuthDialogOpen(true);
+                              } else {
+                                setSelectedBankAccountId(acc.id);
+                              }
+                            }}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
                               isSelected
                                 ? is1538
                                   ? "bg-emerald-600 text-white border-emerald-600 shadow-none ring-2 ring-emerald-500/20"
                                   : "bg-indigo-600 text-white border-indigo-600 shadow-none ring-2 ring-indigo-500/20"
-                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                                : isLocked6569
+                                  ? "bg-amber-50/70 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
                             }`}
                           >
                             <Building2 className="w-3.5 h-3.5" />
                             <span>
+                              {isLocked6569 ? "🔒 " : ""}
                               {acc.bankName ||
                                 acc.accountName.split("(")[0].trim()}
                             </span>
@@ -8724,7 +8934,9 @@ const SavedDcs = () => {
                               className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
                                 isSelected
                                   ? "bg-black/20 text-white"
-                                  : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+                                  : isLocked6569
+                                    ? "bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200"
+                                    : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
                               }`}
                             >
                               {count}
@@ -8752,19 +8964,20 @@ const SavedDcs = () => {
                               : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
                           }`}
                         >
-                          {availableBankCredits.length}
+                          {filteredBankCredits.length}
                         </span>
                       </button>
                     </div>
                   </div>
 
                   {isLoadingBankCredits ? (
-                    <div className="p-4 bg-indigo-50/50 dark:bg-slate-900/60 rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/30">
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                    <div className="h-72 bg-indigo-50/30 dark:bg-slate-900/60 rounded-xl flex flex-col items-center justify-center gap-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/30">
+                      <Loader2 className="w-5 h-5 animate-spin text-indigo-600 dark:text-indigo-400" />
                       <span>Fetching live bank statement credits...</span>
+                      <span className="text-[10px] text-slate-400 font-normal">Syncing with live bank statements</span>
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    <div className="space-y-2 h-72 overflow-y-auto pr-1">
                       {filteredBankCredits.map((tx) => {
                         const isSelected = selectedCreditTxId === tx.id;
                         const dcAmount =
@@ -8878,6 +9091,141 @@ const SavedDcs = () => {
                   )}
                 </div>
               )}
+
+              {/* RIGHT COLUMN: CASH COLLECTION & TREASURY VERIFICATION PANEL (When Cash is active) */}
+              {paymentMethod === "cash" && (
+                <div className="lg:col-span-6 bg-slate-50/80 dark:bg-slate-850 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Banknote className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      Cash Collection & Treasury Verification
+                    </Label>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 font-semibold"
+                    >
+                      ⚡ Cash Treasury
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Verify physical cash collector, cash ledger placement, and daily settlement:
+                  </p>
+
+                  {/* Collector Identification Box */}
+                  <div className="p-3 rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                        Cash Collector Verification
+                      </span>
+                      {paymentCollectedBy ? (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-600" /> Collector Verified
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 text-amber-600" /> Select Collector
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2.5 pt-1">
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                          paymentCollectedBy
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
+                            : "bg-slate-100 text-slate-400 dark:bg-slate-800"
+                        }`}
+                      >
+                        {paymentCollectedBy
+                          ? paymentCollectedBy.slice(0, 2).toUpperCase()
+                          : "?"}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs font-extrabold text-slate-800 dark:text-slate-100 block truncate">
+                          {paymentCollectedBy || "No collector selected on left form"}
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                          {paymentDialog.dc?.deliveredBy
+                            ? `Field Agent: ${paymentDialog.dc.deliveredBy}`
+                            : "Counter / Direct Office Cash Register"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cash Flow Breakdown Box */}
+                  <div className="p-3 rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Live Cash Settlement Breakdown
+                    </span>
+                    {(() => {
+                      const amtNum = Number(paymentAmountInput) || 0;
+                      const fin = getDcFinancialBreakdown(paymentDialog.dc);
+                      const prevPaid = paymentDialog.dc?.paidAmount || 0;
+                      const rem = Math.max(0, fin.netCashAmount - prevPaid - amtNum);
+
+                      return (
+                        <div className="space-y-2 text-xs">
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="bg-slate-50 dark:bg-slate-850 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
+                              <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                                Cash Depositing
+                              </span>
+                              <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                                ₹{amtNum.toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-slate-850 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-center">
+                              <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                                Balance Remaining
+                              </span>
+                              <span
+                                className={`text-sm font-black font-mono ${
+                                  rem > 0
+                                    ? "text-amber-600 dark:text-amber-400"
+                                    : "text-slate-700 dark:text-slate-300"
+                                }`}
+                              >
+                                ₹{rem.toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                          </div>
+
+                          {fin.hasCut && (
+                            <div className="p-2 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 text-[11px] text-rose-900 dark:text-rose-200 flex items-center justify-between">
+                              <span className="font-medium">Hospital Cut Retained</span>
+                              <span className="font-extrabold text-rose-600 dark:text-rose-400 font-mono">
+                                -₹{fin.hospitalMargin.toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Cash Protocol Checklist */}
+                  <div className="p-3 rounded-xl border border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-1.5 text-xs">
+                    <span className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5 text-xs">
+                      <Wallet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Cash Register & Audit Checklist
+                    </span>
+                    <div className="space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Instant entry into <strong>Daily Cash Treasury</strong></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Field Representative cash balance updated</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Auto-links to daily closing collection report</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -8886,14 +9234,13 @@ const SavedDcs = () => {
             {/* Live Part Payment Banner */}
             {(() => {
               const prevPaid = paymentDialog.dc?.paidAmount || 0;
+              const hasHiked = Boolean(
+                paymentDialog.dc?.billedAmount &&
+                  paymentDialog.dc.billedAmount > (paymentDialog.dc.cashAmount || 0),
+              );
               const origAmt =
                 paymentDialog.dc?.originalInvoiceTotal ||
-                paymentDialog.dc?.cashAmount ||
-                (paymentDialog.dc?.billedAmount
-                  ? paymentDialog.dc.billedAmount -
-                    (paymentDialog.dc.hospitalMargin || 0)
-                  : 0) ||
-                0;
+                (hasHiked ? paymentDialog.dc!.billedAmount! : paymentDialog.dc?.cashAmount || paymentDialog.dc?.billedAmount || 0);
               const remainingBalance = Math.max(0, origAmt - prevPaid);
               const currentInstallment = parseFloat(paymentAmountInput) || 0;
               const totalCollectedAfter = prevPaid + currentInstallment;
@@ -8901,188 +9248,105 @@ const SavedDcs = () => {
                 0,
                 origAmt - totalCollectedAfter,
               );
-              // Show part payment options ONLY if entered amount is less than remaining balance
+              // Show part payment options if entered amount is less than total invoice amount
               const isPart =
                 origAmt > 0 &&
                 currentInstallment > 0 &&
-                currentInstallment < remainingBalance;
+                (currentInstallment < remainingBalance || hasHiked);
 
               if (isPart) {
                 return (
-                  <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 overflow-hidden">
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-amber-100/80 dark:bg-amber-900/40 border-b border-amber-200 dark:border-amber-800">
-                      <span className="flex items-center gap-1.5 text-amber-900 dark:text-amber-100 text-xs font-bold">
-                        <AlertCircle className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                        Part Payment — ₹
-                        {remainingDueAfter.toLocaleString("en-IN")} still
-                        outstanding
-                      </span>
-                      <Badge className="bg-amber-500 text-white text-[9px] font-extrabold px-1.5 py-0 uppercase tracking-wide">
-                        Action Required
-                      </Badge>
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 p-2.5 space-y-2 text-xs">
+                    {/* Top 1-Line Summary Bar */}
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-400 px-0.5 border-b border-slate-200/80 dark:border-slate-800 pb-1.5 flex-wrap gap-1">
+                      <span>Invoice: <strong className="text-slate-900 dark:text-slate-100 font-mono">₹{origAmt.toLocaleString("en-IN")}</strong></span>
+                      {prevPaid > 0 && <span>Prev. Paid: <strong className="text-slate-700 dark:text-slate-300 font-mono">₹{prevPaid.toLocaleString("en-IN")}</strong></span>}
+                      <span>Now: <strong className="text-emerald-700 dark:text-emerald-400 font-mono">₹{currentInstallment.toLocaleString("en-IN")}</strong></span>
+                      <span className="text-rose-600 dark:text-rose-400 font-bold">Remaining: <strong className="font-mono">₹{remainingDueAfter.toLocaleString("en-IN")}</strong></span>
                     </div>
 
-                    {/* Compact Metrics Strip */}
-                    <div className="grid grid-cols-4 divide-x divide-amber-200 dark:divide-amber-800 text-center text-[10px]">
-                      <div className="py-1.5 px-2">
-                        <div className="text-slate-500 font-medium uppercase tracking-wide text-[9px]">
-                          Invoice
+                    {/* 2 Compact Action Cards */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* Card 1: Keep in Cash Queue */}
+                      <div
+                        onClick={() => setPartialSettlementType("pay_more")}
+                        className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                          partialSettlementType === "pay_more"
+                            ? "border-slate-800 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 shadow-sm"
+                            : "border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-3 h-3 rounded-full border flex items-center justify-center shrink-0 ${partialSettlementType === "pay_more" ? "border-white bg-white dark:border-slate-900 dark:bg-slate-900" : "border-slate-400"}`}>
+                            {partialSettlementType === "pay_more" && <Check className="w-2 h-2 text-slate-900 dark:text-white stroke-[3]" />}
+                          </div>
+                          <span className="font-bold text-xs truncate">Keep in Cash Queue</span>
                         </div>
-                        <div className="font-extrabold text-slate-800 dark:text-slate-100 font-mono text-xs">
-                          ₹{origAmt.toLocaleString("en-IN")}
-                        </div>
+                        <p className="text-[10px] opacity-75 mt-0.5 truncate pl-4">
+                          Part Paid • Patient owes ₹{remainingDueAfter.toLocaleString("en-IN")}
+                        </p>
                       </div>
-                      <div className="py-1.5 px-2 bg-blue-50/60 dark:bg-blue-950/30">
-                        <div className="text-blue-600 font-medium uppercase tracking-wide text-[9px]">
-                          Prev. Paid
+
+                      {/* Card 2: Final Settlement */}
+                      <div
+                        onClick={() => setPartialSettlementType("final_settlement")}
+                        className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                          partialSettlementType === "final_settlement"
+                            ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                            : "border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-3 h-3 rounded-full border flex items-center justify-center shrink-0 ${partialSettlementType === "final_settlement" ? "border-white bg-white" : "border-slate-400"}`}>
+                            {partialSettlementType === "final_settlement" && <Check className="w-2 h-2 text-emerald-600 stroke-[3]" />}
+                          </div>
+                          <span className="font-bold text-xs truncate">Final Settlement</span>
                         </div>
-                        <div className="font-extrabold text-blue-700 dark:text-blue-400 font-mono text-xs">
-                          ₹{prevPaid.toLocaleString("en-IN")}
-                        </div>
-                      </div>
-                      <div className="py-1.5 px-2 bg-emerald-50/60 dark:bg-emerald-950/30">
-                        <div className="text-emerald-700 font-medium uppercase tracking-wide text-[9px]">
-                          Now
-                        </div>
-                        <div className="font-extrabold text-emerald-700 dark:text-emerald-400 font-mono text-xs">
-                          ₹{currentInstallment.toLocaleString("en-IN")}
-                        </div>
-                      </div>
-                      <div className="py-1.5 px-2 bg-rose-50/60 dark:bg-rose-950/30">
-                        <div className="text-rose-600 font-medium uppercase tracking-wide text-[9px]">
-                          Remaining
-                        </div>
-                        <div className="font-extrabold text-rose-700 dark:text-rose-400 font-mono text-xs">
-                          ₹{remainingDueAfter.toLocaleString("en-IN")}
-                        </div>
+                        <p className="text-[10px] opacity-75 mt-0.5 truncate pl-4">
+                          Full & Final • Accept ₹{totalCollectedAfter.toLocaleString("en-IN")}
+                        </p>
                       </div>
                     </div>
 
-                    {/* Settlement Action */}
-                    <div className="px-3 py-2.5 space-y-2">
-                      <p className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                        How should we record this?
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* Option 1: Keep in Cash Queue */}
-                        <button
-                          type="button"
-                          onClick={() => setPartialSettlementType("pay_more")}
-                          className={`text-left p-2.5 rounded-lg border-2 transition-all ${
-                            partialSettlementType === "pay_more"
-                              ? "border-amber-500 bg-amber-50 dark:bg-amber-950/50 ring-1 ring-amber-400/30"
-                              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-amber-300"
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <div
-                              className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${partialSettlementType === "pay_more" ? "border-amber-500 bg-amber-500" : "border-slate-300"}`}
-                            >
-                              {partialSettlementType === "pay_more" && (
-                                <Check className="w-2 h-2 text-white stroke-[4]" />
-                              )}
-                            </div>
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                              Keep in Cash Queue
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug pl-5">
-                            Mark as <strong>Part Paid</strong>. Patient owes ₹
-                            {remainingDueAfter.toLocaleString("en-IN")} more.
-                          </p>
-                        </button>
-
-                        {/* Option 2: Final Settlement */}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setPartialSettlementType("final_settlement")
-                          }
-                          className={`text-left p-2.5 rounded-lg border-2 transition-all ${
-                            partialSettlementType === "final_settlement"
-                              ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 ring-1 ring-emerald-400/30"
-                              : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-emerald-300"
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <div
-                              className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${partialSettlementType === "final_settlement" ? "border-emerald-500 bg-emerald-500" : "border-slate-300"}`}
-                            >
-                              {partialSettlementType === "final_settlement" && (
-                                <Check className="w-2 h-2 text-white stroke-[4]" />
-                              )}
-                            </div>
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                              Final Settlement
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug pl-5">
-                            Accept ₹
-                            {totalCollectedAfter.toLocaleString("en-IN")} as
-                            full & final. Move to <strong>Completed</strong>.
-                          </p>
-                        </button>
-                      </div>
-
-                      {/* Reason sub-form — only for Final Settlement */}
-                      {partialSettlementType === "final_settlement" && (
-                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-                          <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                            Reason for shortfall
-                          </p>
-                          <div className="flex gap-1.5">
-                            {(
-                              [
-                                "discount",
-                                "doctor_commission",
-                                "hospital_commission",
-                              ] as const
-                            ).map((r) => {
-                              const labels: Record<string, string> = {
-                                discount: "Discount",
-                                doctor_commission: "Dr. Commission",
-                                hospital_commission: "Hospital Cut",
-                              };
-                              return (
-                                <button
-                                  key={r}
-                                  type="button"
-                                  onClick={() => setFinalSettlementReason(r)}
-                                  className={`flex-1 py-1 px-2 rounded text-[10px] font-bold border transition-colors ${
-                                    finalSettlementReason === r
-                                      ? "bg-emerald-600 text-white border-emerald-600"
-                                      : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-50"
-                                  }`}
-                                >
-                                  {labels[r]}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {finalSettlementReason === "doctor_commission" && (
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="text"
-                                value={settlementDoctorName}
-                                onChange={(e) =>
-                                  setSettlementDoctorName(e.target.value)
-                                }
-                                placeholder={
-                                  paymentDialog.dc?.doctorName
-                                    ? `Dr. ${paymentDialog.dc.doctorName}`
-                                    : "Doctor name (or N/A)"
-                                }
-                                className="h-7 text-xs flex-1 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 rounded"
-                              />
-                              <span className="text-[9px] text-slate-400 shrink-0">
-                                Leave blank = N/A
-                              </span>
-                            </div>
-                          )}
+                    {/* Reason for Shortfall Pills */}
+                    {partialSettlementType === "final_settlement" && (
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200 dark:border-slate-800 flex-wrap">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase shrink-0">Reason:</span>
+                        <div className="flex gap-1.5 flex-1 min-w-0">
+                          {(["hospital_commission", "discount", "doctor_commission"] as const).map((r) => {
+                            const labels: Record<string, string> = {
+                              hospital_commission: "Hospital Cut",
+                              discount: "Discount",
+                              doctor_commission: "Dr. Commission",
+                            };
+                            const isSelected = finalSettlementReason === r;
+                            return (
+                              <button
+                                key={r}
+                                type="button"
+                                onClick={() => setFinalSettlementReason(r)}
+                                className={`flex-1 py-1 px-2 rounded text-[11px] font-bold border transition-all cursor-pointer truncate ${
+                                  isSelected
+                                    ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                                }`}
+                              >
+                                {labels[r]}
+                              </button>
+                            );
+                          })}
                         </div>
-                      )}
-                    </div>
+                        {finalSettlementReason === "doctor_commission" && (
+                          <Input
+                            type="text"
+                            value={settlementDoctorName}
+                            onChange={(e) => setSettlementDoctorName(e.target.value)}
+                            placeholder="Dr. Name"
+                            className="h-6 text-xs w-28 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 rounded"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -9117,23 +9381,31 @@ const SavedDcs = () => {
                 >
                   Cancel
                 </Button>
-                <Button
-                  onClick={handleQuickRecordPayment}
-                  className="rounded-xl h-11 px-6 text-sm font-extrabold gap-2 shadow-none min-w-[200px] cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white"
-                  disabled={isActionLoading}
-                >
-                  {isActionLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
-                      <span>Confirm Payment Collection</span>
-                    </>
-                  )}
-                </Button>
+                <div className="relative group inline-flex rounded-xl p-0.5 transition-all">
+                  {/* Subtle animated ambient glowing border aura */}
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 rounded-xl opacity-75 blur-[3px] group-hover:opacity-100 transition duration-500 " />
+
+                  <Button
+                    onClick={handleQuickRecordPayment}
+                    className="relative rounded-xl h-11 px-6 text-sm font-extrabold gap-2 shadow-lg hover:shadow-emerald-500/25 min-w-[210px] cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-[0.98] border border-emerald-400/30 overflow-hidden"
+                    disabled={isActionLoading}
+                  >
+                    {/* Subtle light shimmer line */}
+                    <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
+
+                    {isActionLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-5 h-5 stroke-[2.5] transition-transform group-hover:scale-110" />
+                        <span>Confirm Payment Collection</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -9993,17 +10265,17 @@ const SavedDcs = () => {
               {queueTransitionState.progress === 100 ? (
                 <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-bounce" />
               ) : queueTransitionState.iconType === "cash" ? (
-                <Wallet className="w-8 h-8 text-amber-600 dark:text-amber-400 animate-pulse" />
+                <Wallet className="w-8 h-8 text-amber-600 dark:text-amber-400 " />
               ) : queueTransitionState.iconType === "save" || queueTransitionState.iconType === "move" ? (
                 <Loader2 className="w-8 h-8 text-teal-600 dark:text-teal-400 animate-spin" />
               ) : queueTransitionState.iconType === "delete" ? (
-                <Trash2 className="w-7 h-7 text-rose-600 dark:text-rose-400 animate-pulse" />
+                <Trash2 className="w-7 h-7 text-rose-600 dark:text-rose-400 " />
               ) : queueTransitionState.iconType === "return" ? (
                 <RotateCcw className="w-7 h-7 text-teal-600 dark:text-teal-400 animate-spin" />
               ) : queueTransitionState.iconType === "invoice" ? (
-                <FileText className="w-7 h-7 text-purple-600 dark:text-purple-400 animate-pulse" />
+                <FileText className="w-7 h-7 text-purple-600 dark:text-purple-400 " />
               ) : queueTransitionState.iconType === "cancel" ? (
-                <AlertCircle className="w-7 h-7 text-orange-600 dark:text-orange-400 animate-pulse" />
+                <AlertCircle className="w-7 h-7 text-orange-600 dark:text-orange-400 " />
               ) : (
                 <Loader2 className="w-8 h-8 text-teal-600 dark:text-teal-400 animate-spin" />
               )}
@@ -10050,6 +10322,59 @@ const SavedDcs = () => {
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      {/* 🔒 6569 Account Unlock Password Modal */}
+      <Dialog
+        open={is6569AuthDialogOpen}
+        onOpenChange={setIs6569AuthDialogOpen}
+      >
+        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Lock className="w-5 h-5 text-amber-500" />
+              Unlock HDFC Main Account (6569)
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+              Enter admin security password to access HDFC Main (6569) statement credits:
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleUnlock6569} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Admin Password *
+              </Label>
+              <Input
+                type="password"
+                value={authPasswordInput}
+                onChange={(e) => setAuthPasswordInput(e.target.value)}
+                placeholder="Enter password to unlock..."
+                className="h-10 text-xs bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 rounded-xl"
+                autoFocus
+              />
+            </div>
+
+            <DialogFooter className="flex items-center gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIs6569AuthDialogOpen(false);
+                  setAuthPasswordInput("");
+                }}
+                className="h-9 text-xs rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="h-9 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl"
+              >
+                Unlock Account (6569)
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

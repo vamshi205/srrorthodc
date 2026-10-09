@@ -68,6 +68,13 @@ const STORAGE_KEYS = {
   SNOOZED_UNTIL: "srrortho_reminder_snoozed_until",
 };
 
+const getInvEffectiveDue = (inv?: CashInvoiceData | null) => {
+  if (!inv) return 0;
+  return inv.isHikedBill && Number(inv.actualReceivable) > 0
+    ? Number(inv.actualReceivable)
+    : Number(inv.grandTotal) || 0;
+};
+
 export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
   savedDcs,
   cashInvoices = [],
@@ -249,11 +256,12 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       return;
     }
 
-    const balance = (inv.grandTotal || 0) - (inv.paymentReceived || 0);
+    const effDue = getInvEffectiveDue(inv);
+    const balance = effDue - (inv.paymentReceived || 0);
     setCashInvoicePaymentModal({
       open: true,
       invoice: inv,
-      amount: String(balance > 0 ? balance : inv.grandTotal || 0),
+      amount: String(balance > 0 ? balance : effDue),
       remarks: "",
       isSaving: false,
     });
@@ -275,8 +283,9 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     }
 
     setCashInvoicePaymentModal((prev) => ({ ...prev, isSaving: true }));
+    const effDue = getInvEffectiveDue(inv);
     const newTotalReceived = (inv.paymentReceived || 0) + paidAmt;
-    const isFullyPaid = newTotalReceived >= (inv.grandTotal || 0);
+    const isFullyPaid = newTotalReceived >= effDue;
 
     const updatedInv: CashInvoiceData = {
       ...inv,
@@ -292,7 +301,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
         action: "COLLECT_CLICK",
         label: `Cash Invoice Payment: ₹${paidAmt.toLocaleString("en-IN")}`,
         details: `Recorded payment of ₹${paidAmt.toLocaleString("en-IN")} for ${inv.clientName} (Invoice #${inv.invNumber}). Status is now ${updatedInv.status}.`,
-        pendingAmount: Math.max(0, (inv.grandTotal || 0) - newTotalReceived),
+        pendingAmount: Math.max(0, effDue - newTotalReceived),
         partiesCount: 1,
         returnCount: 0,
       });
@@ -397,7 +406,8 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
     );
 
     const pendingInvoices = effectiveInvoices.filter((inv) => {
-      const balance = (inv.grandTotal || 0) - (inv.paymentReceived || 0);
+      const effDue = getInvEffectiveDue(inv);
+      const balance = effDue - (inv.paymentReceived || 0);
       const isPaid = inv.status?.toLowerCase() === "paid" || balance <= 0;
       const meetsMin = balance >= minAmount;
       const isAlreadyInDc = existingCashDcRefs.has(inv.invNumber) || existingCashDcRefs.has(inv.dcNumber);
@@ -411,7 +421,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
       totalAmount:
         cashQueueDcs.reduce((acc, d) => acc + (d.cashAmount || 0), 0) +
         pendingInvoices.reduce(
-          (acc, inv) => acc + ((inv.grandTotal || 0) - (inv.paymentReceived || 0)),
+          (acc, inv) => acc + (getInvEffectiveDue(inv) - (inv.paymentReceived || 0)),
           0
         ),
     };
@@ -819,7 +829,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
                     );
                   })
                   .map((inv) => {
-                    const balance = (inv.grandTotal || 0) - (inv.paymentReceived || 0);
+                    const balance = getInvEffectiveDue(inv) - (inv.paymentReceived || 0);
                     return (
                       <div
                         key={`popup-inv-${inv.invNumber}`}
@@ -1375,7 +1385,7 @@ export const DcTrackerNotifications: React.FC<DcTrackerNotificationsProps> = ({
               {/* Standalone Firestore Pending Invoices */}
               {(activeTab === "all" || activeTab === "payments" || activeTab === "invoices") &&
                 paymentReminders.invoices.map((inv) => {
-                  const balance = (inv.grandTotal || 0) - (inv.paymentReceived || 0);
+                  const balance = getInvEffectiveDue(inv) - (inv.paymentReceived || 0);
                   return (
                     <div
                       key={`inv-${inv.invNumber}`}

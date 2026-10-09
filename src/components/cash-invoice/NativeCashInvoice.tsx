@@ -2052,7 +2052,9 @@ export const NativeCashInvoice: React.FC = () => {
               {/* Payment Settlement Audit Banner if paid or partial */}
               {(Boolean(selectedInvoiceForView.paymentReceived) || Boolean(selectedInvoiceForView.paymentMode) || selectedInvoiceForView.status === "paid" || selectedInvoiceForView.status === "partial") && (() => {
                 const recPaid = Number(selectedInvoiceForView.paymentReceived) || 0;
-                const grand = Number(selectedInvoiceForView.grandTotal || selectedInvoiceForView.actualReceivable) || 0;
+                const grand = selectedInvoiceForView.isHikedBill && Number(selectedInvoiceForView.actualReceivable) > 0
+                  ? Number(selectedInvoiceForView.actualReceivable)
+                  : Number(selectedInvoiceForView.grandTotal || selectedInvoiceForView.actualReceivable) || 0;
                 const isPart = recPaid > 0 && recPaid < grand;
                 const bal = Math.max(0, grand - recPaid);
 

@@ -2170,8 +2170,11 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                         Administrator Password Required
                       </Label>
                       <Input
+                        id="delete-customer-admin-password-1"
+                        name="delete-customer-admin-password-1"
                         type="password"
-                        autoComplete="off"
+                        autoComplete="new-password"
+                        aria-autocomplete="none"
                         data-lpignore="true"
                         data-1p-ignore="true"
                         data-bwignore="true"
@@ -2211,8 +2214,11 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       Administrator Password Required
                     </Label>
                     <Input
+                      id="delete-customer-admin-password-2"
+                      name="delete-customer-admin-password-2"
                       type="password"
-                      autoComplete="off"
+                      autoComplete="new-password"
+                      aria-autocomplete="none"
                       data-lpignore="true"
                       data-1p-ignore="true"
                       data-bwignore="true"

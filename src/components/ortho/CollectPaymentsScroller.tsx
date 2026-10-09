@@ -82,8 +82,13 @@ export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = (
         const linkedInv = effectiveInvoices.find(
           (inv) => inv.invNumber?.trim().toLowerCase() === dc.invoiceRef?.trim().toLowerCase()
         );
-        if (linkedInv && (linkedInv.status?.toLowerCase() === "paid" || (Number(linkedInv.paymentReceived) || 0) >= (Number(linkedInv.grandTotal) || 0))) {
-          return;
+        if (linkedInv) {
+          const linkedInvTarget = linkedInv.isHikedBill && Number(linkedInv.actualReceivable) > 0
+            ? Number(linkedInv.actualReceivable)
+            : (Number(linkedInv.grandTotal) || 0);
+          if (linkedInv.status?.toLowerCase() === "paid" || (Number(linkedInv.paymentReceived) || 0) >= linkedInvTarget) {
+            return;
+          }
         }
       }
 
@@ -110,7 +115,9 @@ export const CollectPaymentsScroller: React.FC<CollectPaymentsScrollerProps> = (
     });
 
     effectiveInvoices.forEach((inv) => {
-      const grandTotal = Number(inv.grandTotal) || 0;
+      const grandTotal = inv.isHikedBill && Number(inv.actualReceivable) > 0
+        ? Number(inv.actualReceivable)
+        : (Number(inv.grandTotal) || 0);
       const paymentReceived = Number(inv.paymentReceived) || 0;
       const balance = grandTotal - paymentReceived;
       const isPaid =

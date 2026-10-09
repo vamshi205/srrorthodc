@@ -374,6 +374,60 @@ export const BankAccountsView: React.FC = () => {
   // Email & Transaction Details Verification Modal State
   const [viewingTxDetails, setViewingTxDetails] = useState<BankTransaction | null>(null);
 
+  // Quick Remarks & Route Modal State
+  const [remarksModalOpen, setRemarksModalOpen] = useState(false);
+  const [remarksTargetTx, setRemarksTargetTx] = useState<BankTransaction | null>(null);
+  const [modalExpenseNotes, setModalExpenseNotes] = useState("");
+  const [modalTravelFrom, setModalTravelFrom] = useState("");
+  const [modalTravelTo, setModalTravelTo] = useState("");
+  const [modalTravelDistance, setModalTravelDistance] = useState("");
+  const [modalTravelPurpose, setModalTravelPurpose] = useState("");
+  const [modalPersonnelName, setModalPersonnelName] = useState("");
+  const [isSavingRemarks, setIsSavingRemarks] = useState(false);
+
+  const handleOpenRemarksModal = (tx: BankTransaction) => {
+    setRemarksTargetTx(tx);
+    setModalExpenseNotes(tx.expenseNotes || "");
+    setModalTravelFrom(tx.travelFromLocation || "");
+    setModalTravelTo(tx.travelToLocation || "");
+    setModalTravelDistance(tx.travelDistanceKm ? String(tx.travelDistanceKm) : "");
+    setModalTravelPurpose(tx.travelPurposeNote || "");
+    setModalPersonnelName(tx.expensePersonnelName || "");
+    setRemarksModalOpen(true);
+  };
+
+  const handleSaveRemarks = async () => {
+    if (!remarksTargetTx) return;
+    setIsSavingRemarks(true);
+    try {
+      const updatedTx: BankTransaction = {
+        ...remarksTargetTx,
+        expenseNotes: modalExpenseNotes.trim() || undefined,
+        travelFromLocation: modalTravelFrom.trim() || undefined,
+        travelToLocation: modalTravelTo.trim() || undefined,
+        travelDistanceKm: modalTravelDistance.trim() ? Number(modalTravelDistance) : undefined,
+        travelPurposeNote: modalTravelPurpose.trim() || undefined,
+        expensePersonnelName: modalPersonnelName.trim() || undefined,
+        isExpenseTagged: Boolean(modalExpenseNotes.trim() || modalTravelFrom.trim() || modalPersonnelName.trim()),
+        taggedAt: new Date().toISOString(),
+        updatedAt: Date.now(),
+      };
+
+      await saveBankTransactionToFirestore(updatedTx, false);
+
+      setTransactions((prev) =>
+        prev.map((t) => (t.id === remarksTargetTx.id ? updatedTx : t))
+      );
+
+      toast.success("Remarks & Route updated successfully!");
+      setRemarksModalOpen(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update remarks");
+    } finally {
+      setIsSavingRemarks(false);
+    }
+  };
+
   // Google Apps Script Live Web App Connector State
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
     return localStorage.getItem('srrortho:apps_script_url') || '';
@@ -2423,19 +2477,44 @@ export const BankAccountsView: React.FC = () => {
                             </Badge>
                           </td>
 
-                          {/* Narration & Reference # */}
+                          {/* Narration & Reference # & Remarks */}
                           <td className="p-3 max-w-xs sm:max-w-md">
                             <div className="font-medium text-foreground leading-snug">
                               {tx.description && !/inform\s+you|writing\s+to/i.test(tx.description) && !tx.description.startsWith('Deposit: inform')
                                 ? tx.description
                                 : extractHdfcNarration(tx.rawEmailBody || tx.rawAlert || tx.description, tx.type === 'credit', tx.description)}
                             </div>
-                            {tx.referenceNumber && (
-                              <div className="mt-0.5 text-[10px] font-mono text-muted-foreground flex items-center gap-1">
-                                <span>Ref:</span>
-                                <span className="font-semibold text-foreground bg-muted/60 px-1 rounded">{tx.referenceNumber}</span>
-                              </div>
-                            )}
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                              {tx.referenceNumber && (
+                                <div className="font-mono text-muted-foreground flex items-center gap-1">
+                                  <span>Ref:</span>
+                                  <span className="font-semibold text-foreground bg-muted/60 px-1 rounded">{tx.referenceNumber}</span>
+                                </div>
+                              )}
+
+                              {/* Small Quick Remarks Button & Display */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRemarksModal(tx)}
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors ${
+                                  tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
+                                    ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold"
+                                    : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                                }`}
+                                title="Click to view or add remarks / travel route"
+                              >
+                                <Edit className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                <span>
+                                  {tx.expenseNotes
+                                    ? tx.expenseNotes
+                                    : tx.travelFromLocation && tx.travelToLocation
+                                    ? `Route: ${tx.travelFromLocation} → ${tx.travelToLocation}`
+                                    : tx.travelPurposeNote
+                                    ? tx.travelPurposeNote
+                                    : "+ Remarks"}
+                                </span>
+                              </button>
+                            </div>
                           </td>
 
                           {/* Linked Invoice Info */}
@@ -4278,6 +4357,125 @@ export const BankAccountsView: React.FC = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ========================================================================= */}
+      {/* MODAL: QUICK REMARKS & TRAVEL ROUTE FOR TRANSACTION                      */}
+      {/* ========================================================================= */}
+      <Dialog open={remarksModalOpen} onOpenChange={setRemarksModalOpen}>
+        <DialogContent className="sm:max-w-md border-2 border-amber-500/30">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
+              <Edit className="w-4 h-4 text-amber-600" />
+              Add Remarks &amp; Travel Route
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Add quick notes or travel route for {remarksTargetTx?.type === 'credit' ? 'Credit' : 'Expense'} transaction (Ref: {remarksTargetTx?.referenceNumber || remarksTargetTx?.id}).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-1">
+            {/* Quick Remarks / Expense Notes */}
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Remarks / Expense Notes
+              </Label>
+              <Input
+                value={modalExpenseNotes}
+                onChange={(e) => setModalExpenseNotes(e.target.value)}
+                placeholder="e.g. Fuel for Yashoda delivery / Vendor settlement"
+                className="mt-1 h-9 text-xs font-medium"
+                autoFocus
+              />
+            </div>
+
+            {/* Staff / Personnel Name */}
+            <div>
+              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Staff / Delivery Personnel (Optional)
+              </Label>
+              <div className="mt-1">
+                <PersonnelSelect
+                  value={modalPersonnelName}
+                  onChange={setModalPersonnelName}
+                  placeholder="Select personnel..."
+                />
+              </div>
+            </div>
+
+            {/* Travel Route: From → To */}
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
+              <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                <Building2 className="w-3.5 h-3.5 text-teal-600" />
+                Travel Route &amp; Purpose (Optional)
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10.5px] font-semibold text-muted-foreground">From Location</Label>
+                  <Input
+                    value={modalTravelFrom}
+                    onChange={(e) => setModalTravelFrom(e.target.value)}
+                    placeholder="e.g. Office / Shop"
+                    className="mt-0.5 h-8 text-xs font-medium"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10.5px] font-semibold text-muted-foreground">To Location</Label>
+                  <Input
+                    value={modalTravelTo}
+                    onChange={(e) => setModalTravelTo(e.target.value)}
+                    placeholder="e.g. KIMS Hospital"
+                    className="mt-0.5 h-8 text-xs font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10.5px] font-semibold text-muted-foreground">Distance (Km)</Label>
+                  <Input
+                    type="number"
+                    value={modalTravelDistance}
+                    onChange={(e) => setModalTravelDistance(e.target.value)}
+                    placeholder="e.g. 14"
+                    className="mt-0.5 h-8 text-xs font-medium"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10.5px] font-semibold text-muted-foreground">Purpose / Purpose Note</Label>
+                  <Input
+                    value={modalTravelPurpose}
+                    onChange={(e) => setModalTravelPurpose(e.target.value)}
+                    placeholder="e.g. Implant delivery for OT"
+                    className="mt-0.5 h-8 text-xs font-medium"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setRemarksModalOpen(false)}
+              className="h-8 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveRemarks}
+              disabled={isSavingRemarks}
+              className="h-8 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white"
+            >
+              {isSavingRemarks ? "Saving..." : "Save Remarks"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
