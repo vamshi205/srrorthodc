@@ -2346,7 +2346,7 @@ export default function OrthoApp() {
                   ) : null}
 
                   {/* Submission Actions (1-click Save & Print) */}
-                  {(dcMode === "manual" || activeProcedures.length > 0) && (
+                  {autoDcStep === "procedures" && (dcMode === "manual" || activeProcedures.length > 0) && (
                     <div
                       id="dc-submission"
                       className="glass-card rounded-xl p-4 sm:p-5 space-y-4 border-t-4 border-t-teal-600"

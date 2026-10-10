@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Shield, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { auth } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,9 +9,6 @@ import { Label } from '@/components/ui/label';
 interface LoginScreenProps {
   onLogin: () => void;
 }
-
-const VALID_EMAIL = 'srrorthoplus999@gmail.com';
-const VALID_PASSWORD = 'srrPadma123$a';
 
 const LOGO_URL = '/srr-logo.png';
 
@@ -22,18 +21,28 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter both email and password.');
+      return;
+    }
+
     setError('');
     setIsLoading(true);
 
-    // Simulate loading
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    if (email === VALID_EMAIL && password === VALID_PASSWORD) {
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
       onLogin();
-    } else {
-      setError('Invalid email or password');
+    } catch (err: any) {
+      console.error('Login error:', err);
+      let message = 'Invalid email or password';
+      if (err.code === 'auth/user-not-found') message = 'No account found with this email.';
+      else if (err.code === 'auth/wrong-password') message = 'Incorrect password.';
+      else if (err.code === 'auth/too-many-requests') message = 'Too many failed attempts. Try again later.';
+      setError(message);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   return (
