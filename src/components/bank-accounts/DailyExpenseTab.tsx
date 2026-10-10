@@ -56,7 +56,21 @@ interface DailyExpenseTabProps {
   transactions: BankTransaction[];
   accounts: BankAccount[];
   onRefresh: () => void;
+  is6569Unlocked?: boolean;
+  onUnlock6569?: () => void;
 }
+
+const isAccount6569 = (accIdentifier?: string | BankAccount | null): boolean => {
+  if (!accIdentifier) return false;
+  if (typeof accIdentifier === 'string') {
+    const clean = accIdentifier.toLowerCase();
+    return clean.includes('6569') || clean.includes('acc_hdfc_main_6569');
+  }
+  const idClean = (accIdentifier.id || '').toLowerCase();
+  const numClean = (accIdentifier.accountNumber || '').toLowerCase();
+  const nameClean = (accIdentifier.accountName || '').toLowerCase();
+  return idClean.includes('6569') || numClean.includes('6569') || nameClean.includes('6569');
+};
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   "Fuel / Petrol": <Fuel className="w-3.5 h-3.5 text-amber-500" />,
@@ -71,6 +85,8 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
   transactions,
   accounts,
   onRefresh,
+  is6569Unlocked = false,
+  onUnlock6569,
 }) => {
   const [periodFilter, setPeriodFilter] = useState<ExpensePeriod>("month");
   const [selectedPersonnel, setSelectedPersonnel] = useState<string>("all");
@@ -79,10 +95,22 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
 
   const deliveryTeamNames = useMemo(() => getDeliveryTeamPersonnelNames(), []);
 
-  // Compute analytics
+  // Filtered transactions excluding locked 6569 account data
+  const safeTransactions = useMemo(() => {
+    if (is6569Unlocked) return transactions;
+    return transactions.filter((t) => {
+      const is6569 =
+        t.accountSuffix === "6569" ||
+        isAccount6569(t.accountId) ||
+        (t.description && t.description.includes("6569"));
+      return !is6569;
+    });
+  }, [transactions, is6569Unlocked]);
+
+  // Compute analytics using safeTransactions
   const analytics = useMemo(() => {
-    return calculateExpenseAnalytics(transactions, periodFilter, selectedPersonnel);
-  }, [transactions, periodFilter, selectedPersonnel]);
+    return calculateExpenseAnalytics(safeTransactions, periodFilter, selectedPersonnel);
+  }, [safeTransactions, periodFilter, selectedPersonnel]);
 
   // Filter individual transaction logs within executive accordions
   const filteredSummaries = useMemo(() => {
@@ -145,6 +173,25 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
 
   return (
     <div className="space-y-4 font-sans text-foreground">
+      {/* 🔒 6569 Account Lock Security Alert Banner */}
+      {!is6569Unlocked && (
+        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 rounded-xl flex items-center justify-between gap-3 text-xs font-semibold text-amber-900 dark:text-amber-200 shadow-xs">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>HDFC Main (6569) expense data is locked &amp; excluded from analytics. Enter admin password to view 6569 analytics.</span>
+          </div>
+          {onUnlock6569 && (
+            <Button
+              size="sm"
+              onClick={onUnlock6569}
+              className="h-7 px-3 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-md shrink-0 gap-1 cursor-pointer"
+            >
+              🔒 Unlock Account (6569)
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* 1. Executive Summary KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center justify-between">

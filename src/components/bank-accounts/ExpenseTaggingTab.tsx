@@ -67,6 +67,8 @@ interface ExpenseTaggingTabProps {
   transactions: BankTransaction[];
   accounts: BankAccount[];
   onRefresh: () => void;
+  is6569Unlocked?: boolean;
+  onUnlock6569?: () => void;
 }
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
@@ -79,10 +81,24 @@ const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Other Operational Expense",
 ];
 
+const isAccount6569 = (accIdentifier?: string | BankAccount | null): boolean => {
+  if (!accIdentifier) return false;
+  if (typeof accIdentifier === 'string') {
+    const clean = accIdentifier.toLowerCase();
+    return clean.includes('6569') || clean.includes('acc_hdfc_main_6569');
+  }
+  const idClean = (accIdentifier.id || '').toLowerCase();
+  const numClean = (accIdentifier.accountNumber || '').toLowerCase();
+  const nameClean = (accIdentifier.accountName || '').toLowerCase();
+  return idClean.includes('6569') || numClean.includes('6569') || nameClean.includes('6569');
+};
+
 export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   transactions,
   accounts,
   onRefresh,
+  is6569Unlocked = false,
+  onUnlock6569,
 }) => {
   const [selectedPersonnel, setSelectedPersonnel] = useState<string>("all");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
@@ -206,6 +222,15 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
       selectedObj?.accountName?.includes("1538");
 
     return transactions.filter((t) => {
+      const is6569Tx =
+        t.accountSuffix === "6569" ||
+        isAccount6569(t.accountId) ||
+        (t.description && t.description.includes("6569"));
+
+      if (is6569Tx && !is6569Unlocked) {
+        return false;
+      }
+
       const isDebit =
         t.type === "debit" ||
         (t.type as string)?.toLowerCase() === "debit" ||
@@ -221,7 +246,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
 
       return isDebit && matchesAccount;
     });
-  }, [transactions, selectedAccountId, accounts]);
+  }, [transactions, selectedAccountId, accounts, is6569Unlocked]);
 
   // Auto-compute AI Suggestions across all debit transactions (incorporating historical records)
   const liveSuggestionsMap = useMemo(() => {
@@ -650,9 +675,11 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
             <SelectContent>
               {accounts.map((acc) => {
                 const is1538Acc = acc.accountNumber?.includes("1538") || acc.accountName?.includes("1538") || acc.id.includes("1538");
+                const is6569Acc = isAccount6569(acc);
+                const isLocked = is6569Acc && !is6569Unlocked;
                 return (
                   <SelectItem key={acc.id} value={acc.id} className="text-[11px] font-medium">
-                    {is1538Acc ? `⭐ ${acc.accountName}` : acc.accountName}
+                    {is1538Acc ? `⭐ ${acc.accountName}` : isLocked ? `🔒 ${acc.accountName} [Locked]` : acc.accountName}
                   </SelectItem>
                 );
               })}
@@ -681,6 +708,25 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
           </Select>
         </div>
       </div>
+
+      {/* 🔒 6569 Account Lock Security Alert Banner */}
+      {isAccount6569(selectedAccountId) && !is6569Unlocked && (
+        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 rounded-xl flex items-center justify-between gap-3 text-xs font-semibold text-amber-900 dark:text-amber-200 shadow-xs">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>HDFC Main (6569) account transactions are protected &amp; hidden. Enter admin password to view 6569 expenses.</span>
+          </div>
+          {onUnlock6569 && (
+            <Button
+              size="sm"
+              onClick={onUnlock6569}
+              className="h-7 px-3 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-md shrink-0 gap-1 cursor-pointer"
+            >
+              🔒 Unlock Account (6569)
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* 4. Debit Transactions Queue Table */}
       <Card className="border-border shadow-sm overflow-hidden rounded-xl">

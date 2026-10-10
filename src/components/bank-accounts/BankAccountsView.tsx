@@ -2479,42 +2479,59 @@ export const BankAccountsView: React.FC = () => {
 
                           {/* Narration & Reference # & Remarks */}
                           <td className="p-3 max-w-xs sm:max-w-md">
-                            <div className="font-medium text-foreground leading-snug">
-                              {tx.description && !/inform\s+you|writing\s+to/i.test(tx.description) && !tx.description.startsWith('Deposit: inform')
-                                ? tx.description
-                                : extractHdfcNarration(tx.rawEmailBody || tx.rawAlert || tx.description, tx.type === 'credit', tx.description)}
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
-                              {tx.referenceNumber && (
-                                <div className="font-mono text-muted-foreground flex items-center gap-1">
-                                  <span>Ref:</span>
-                                  <span className="font-semibold text-foreground bg-muted/60 px-1 rounded">{tx.referenceNumber}</span>
+                            {is6569Row && !is6569Unlocked ? (
+                              <div className="flex items-center gap-1.5 text-slate-400 font-mono text-xs select-none">
+                                <span className="filter blur-xs font-mono">••••••••••••••••••••••••</span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setIs6569AuthDialogOpen(true)}
+                                  className="h-5 px-1.5 text-[9px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 rounded gap-0.5 cursor-pointer"
+                                  title="Click to enter admin password"
+                                >
+                                  <Lock className="w-2.5 h-2.5" /> Unlock
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="font-medium text-foreground leading-snug">
+                                  {tx.description && !/inform\s+you|writing\s+to/i.test(tx.description) && !tx.description.startsWith('Deposit: inform')
+                                    ? tx.description
+                                    : extractHdfcNarration(tx.rawEmailBody || tx.rawAlert || tx.description, tx.type === 'credit', tx.description)}
                                 </div>
-                              )}
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                                  {tx.referenceNumber && (
+                                    <div className="font-mono text-muted-foreground flex items-center gap-1">
+                                      <span>Ref:</span>
+                                      <span className="font-semibold text-foreground bg-muted/60 px-1 rounded">{tx.referenceNumber}</span>
+                                    </div>
+                                  )}
 
-                              {/* Small Quick Remarks Button & Display */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenRemarksModal(tx)}
-                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors ${
-                                  tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
-                                    ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold"
-                                    : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
-                                }`}
-                                title="Click to view or add remarks / travel route"
-                              >
-                                <Edit className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                <span>
-                                  {tx.expenseNotes
-                                    ? tx.expenseNotes
-                                    : tx.travelFromLocation && tx.travelToLocation
-                                    ? `Route: ${tx.travelFromLocation} → ${tx.travelToLocation}`
-                                    : tx.travelPurposeNote
-                                    ? tx.travelPurposeNote
-                                    : "+ Remarks"}
-                                </span>
-                              </button>
-                            </div>
+                                  {/* Small Quick Remarks Button & Display */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenRemarksModal(tx)}
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors ${
+                                      tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
+                                        ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold"
+                                        : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                                    }`}
+                                    title="Click to view or add remarks / travel route"
+                                  >
+                                    <Edit className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                    <span>
+                                      {tx.expenseNotes
+                                        ? tx.expenseNotes
+                                        : tx.travelFromLocation && tx.travelToLocation
+                                        ? `Route: ${tx.travelFromLocation} → ${tx.travelToLocation}`
+                                        : tx.travelPurposeNote
+                                        ? tx.travelPurposeNote
+                                        : "+ Remarks"}
+                                    </span>
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </td>
 
                           {/* Linked Invoice Info */}
@@ -3654,6 +3671,8 @@ export const BankAccountsView: React.FC = () => {
           transactions={transactions}
           accounts={accounts}
           onRefresh={() => loadAllData(true)}
+          is6569Unlocked={is6569Unlocked}
+          onUnlock6569={() => setIs6569AuthDialogOpen(true)}
         />
       )}
 
@@ -3665,6 +3684,8 @@ export const BankAccountsView: React.FC = () => {
           transactions={transactions}
           accounts={accounts}
           onRefresh={() => loadAllData(true)}
+          is6569Unlocked={is6569Unlocked}
+          onUnlock6569={() => setIs6569AuthDialogOpen(true)}
         />
       )}
 
