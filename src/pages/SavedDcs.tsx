@@ -4049,12 +4049,11 @@ const SavedDcs = () => {
                           </div>
 
                           {/* Desktop Table View */}
-                          {/* Desktop Table View */}
-                          <div className="hidden md:block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-2xs w-full min-h-[480px]">
-                            <div className="min-h-[440px] max-h-[75vh] overflow-y-auto">
-                              <table className="w-full border-collapse">
+                          <div className="hidden md:block bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm w-full">
+                            <div className="max-h-[75vh] overflow-auto">
+                              <table className="w-full border-collapse text-sm">
                                 <thead>
-                                  <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
+                                  <tr className="bg-slate-50/80 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
                                     <th className="text-center py-3 px-3 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-[50px]">
                                       Select
                                     </th>
@@ -4117,8 +4116,8 @@ const SavedDcs = () => {
                                         key={dc.id}
                                         className={`group transition-colors duration-150 cursor-pointer ${
                                           selectedDcId === dc.id
-                                            ? "bg-gradient-to-r from-teal-50/90 via-teal-50/50 to-transparent dark:from-teal-950/50 dark:via-teal-950/20 dark:to-transparent border-l-4 border-l-teal-600 font-semibold shadow-2xs"
-                                            : "hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
+                                            ? "bg-teal-50/70 dark:bg-teal-950/30 border-l-2 border-l-teal-600"
+                                            : "hover:bg-slate-50/80 dark:hover:bg-slate-900/60"
                                         }`}
                                         onClick={() => {
                                           setSelectedDcId(dc.id);
