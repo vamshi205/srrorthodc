@@ -19,6 +19,13 @@ import {
   subscribeToBankTransactions,
   revertMatchingDcToCashQueue,
   recordCashPaymentToCashInHand,
+  getLedgerDisplayConfig,
+  fetchLedgerDisplayConfigFromFirestore,
+  LedgerDisplayConfig,
+  UnlockRuleType,
+  build6569TransactionRankMap,
+  is6569TransactionLocked,
+  isAccount6569Identifier,
 } from '@/services/bankAccountFirebaseService';
 import {
   CashInvoiceData,
@@ -34,7 +41,6 @@ import {
 import { loadSavedDcs, SavedDc, transitionSavedDc } from '@/lib/savedDcStorage';
 import { PersonnelSelect } from '@/components/ortho/PersonnelSelect';
 import { ExpenseTaggingTab } from './ExpenseTaggingTab';
-import { DailyExpenseTab } from './DailyExpenseTab';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -115,8 +121,10 @@ import {
   UserCheck,
   Loader2,
   Lock,
+  Unlock,
   EyeOff,
   KeyRound,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 const COMMON_BANKS = [
@@ -223,22 +231,42 @@ function convertDcToCashInvoiceObj(dc: SavedDc, cashInvoicesList: CashInvoiceDat
   };
 }
 
-export const BankAccountsView: React.FC = () => {
-  // 🔒 Sensitive Account Protection (HDFC 6569)
-  const isAccount6569 = useCallback((accIdentifier?: string | BankAccount | null): boolean => {
-    if (!accIdentifier) return false;
-    if (typeof accIdentifier === 'string') {
-      const clean = accIdentifier.toLowerCase();
-      return clean.includes('6569') || clean.includes('acc_hdfc_main_6569');
-    }
-    const idClean = (accIdentifier.id || '').toLowerCase();
-    const numClean = (accIdentifier.accountNumber || '').toLowerCase();
-    const nameClean = (accIdentifier.accountName || '').toLowerCase();
-    return idClean.includes('6569') || numClean.includes('6569') || nameClean.includes('6569');
-  }, []);
+const isDateInThisWeek = (d: Date): boolean => {
+  const now = new Date();
+  now.setHours(23, 59, 59, 999);
+  const weekAgo = new Date(now);
+  weekAgo.setDate(now.getDate() - 7);
+  weekAgo.setHours(0, 0, 0, 0);
+  return d >= weekAgo && d <= now;
+};
 
-  const [is6569Unlocked, setIs6569Unlocked] = useState<boolean>(() => {
-    return sessionStorage.getItem('srrortho:unlocked_acc_6569') === 'true';
+const isDateInLastWeek = (d: Date): boolean => {
+  const now = new Date();
+  const week1Ago = new Date(now);
+  week1Ago.setDate(now.getDate() - 7);
+  week1Ago.setHours(23, 59, 59, 999);
+  const week2Ago = new Date(now);
+  week2Ago.setDate(now.getDate() - 14);
+  week2Ago.setHours(0, 0, 0, 0);
+  return d >= week2Ago && d <= week1Ago;
+};
+
+const isDateInThisMonth = (d: Date): boolean => {
+  const now = new Date();
+  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+};
+
+const isDateInLastMonth = (d: Date): boolean => {
+  const now = new Date();
+  const lastMonthYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const lastMonthIdx = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+  return d.getMonth() === lastMonthIdx && d.getFullYear() === lastMonthYear;
+};
+
+export const BankAccountsView: React.FC = () => {
+  const [is6569Unlocked, setIs6569Unlocked] = useState<boolean>(false);
+  const [isBalanceUnlocked, setIsBalanceUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('srrortho:unlocked_ledger_balance') === 'true';
   });
   const [is6569AuthDialogOpen, setIs6569AuthDialogOpen] = useState<boolean>(false);
   const [authPasswordInput, setAuthPasswordInput] = useState<string>('');
@@ -250,10 +278,12 @@ export const BankAccountsView: React.FC = () => {
     const validPasswords = ['srrPadma123$a', 'padma123', '6569', 'admin123', 'srrortho'];
     if (validPasswords.includes(input)) {
       sessionStorage.setItem('srrortho:unlocked_acc_6569', 'true');
+      sessionStorage.setItem('srrortho:unlocked_ledger_balance', 'true');
       setIs6569Unlocked(true);
+      setIsBalanceUnlocked(true);
       setIs6569AuthDialogOpen(false);
       setAuthPasswordInput('');
-      toast.success('🔓 HDFC Main (6569) account unlocked for this session!');
+      toast.success('🔓 Account 6569 & Ledger balances unlocked for this session!');
     } else {
       toast.error('Incorrect admin password');
     }
@@ -265,27 +295,34 @@ export const BankAccountsView: React.FC = () => {
     toast.info('🔒 HDFC Main (6569) account locked');
   };
 
+  const handleLockBalance = () => {
+    sessionStorage.removeItem('srrortho:unlocked_ledger_balance');
+    setIsBalanceUnlocked(false);
+    toast.info('🔒 Account balance locked');
+  };
+
+
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Navigation tab with URL synchronization
-  const tabFromUrl = (searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense") || "expense_tag";
-  const [activeTab, setActiveTabState] = useState<"ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense">(tabFromUrl);
+  const tabFromUrl = (searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "expense_tag") || "ledger";
+  const [activeTab, setActiveTabState] = useState<"ledger" | "unlinked" | "linked" | "expense_tag">(tabFromUrl);
 
   useEffect(() => {
-    const t = searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense";
-    if (t === "ledger" || t === "unlinked" || t === "linked" || t === "import" || t === "accounts" || t === "daily_expense") {
+    const t = searchParams.get("tab") as "ledger" | "unlinked" | "linked" | "expense_tag";
+    if (t === "ledger" || t === "unlinked" || t === "linked" || t === "expense_tag") {
       setActiveTabState(t);
     } else {
-      setActiveTabState("expense_tag");
+      setActiveTabState("ledger");
     }
   }, [searchParams]);
 
-  const setActiveTab = (newTab: "ledger" | "unlinked" | "linked" | "import" | "accounts" | "expense_tag" | "daily_expense") => {
+  const setActiveTab = (newTab: "ledger" | "unlinked" | "linked" | "expense_tag") => {
     setActiveTabState(newTab);
     const newParams = new URLSearchParams(searchParams);
-    if (newTab === "expense_tag") {
+    if (newTab === "ledger") {
       newParams.delete("tab");
     } else {
       newParams.set("tab", newTab);
@@ -300,10 +337,56 @@ export const BankAccountsView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
 
-  // Ledger Filters
+  // 🔒 Sensitive Account Protection (HDFC 6569)
+  // 🔒 Sensitive Account Protection (HDFC 6569)
+  const isAccount6569 = useCallback(
+    (accIdentifier?: string | BankAccount | null): boolean => {
+      if (!accIdentifier) return false;
+      if (typeof accIdentifier === 'string') {
+        const clean = accIdentifier.toLowerCase();
+        if (
+          clean.includes('6569') ||
+          clean.includes('acc_hdfc_main_6569') ||
+          clean.includes('acc_1790973304902_eja1') ||
+          clean.includes('sri raja rajeshwari')
+        ) {
+          return true;
+        }
+        const found = accounts.find((a) => a.id === accIdentifier);
+        if (found) {
+          return (
+            (found.accountNumber || '').includes('6569') ||
+            (found.accountName || '').includes('6569') ||
+            (found.accountName || '').toLowerCase().includes('sri raja rajeshwari') ||
+            (found.id || '').includes('6569') ||
+            (found.id || '') === 'acc_1790973304902_eja1'
+          );
+        }
+        return false;
+      }
+      const idClean = (accIdentifier.id || '').toLowerCase();
+      const numClean = (accIdentifier.accountNumber || '').toLowerCase();
+      const nameClean = (accIdentifier.accountName || '').toLowerCase();
+      return (
+        idClean.includes('6569') ||
+        idClean === 'acc_1790973304902_eja1' ||
+        numClean.includes('6569') ||
+        nameClean.includes('6569') ||
+        nameClean.includes('sri raja rajeshwari')
+      );
+    },
+    [accounts]
+  );
+
+  // Ledger Filters & 6569 Rules
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'unlinked' | 'linked' | 'cash_memo_income'>('all');
-  const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [ledgerConfig, setLedgerConfig] = useState<LedgerDisplayConfig>(getLedgerDisplayConfig);
+
+  const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'today' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'year' | 'custom_days'>('all');
+  const [customDaysFilter, setCustomDaysFilter] = useState<number>(30);
+  const [limitFilter, setLimitFilter] = useState<number | 'all'>(30);
+  const [customLimitFilter, setCustomLimitFilter] = useState<number>(30);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   // Modals
@@ -548,6 +631,38 @@ export const BankAccountsView: React.FC = () => {
     return () => window.removeEventListener('srrortho:saved_dcs_updated', handleDcUpdate);
   }, []);
 
+  // Initialize and synchronize Ledger Display Configuration
+  useEffect(() => {
+    const applyConfig = (cfg: LedgerDisplayConfig) => {
+      setLedgerConfig(cfg);
+      if (cfg.customDays) setCustomDaysFilter(cfg.customDays);
+      if (cfg.defaultLimit !== undefined && cfg.defaultLimit !== 'custom') {
+        setLimitFilter(cfg.defaultLimit);
+      }
+    };
+
+    // Fast load from localStorage
+    const localCfg = getLedgerDisplayConfig();
+    applyConfig(localCfg);
+
+    // Sync latest from Firestore in background
+    fetchLedgerDisplayConfigFromFirestore()
+      .then((remoteCfg) => {
+        applyConfig(remoteCfg);
+      })
+      .catch((err) => console.warn('Could not fetch ledger config from Firestore:', err));
+
+    const handleConfigUpdate = (e: any) => {
+      const newCfg = e.detail || getLedgerDisplayConfig();
+      applyConfig(newCfg);
+      setIs6569Unlocked(false);
+      sessionStorage.removeItem('srrortho:unlocked_acc_6569');
+    };
+
+    window.addEventListener('srrortho:ledger_config_updated', handleConfigUpdate);
+    return () => window.removeEventListener('srrortho:ledger_config_updated', handleConfigUpdate);
+  }, []);
+
   const cashQueueDcs = useMemo(() => {
     return savedDcs.filter((d) => d.status === 'cash');
   }, [savedDcs]);
@@ -760,16 +875,31 @@ export const BankAccountsView: React.FC = () => {
     return accs;
   }, [accounts]);
 
+  // Pre-calculate 6569 transaction rank map (newest to oldest)
+  const tx6569RankMap = useMemo(() => {
+    return build6569TransactionRankMap(transactions, accounts);
+  }, [transactions, accounts]);
+
   const availableBankCredits = useMemo(() => {
     return transactions.filter((t) => t.type === "credit" && !t.linkedInvoiceNumber && !t.linkedInvoiceId);
   }, [transactions]);
 
   const filteredBankCredits = useMemo(() => {
-    if (!selectedBankAccountId || selectedBankAccountId === "all") {
-      return availableBankCredits;
+    let credits = availableBankCredits;
+    // 🔒 If 6569 is not session-unlocked, only show unlocked credits based on configuration
+    if (!is6569Unlocked) {
+      credits = credits.filter((tx) => !is6569TransactionLocked(tx, ledgerConfig, tx6569RankMap, false, accounts));
     }
-    return availableBankCredits.filter((t) => t.accountId === selectedBankAccountId);
-  }, [availableBankCredits, selectedBankAccountId]);
+    if (!selectedBankAccountId || selectedBankAccountId === "all") {
+      return credits;
+    }
+    const isTarget6569 = isAccount6569(selectedBankAccountId);
+    return credits.filter((t) => {
+      if (t.accountId === selectedBankAccountId) return true;
+      if (isTarget6569 && (isAccount6569(t.accountId) || t.accountSuffix === '6569' || (t.description && t.description.includes('6569')))) return true;
+      return false;
+    });
+  }, [availableBankCredits, selectedBankAccountId, is6569Unlocked, ledgerConfig, tx6569RankMap, accounts, isAccount6569]);
 
   const handleOpenSettleDcModal = (dc: SavedDc) => {
     setSettlingDc(dc);
@@ -781,9 +911,9 @@ export const BankAccountsView: React.FC = () => {
     setSelectedCreditTxId("");
   };
 
-  // Filtered Ledger Transactions
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
+  // Filtered Ledger Transactions (before transaction count truncation)
+  const rawFilteredTransactions = useMemo(() => {
+    const list = transactions.filter((tx) => {
       if (selectedAccountId !== 'all' && tx.accountId !== selectedAccountId) {
         return false;
       }
@@ -802,14 +932,20 @@ export const BankAccountsView: React.FC = () => {
 
         if (dateRangeFilter === 'today') {
           if (txDate.toDateString() !== today.toDateString()) return false;
-        } else if (dateRangeFilter === 'week') {
-          const weekAgo = new Date(today);
-          weekAgo.setDate(today.getDate() - 7);
-          if (txDate < weekAgo) return false;
-        } else if (dateRangeFilter === 'month') {
-          const monthAgo = new Date(today);
-          monthAgo.setDate(today.getDate() - 30);
-          if (txDate < monthAgo) return false;
+        } else if (dateRangeFilter === 'week' || dateRangeFilter === 'this_week') {
+          if (!isDateInThisWeek(txDate)) return false;
+        } else if (dateRangeFilter === 'last_week') {
+          if (!isDateInLastWeek(txDate)) return false;
+        } else if (dateRangeFilter === 'month' || dateRangeFilter === 'this_month') {
+          if (!isDateInThisMonth(txDate)) return false;
+        } else if (dateRangeFilter === 'last_month') {
+          if (!isDateInLastMonth(txDate)) return false;
+        } else if (dateRangeFilter === 'year') {
+          if (txDate.getFullYear() !== today.getFullYear()) return false;
+        } else if (dateRangeFilter === 'custom_days') {
+          const daysAgo = new Date(today);
+          daysAgo.setDate(today.getDate() - Number(customDaysFilter || 30));
+          if (txDate < daysAgo) return false;
         }
       }
 
@@ -829,7 +965,38 @@ export const BankAccountsView: React.FC = () => {
 
       return true;
     });
-  }, [transactions, selectedAccountId, typeFilter, categoryFilter, dateRangeFilter, searchQuery, accounts]);
+
+    // Sort descending by date and time (newest first)
+    list.sort((a, b) => {
+      const dateA = new Date(`${a.date}T${a.time || '00:00:00'}`).getTime();
+      const dateB = new Date(`${b.date}T${b.time || '00:00:00'}`).getTime();
+      return dateB - dateA;
+    });
+
+    return list;
+  }, [transactions, selectedAccountId, typeFilter, categoryFilter, dateRangeFilter, customDaysFilter, searchQuery, accounts]);
+
+  // Filtered transactions for display in table:
+  // For 6569 (or All Accounts), all transactions are returned so unlocked ones appear cleanly,
+  // and older transactions appear as blurred locked rows with unlock buttons.
+  // For non-6569 accounts (e.g. 1538 or Cash), if limitFilter is applied, we cap rows.
+  const filteredTransactions = useMemo(() => {
+    if (!isAccount6569(selectedAccountId) && selectedAccountId !== 'all' && limitFilter !== 'all') {
+      const cap = typeof limitFilter === 'number' ? limitFilter : Number(customLimitFilter) || 30;
+      return rawFilteredTransactions.slice(0, cap);
+    }
+    return rawFilteredTransactions;
+  }, [rawFilteredTransactions, selectedAccountId, limitFilter, customLimitFilter, isAccount6569]);
+
+  // Check if a specific transaction row is locked for Account 6569 based on backend ledgerConfig
+  const checkIs6569RowLocked = useCallback(
+    (tx: BankTransaction): boolean => {
+      return is6569TransactionLocked(tx, ledgerConfig, tx6569RankMap, is6569Unlocked, accounts);
+    },
+    [is6569Unlocked, ledgerConfig, tx6569RankMap, accounts]
+  );
+
+
 
   // Smart Matching Invoices for the Link Modal
   const candidateInvoicesForLink = useMemo(() => {
@@ -2185,70 +2352,80 @@ export const BankAccountsView: React.FC = () => {
 
   return (
     <div className="w-full flex-1 flex flex-col space-y-4 font-sans text-foreground">
-      {/* Top Header matching Cash Invoice Suite */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-4 rounded-xl border border-border shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-700 flex items-center justify-center text-teal-800 dark:text-teal-200 shadow-sm shrink-0">
-            <Landmark className="w-5 h-5 text-teal-700 dark:text-teal-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-bold font-sans text-foreground tracking-tight">
-                Bank Accounts &amp; Treasury
-              </h1>
-              <Badge variant="outline" className="bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 border-teal-300 text-[11px] font-bold rounded-full">
-                Statement Matcher
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Live bank transactions ledger and Cash Invoice matching.
-            </p>
-          </div>
-        </div>
+      {/* DC Tracker Styled Tab Bar */}
+      <div className="w-full overflow-x-auto pb-0.5">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+          <TabsList className="grid h-11 grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 shadow-2xs w-full min-w-[500px] sm:min-w-0">
+            {/* 1. Ledger */}
+            <TabsTrigger
+              value="ledger"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 hover:text-slate-900 data-[state=active]:bg-white data-[state=active]:text-teal-800 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-teal-200 cursor-pointer"
+            >
+              <FileText className="h-4 w-4 shrink-0 text-teal-600" />
+              <span>Ledger</span>
+              {transactions.length > 0 && (
+                <Badge
+                  className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                    activeTab === "ledger"
+                      ? "bg-teal-100 text-teal-800 border border-teal-200"
+                      : "bg-slate-200/80 text-slate-700"
+                  }`}
+                >
+                  {transactions.length > 999 ? "999+" : transactions.length}
+                </Badge>
+              )}
+            </TabsTrigger>
 
-        {/* Tab Switcher - Auto-sized Flex Layout to Prevent Text & White Card Overlap */}
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full sm:w-auto">
-            <TabsList className="flex items-center w-full sm:w-auto min-w-max h-10 rounded-lg p-1 bg-muted/60 border border-border gap-1">
-              <TabsTrigger 
-                value="ledger" 
-                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
-              >
-                <FileText className="w-3.5 h-3.5" /> Ledger ({transactions.length})
-              </TabsTrigger>
-              <TabsTrigger 
-                value="unlinked" 
-                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
-              >
-                <Link2 className="w-3.5 h-3.5" /> Unlinked Cash Queue ({cashQueueDcs.length})
-              </TabsTrigger>
-              <TabsTrigger 
-                value="linked" 
-                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
-              >
-                <Receipt className="w-3.5 h-3.5" /> Linked ({linkedCreditTransactions.length})
-              </TabsTrigger>
-              <TabsTrigger 
-                value="accounts" 
-                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
-              >
-                <Building2 className="w-3.5 h-3.5" /> Accounts ({accounts.length})
-              </TabsTrigger>
-              <TabsTrigger 
-                value="expense_tag" 
-                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
-              >
-                <Tag className="w-3.5 h-3.5" /> Auto Expense Tag
-              </TabsTrigger>
-              <TabsTrigger 
-                value="daily_expense" 
-                className="text-xs font-semibold gap-1.5 px-3 h-8 rounded-md transition-all whitespace-nowrap"
-              >
-                <Sparkles className="w-3.5 h-3.5" /> Daily Expense Analytics
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+            {/* 2. Cash Que */}
+            <TabsTrigger
+              value="unlinked"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 hover:text-slate-900 data-[state=active]:bg-white data-[state=active]:text-emerald-800 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-emerald-200 cursor-pointer"
+            >
+              <Wallet className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span>Cash Que</span>
+              {cashQueueDcs.length > 0 && (
+                <Badge
+                  className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                    activeTab === "unlinked"
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                      : "bg-slate-200/80 text-slate-700"
+                  }`}
+                >
+                  {cashQueueDcs.length > 99 ? "99+" : cashQueueDcs.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+
+            {/* 3. Reconciled */}
+            <TabsTrigger
+              value="linked"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 hover:text-slate-900 data-[state=active]:bg-white data-[state=active]:text-teal-800 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-teal-200 cursor-pointer"
+            >
+              <Receipt className="h-4 w-4 shrink-0 text-teal-600" />
+              <span>Reconciled</span>
+              {linkedCreditTransactions.length > 0 && (
+                <Badge
+                  className={`h-5 min-w-5 flex items-center justify-center text-[10px] px-1 font-bold rounded-full transition-all ${
+                    activeTab === "linked"
+                      ? "bg-teal-100 text-teal-800 border border-teal-200"
+                      : "bg-slate-200/80 text-slate-700"
+                  }`}
+                >
+                  {linkedCreditTransactions.length > 99 ? "99+" : linkedCreditTransactions.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+
+            {/* 4. Expenses */}
+            <TabsTrigger
+              value="expense_tag"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold transition-all text-slate-600 hover:text-slate-900 data-[state=active]:bg-white data-[state=active]:text-teal-800 data-[state=active]:shadow-2xs data-[state=active]:font-bold border border-transparent data-[state=active]:border-teal-200 cursor-pointer"
+            >
+              <Tag className="h-4 w-4 shrink-0 text-teal-600" />
+              <span>Expenses</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* ========================================================================= */}
@@ -2280,7 +2457,7 @@ export const BankAccountsView: React.FC = () => {
                   <SelectItem value="all">All Bank Accounts</SelectItem>
                   {accounts.map((acc) => (
                     <SelectItem key={acc.id} value={acc.id}>
-                      {isAccount6569(acc) && !is6569Unlocked ? "🔒 " + acc.accountName + " [Locked]" : acc.accountName}
+                      {acc.accountName}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2312,36 +2489,33 @@ export const BankAccountsView: React.FC = () => {
               >
                 <Download className="w-3.5 h-3.5" /> Export CSV
               </Button>
+
+              {is6569Unlocked && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleLock6569}
+                  className="h-8 px-2.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-300 rounded-md gap-1 cursor-pointer"
+                  title="Account 6569 is currently unlocked in this browser session. Click to re-lock immediately."
+                >
+                  <Lock className="w-3.5 h-3.5 text-amber-600" /> Lock 6569
+                </Button>
+              )}
             </div>
           </div>
 
-          
-          {/* 🔒 6569 Filter Lock Alert Banner */}
-          {isAccount6569(selectedAccountId) && !is6569Unlocked && (
-            <div className="bg-amber-50/90 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-800 p-3 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs text-amber-900 dark:text-amber-200 shadow-2xs">
-              <div className="flex items-center gap-2 font-semibold">
-                <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <span>HDFC Main (6569) account data is currently locked & blurred. Enter admin password to view amounts.</span>
-              </div>
-              <Button
-                size="sm"
-                onClick={() => setIs6569AuthDialogOpen(true)}
-                className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg px-3 gap-1 shadow-xs cursor-pointer shrink-0"
-              >
-                <Lock className="w-3 h-3" /> Unlock Data
-              </Button>
-            </div>
-          )}
-
-          {/* Filter Pills Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          {/* Filter Pills, Date Range Preset & Transaction Limit Controls Bar */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200">
+            {/* Filter Pills */}
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs text-muted-foreground font-semibold mr-1">Filter:</span>
+              <span className="text-xs text-slate-500 font-semibold mr-1">Filter:</span>
               <Button
                 size="sm"
                 variant={typeFilter === "all" ? "default" : "outline"}
                 onClick={() => setTypeFilter("all")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "all" ? "bg-teal-700 text-white hover:bg-teal-800" : ""}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${
+                  typeFilter === "all" ? "bg-teal-700 text-white hover:bg-teal-800" : "bg-white"
+                }`}
               >
                 All ({transactions.length})
               </Button>
@@ -2349,7 +2523,11 @@ export const BankAccountsView: React.FC = () => {
                 size="sm"
                 variant={typeFilter === "unlinked" ? "default" : "outline"}
                 onClick={() => setTypeFilter("unlinked")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "unlinked" ? "bg-amber-600 text-white hover:bg-amber-700" : "text-amber-800 hover:bg-amber-50"}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${
+                  typeFilter === "unlinked"
+                    ? "bg-amber-600 text-white hover:bg-amber-700"
+                    : "bg-white text-amber-800 hover:bg-amber-50"
+                }`}
               >
                 <Link2 className="w-3 h-3 mr-1" /> Unlinked ({overallSummary.unlinkedCreditCount})
               </Button>
@@ -2357,7 +2535,11 @@ export const BankAccountsView: React.FC = () => {
                 size="sm"
                 variant={typeFilter === "linked" ? "default" : "outline"}
                 onClick={() => setTypeFilter("linked")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "linked" ? "bg-teal-700 text-white hover:bg-teal-800" : "text-teal-800 hover:bg-teal-50"}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${
+                  typeFilter === "linked"
+                    ? "bg-teal-700 text-white hover:bg-teal-800"
+                    : "bg-white text-teal-800 hover:bg-teal-50"
+                }`}
               >
                 <Receipt className="w-3 h-3 mr-1" /> Linked
               </Button>
@@ -2365,7 +2547,11 @@ export const BankAccountsView: React.FC = () => {
                 size="sm"
                 variant={typeFilter === "credit" ? "default" : "outline"}
                 onClick={() => setTypeFilter("credit")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "credit" ? "bg-emerald-700 text-white hover:bg-emerald-800" : "text-emerald-700 hover:bg-emerald-50"}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${
+                  typeFilter === "credit"
+                    ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                    : "bg-white text-emerald-700 hover:bg-emerald-50"
+                }`}
               >
                 <ArrowDownLeft className="w-3 h-3 mr-1" /> Credits
               </Button>
@@ -2373,25 +2559,61 @@ export const BankAccountsView: React.FC = () => {
                 size="sm"
                 variant={typeFilter === "debit" ? "default" : "outline"}
                 onClick={() => setTypeFilter("debit")}
-                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${typeFilter === "debit" ? "bg-rose-700 text-white hover:bg-rose-800" : "text-rose-700 hover:bg-rose-50"}`}
+                className={`h-7 px-2.5 text-xs font-semibold rounded-md ${
+                  typeFilter === "debit"
+                    ? "bg-rose-700 text-white hover:bg-rose-800"
+                    : "bg-white text-rose-700 hover:bg-rose-50"
+                }`}
               >
                 <ArrowUpRight className="w-3 h-3 mr-1" /> Debits
               </Button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Select value={dateRangeFilter} onValueChange={(val: any) => setDateRangeFilter(val)}>
-                <SelectTrigger className="h-7 text-xs w-auto min-w-[110px] rounded-md">
-                  <Calendar className="w-3 h-3 mr-1 text-muted-foreground" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Dates</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">Past 7 Days</SelectItem>
-                  <SelectItem value="month">Past 30 Days</SelectItem>
-                </SelectContent>
-              </Select>
+            {/* Date Presets, Custom Days & Transaction Limit Cap */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Date Preset Selector */}
+              <div className="flex items-center gap-1">
+                <Select
+                  value={dateRangeFilter}
+                  onValueChange={(val: any) => setDateRangeFilter(val)}
+                >
+                  <SelectTrigger className="h-7 text-xs w-auto min-w-[110px] bg-white border-slate-200 rounded-md font-semibold">
+                    <Calendar className="w-3 h-3 mr-1 text-slate-500" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-slate-200">
+                    <SelectItem value="all">All Dates</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="year">This Year ({new Date().getFullYear()})</SelectItem>
+                    <SelectItem value="custom_days">Custom Days...</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {dateRangeFilter === "custom_days" && (
+                  <div className="flex items-center gap-1 bg-white px-1.5 py-0.5 rounded-md border border-slate-200">
+                    <Input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={customDaysFilter}
+                      onChange={(e) => setCustomDaysFilter(Number(e.target.value) || 30)}
+                      className="h-6 w-14 text-xs p-1 text-center"
+                    />
+                    <span className="text-[10px] text-slate-500">days</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Transactions count badge */}
+              <Badge
+                variant="outline"
+                className="text-[10px] font-mono bg-white border-slate-200 text-slate-600 h-7 px-2"
+                title="Debits and Credits combined"
+              >
+                Showing {filteredTransactions.length} of {rawFilteredTransactions.length}
+              </Badge>
             </div>
           </div>
 
@@ -2407,7 +2629,12 @@ export const BankAccountsView: React.FC = () => {
                     <th className="p-3 text-left">Bank Narration / UTR</th>
                     <th className="p-3 text-left">Linked Cash Invoice</th>
                     <th className="p-3 text-right">Amount (₹)</th>
-                    <th className="p-3 text-right">Account Balance</th>
+                    <th className="p-3 text-right">
+                      <div className="inline-flex items-center gap-1 justify-end">
+                        <span>Account Balance</span>
+                        {!isBalanceUnlocked && <Lock className="w-3 h-3 text-amber-600" />}
+                      </div>
+                    </th>
                     <th className="p-3 text-right">Invoice Link &amp; Actions</th>
                   </tr>
                 </thead>
@@ -2425,6 +2652,88 @@ export const BankAccountsView: React.FC = () => {
                       const isLinked = Boolean(tx.linkedInvoiceNumber || tx.linkedInvoiceId);
                       const is6569Row = isAccount6569(tx.accountId) || isAccount6569(tx.accountSuffix) || isAccount6569(tx.description);
                       const runningBal = transactionRunningBalances.get(tx.id);
+
+                      // Determine if this row is locked directly from backend ledgerConfig
+                      const isRowLocked = checkIs6569RowLocked(tx);
+
+                      if (isRowLocked) {
+                        return (
+                          <tr key={tx.id} className="bg-amber-50/20 hover:bg-amber-50/40 border-l-2 border-l-amber-400 transition-colors">
+                            {/* Date (Masked) */}
+                            <td className="p-3 whitespace-nowrap">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-xs text-slate-400 filter blur-[3.5px] select-none">
+                                  {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </span>
+                                <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-800 border-amber-300 font-bold px-1.5 py-0 flex items-center gap-0.5">
+                                  <Lock className="w-2.5 h-2.5 text-amber-600" /> Locked
+                                </Badge>
+                              </div>
+                            </td>
+
+                            {/* Account Display */}
+                            <td className="p-3 whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-900 bg-amber-100/70 border border-amber-300 px-2 py-0.5 rounded-md">
+                                <Building2 className="w-3 h-3 text-amber-700" />
+                                <span>{acc?.accountName || "SRR Ortho Main (6569)"}</span>
+                              </span>
+                            </td>
+
+                            {/* Type (Masked) */}
+                            <td className="p-3 text-center whitespace-nowrap">
+                              <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-200 bg-slate-50 filter blur-xs select-none">
+                                {isCredit ? '+ Credit' : '- Debit'}
+                              </Badge>
+                            </td>
+
+                            {/* Narration & Reference (Blurred) */}
+                            <td className="p-3 max-w-xs sm:max-w-md">
+                              <div className="filter blur-[4px] select-none text-slate-400 text-xs font-mono">
+                                HDFC Bank Statement Alert Protected ••••••••••••••••••••••••••••••••••
+                              </div>
+                              <div className="text-[10px] text-amber-700/80 mt-0.5 flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5" />
+                                <span>Transaction #{tx.referenceNumber ? tx.referenceNumber.slice(-4) : '••••'} details protected</span>
+                              </div>
+                            </td>
+
+                            {/* Linked Invoice Info (Masked) */}
+                            <td className="p-3 whitespace-nowrap">
+                              <span className="text-[10px] text-slate-400 filter blur-xs select-none">
+                                {isLinked ? tx.linkedInvoiceNumber : 'Invoice Status'}
+                              </span>
+                            </td>
+
+                            {/* Amount (Blurred) */}
+                            <td className="p-3 text-right whitespace-nowrap">
+                              <div className="font-mono font-bold text-sm text-slate-400 filter blur-[4px] select-none">
+                                ₹••••••••
+                              </div>
+                            </td>
+
+                            {/* Account Balance (Blurred) */}
+                            <td className="p-3 text-right whitespace-nowrap">
+                              <div className="font-mono text-xs text-slate-400 filter blur-[4px] select-none">
+                                ₹••••••••
+                              </div>
+                            </td>
+
+                            {/* Action: Unlock Row Button */}
+                            <td className="p-3 text-right whitespace-nowrap">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setIs6569AuthDialogOpen(true)}
+                                className="h-7 px-2.5 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border-amber-300 rounded-md gap-1.5 shadow-2xs cursor-pointer"
+                                title="Click to enter administrator password to reveal 6569 transactions"
+                              >
+                                <Lock className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Unlock Row</span>
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      }
 
                       return (
                         <tr key={tx.id} className="hover:bg-muted/20">
@@ -2479,59 +2788,42 @@ export const BankAccountsView: React.FC = () => {
 
                           {/* Narration & Reference # & Remarks */}
                           <td className="p-3 max-w-xs sm:max-w-md">
-                            {is6569Row && !is6569Unlocked ? (
-                              <div className="flex items-center gap-1.5 text-slate-400 font-mono text-xs select-none">
-                                <span className="filter blur-xs font-mono">••••••••••••••••••••••••</span>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setIs6569AuthDialogOpen(true)}
-                                  className="h-5 px-1.5 text-[9px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 rounded gap-0.5 cursor-pointer"
-                                  title="Click to enter admin password"
-                                >
-                                  <Lock className="w-2.5 h-2.5" /> Unlock
-                                </Button>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="font-medium text-foreground leading-snug">
-                                  {tx.description && !/inform\s+you|writing\s+to/i.test(tx.description) && !tx.description.startsWith('Deposit: inform')
-                                    ? tx.description
-                                    : extractHdfcNarration(tx.rawEmailBody || tx.rawAlert || tx.description, tx.type === 'credit', tx.description)}
+                            <div className="font-medium text-foreground leading-snug">
+                              {tx.description && !/inform\s+you|writing\s+to/i.test(tx.description) && !tx.description.startsWith('Deposit: inform')
+                                ? tx.description
+                                : extractHdfcNarration(tx.rawEmailBody || tx.rawAlert || tx.description, tx.type === 'credit', tx.description)}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                              {tx.referenceNumber && (
+                                <div className="font-mono text-muted-foreground flex items-center gap-1">
+                                  <span>Ref:</span>
+                                  <span className="font-semibold text-foreground bg-muted/60 px-1 rounded">{tx.referenceNumber}</span>
                                 </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
-                                  {tx.referenceNumber && (
-                                    <div className="font-mono text-muted-foreground flex items-center gap-1">
-                                      <span>Ref:</span>
-                                      <span className="font-semibold text-foreground bg-muted/60 px-1 rounded">{tx.referenceNumber}</span>
-                                    </div>
-                                  )}
+                              )}
 
-                                  {/* Small Quick Remarks Button & Display */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenRemarksModal(tx)}
-                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors ${
-                                      tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
-                                        ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold"
-                                        : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
-                                    }`}
-                                    title="Click to view or add remarks / travel route"
-                                  >
-                                    <Edit className="w-2.5 h-2.5 text-amber-600 shrink-0" />
-                                    <span>
-                                      {tx.expenseNotes
-                                        ? tx.expenseNotes
-                                        : tx.travelFromLocation && tx.travelToLocation
-                                        ? `Route: ${tx.travelFromLocation} → ${tx.travelToLocation}`
-                                        : tx.travelPurposeNote
-                                        ? tx.travelPurposeNote
-                                        : "+ Remarks"}
-                                    </span>
-                                  </button>
-                                </div>
-                              </>
-                            )}
+                              {/* Small Quick Remarks Button & Display */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRemarksModal(tx)}
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors ${
+                                  tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
+                                    ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold"
+                                    : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                                }`}
+                                title="Click to view or add remarks / travel route"
+                              >
+                                <Edit className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                <span>
+                                  {tx.expenseNotes
+                                    ? tx.expenseNotes
+                                    : tx.travelFromLocation && tx.travelToLocation
+                                    ? `Route: ${tx.travelFromLocation} → ${tx.travelToLocation}`
+                                    : tx.travelPurposeNote
+                                    ? tx.travelPurposeNote
+                                    : "+ Remarks"}
+                                </span>
+                              </button>
+                            </div>
                           </td>
 
                           {/* Linked Invoice Info */}
@@ -2579,35 +2871,29 @@ export const BankAccountsView: React.FC = () => {
                                 isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                               }`}
                             >
-                              {is6569Row && !is6569Unlocked ? (
-                                <div className="inline-flex items-center gap-1.5">
-                                  <span className="filter blur-xs select-none text-slate-400 font-mono text-xs">₹••••••••</span>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => setIs6569AuthDialogOpen(true)}
-                                    className="h-5 px-1.5 text-[9px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 rounded gap-0.5 cursor-pointer"
-                                    title="Click to enter admin password"
-                                  >
-                                    <Lock className="w-2.5 h-2.5" /> Unlock
-                                  </Button>
-                                </div>
-                              ) : (
-                                `${isCredit ? '+' : '-'}₹${tx.amount.toLocaleString('en-IN')}`
-                              )}
+                              {`${isCredit ? '+' : '-'}₹${tx.amount.toLocaleString('en-IN')}`}
                             </div>
                           </td>
 
                           {/* Account Balance (Stated Alert Bal vs Running Ledger Bal) */}
                           <td className="p-3 text-right whitespace-nowrap">
-                            {tx.availableBalance !== undefined ? (
+                            {!isBalanceUnlocked ? (
+                              <div className="inline-flex items-center gap-1.5 justify-end">
+                                <span className="filter blur-xs select-none text-slate-400 font-mono text-xs">₹••••••••</span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setIs6569AuthDialogOpen(true)}
+                                  className="h-5 px-1.5 text-[9px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded gap-0.5 cursor-pointer"
+                                  title="Click to enter admin password to unlock balance"
+                                >
+                                  <Lock className="w-2.5 h-2.5" /> Unlock
+                                </Button>
+                              </div>
+                            ) : tx.availableBalance !== undefined ? (
                               <div>
                                 <div className="font-mono font-bold text-xs text-teal-700 dark:text-teal-300">
-                                  {is6569Row && !is6569Unlocked ? (
-                                    <span className="filter blur-xs select-none text-slate-400 font-mono text-xs">₹••••••••</span>
-                                  ) : (
-                                    `₹${tx.availableBalance.toLocaleString('en-IN')}`
-                                  )}
+                                  {`₹${tx.availableBalance.toLocaleString('en-IN')}`}
                                 </div>
                                 <div className="text-[9px] text-teal-600 dark:text-teal-400 font-semibold inline-flex items-center gap-0.5">
                                   ⚡ Alert Stated
@@ -3018,650 +3304,8 @@ export const BankAccountsView: React.FC = () => {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* TAB 3: IMPORT SHEET / STATEMENT / GMAIL CONNECTOR                         */}
-      {/* ========================================================================= */}
-      {activeTab === "import" && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Left 2 Cols: Paste / Upload Form */}
-            <div className="lg:col-span-2 space-y-4">
-              <Card className="border-border shadow-sm rounded-xl">
-                <CardHeader className="p-4 pb-3 bg-muted/30 border-b border-border">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <FileSpreadsheet className="w-4 h-4 text-teal-700" />
-                      <CardTitle className="text-sm font-bold">Paste Google Sheets / Excel Rows</CardTitle>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        accept=".csv, .txt, .tsv"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="h-7 text-xs"
-                      >
-                        <Upload className="w-3.5 h-3.5 mr-1" /> Upload CSV
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-4 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs font-semibold text-muted-foreground mb-1 block">
-                        Target Bank Account *
-                      </Label>
-                      <Select value={importAccountId} onValueChange={setImportAccountId}>
-                        <SelectTrigger className="h-9 text-xs">
-                          <SelectValue placeholder="Choose Account" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {accounts.map((acc) => (
-                            <SelectItem key={acc.id} value={acc.id}>
-                              {acc.accountName} ({acc.bankName})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
 
-                    <div>
-                      <Label className="text-xs font-semibold text-muted-foreground mb-1 block">
-                        Expected Columns (Auto-detected)
-                      </Label>
-                      <div className="text-[11px] text-muted-foreground pt-1.5">
-                        <code>Date | Narration | Ref # | Deposit / Credit Amount</code>
-                      </div>
-                    </div>
-                  </div>
 
-                  <div>
-                    <Label className="text-xs font-semibold text-muted-foreground mb-1 block">
-                      Paste Tabular Rows from Sheet:
-                    </Label>
-                    <Textarea
-                      rows={5}
-                      value={pastedSheetText}
-                      onChange={(e) => handleParseSheetOrCsv(e.target.value)}
-                      placeholder="e.g.&#10;29/09/2026	UPI/526718291024/Sri Ram Hospital	UTR92837418	52500&#10;29/09/2026	IMPS/Mithra Kiran Hospital	REF2617	9100&#10;23/09/2026	NEFT/Lalitha Hospital	UTR7058	20500"
-                      className="text-xs font-mono"
-                    />
-                  </div>
-
-                  {parsedPreviewRows.length > 0 && (
-                    <div className="space-y-2 pt-2 border-t border-border">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-teal-700 dark:text-teal-400">
-                          Parsed Preview ({parsedPreviewRows.length} Rows Ready):
-                        </span>
-                        <Button
-                          size="sm"
-                          onClick={handleImportParsedRows}
-                          className="h-8 px-4 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs"
-                        >
-                          <Check className="w-3.5 h-3.5 mr-1" /> Confirm &amp; Add to Ledger
-                        </Button>
-                      </div>
-
-                      <div className="max-h-56 overflow-y-auto border border-border rounded-lg">
-                        <table className="w-full text-xs">
-                          <thead className="bg-muted/60 text-muted-foreground font-semibold">
-                            <tr>
-                              <th className="p-2 text-left">Date</th>
-                              <th className="p-2 text-left">Narration</th>
-                              <th className="p-2 text-left">Ref #</th>
-                              <th className="p-2 text-center">Type</th>
-                              <th className="p-2 text-right">Amount (₹)</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {parsedPreviewRows.map((r, idx) => (
-                              <tr key={idx}>
-                                <td className="p-2 whitespace-nowrap">{r.date}</td>
-                                <td className="p-2 max-w-[200px] truncate">{r.description}</td>
-                                <td className="p-2 font-mono text-[11px]">{r.referenceNumber || '-'}</td>
-                                <td className="p-2 text-center">
-                                  <Badge className={r.type === 'credit' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}>
-                                    {r.type}
-                                  </Badge>
-                                </td>
-                                <td className="p-2 text-right font-mono font-bold">
-                                  ₹{(r.amount || 0).toLocaleString('en-IN')}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Right Column: Live Multi-Account HDFC Email Alert Parser & Connector */}
-            <div className="space-y-4">
-              {/* Card 1: 1-Click Google Apps Script Webhook / URL Sync */}
-              <Card className="border-teal-300 dark:border-teal-800 shadow-sm rounded-xl bg-teal-50/30 dark:bg-teal-950/20">
-                <CardHeader className="p-4 pb-3 bg-teal-100/50 dark:bg-teal-900/30 border-b border-teal-200 dark:border-teal-800">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-teal-700 dark:text-teal-400" />
-                      <CardTitle className="text-sm font-bold text-teal-900 dark:text-teal-200">
-                        1-Click Live Gmail Sync (Google Script)
-                      </CardTitle>
-                    </div>
-                    <Badge className="bg-teal-700 text-white text-[10px] font-bold">
-                      Direct Connector
-                    </Badge>
-                  </div>
-                  <CardDescription className="text-xs text-teal-800/80 dark:text-teal-300/80">
-                    Paste your Google Apps Script Web App URL once to automatically pull and route all transactions into your bank ledger.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-4 space-y-3 text-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-1">
-                    <div>
-                      <Label className="text-xs font-semibold text-foreground mb-1 block">
-                        Target Bank Account for Sync:
-                      </Label>
-                      <Select
-                        value={gmailSyncTargetAccountId}
-                        onValueChange={setGmailSyncTargetAccountId}
-                      >
-                        <SelectTrigger className="h-9 text-xs bg-background border-teal-300 dark:border-teal-800">
-                          <SelectValue placeholder="Select Target Account" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto" className="text-xs font-semibold text-teal-700">
-                            ⚡ Auto-Detect by A/c Suffix (1538 → Savings, 6569 → Main)
-                          </SelectItem>
-                          {accounts.map((a) => (
-                            <SelectItem key={a.id} value={a.id} className="text-xs">
-                              {a.accountName} {a.accountNumber ? `(..${a.accountNumber.replace(/[^0-9]/g, '').slice(-4)})` : ''}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="flex flex-col justify-end">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={isAutoAssigning || transactions.length === 0}
-                        onClick={handleAutoAssignTransactionsToAccounts}
-                        className="h-9 text-xs font-semibold text-teal-800 bg-teal-50 border-teal-300 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-200 shadow-2xs"
-                        title="Re-attach all currently loaded transactions to your bank accounts"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 mr-1.5 text-teal-600" />
-                        {isAutoAssigning ? 'Attaching...' : 'Auto-Attach Existing Transactions'}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-semibold text-foreground mb-1 block">
-                      Google Apps Script Web App URL:
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        type="url"
-                        value={appsScriptUrl}
-                        onChange={(e) => setAppsScriptUrl(e.target.value)}
-                        placeholder="https://script.google.com/macros/s/.../exec"
-                        className="h-9 text-xs font-mono bg-background"
-                      />
-                      <Button
-                        size="sm"
-                        disabled={syncingScript || !appsScriptUrl.trim()}
-                        onClick={() => handleSyncFromAppsScript(false)}
-                        className="h-9 px-4 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white shrink-0 shadow-xs"
-                      >
-                        {syncingScript ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                            Syncing Newest 200...
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="w-3.5 h-3.5 mr-1.5" />
-                            Fetch &amp; Sync Now (Newest 200)
-                          </>
-                        )}
-                      </Button>
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={isClearingAll || transactions.length === 0}
-                        onClick={handleClearAllTransactions}
-                        className="h-9 px-3 text-xs font-semibold text-rose-700 bg-rose-50/70 border-rose-200 hover:bg-rose-100 hover:text-rose-800 shrink-0 shadow-2xs"
-                        title="Delete all current transactions to do a fresh sync"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-600" />
-                        {isClearingAll ? 'Clearing...' : 'Delete All Entries'}
-                      </Button>
-                    </div>
-
-                    {/* Instant Auto-Trigger Switch */}
-                    <div className="mt-3 p-2.5 bg-background rounded-lg border border-teal-200 dark:border-teal-800 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2.5 h-2.5 rounded-full ${isAutoSyncEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/40'}`} />
-                        <div>
-                          <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                            <span>⚡ Live Auto-Trigger (Every 30s)</span>
-                            {isAutoSyncEnabled && (
-                              <Badge className="bg-emerald-600 text-white text-[9px] px-1.5 py-0 h-4">
-                                Active &amp; Watching
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">
-                            {isAutoSyncEnabled
-                              ? `Silently polling incoming emails. Last synced: ${lastAutoSyncTime ? new Date(lastAutoSyncTime).toLocaleTimeString() : 'Just now'}`
-                              : 'Automatically pulls newly arrived HDFC emails every 30 seconds while this tab is open.'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <Button
-                        size="sm"
-                        variant={isAutoSyncEnabled ? 'default' : 'outline'}
-                        onClick={() => {
-                          const nextState = !isAutoSyncEnabled;
-                          setIsAutoSyncEnabled(nextState);
-                          localStorage.setItem('srrortho:auto_sync_live', String(nextState));
-                          if (nextState) {
-                            toast.success('⚡ Live Auto-Trigger enabled! Watching for new emails every 30s.');
-                            handleSyncFromAppsScript(true);
-                          } else {
-                            toast.info('Live Auto-Trigger paused.');
-                          }
-                        }}
-                        className={`h-7 px-3 text-xs font-bold rounded-md ${
-                          isAutoSyncEnabled
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                            : 'border-teal-300 text-teal-700 hover:bg-teal-50'
-                        }`}
-                      >
-                        {isAutoSyncEnabled ? '✓ Auto-Sync ON' : 'Turn ON Auto-Sync'}
-                      </Button>
-                    </div>
-
-                    <p className="text-[11px] text-muted-foreground mt-2">
-                      Fetches the <strong>newest 200 transactions</strong> from <code>label:HDFC-Bank</code> and extracts transactions, UTRs, real senders, and balances.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Card 2: Manual Email Text / Alert Paste Parser */}
-              <Card className="border-border shadow-sm rounded-xl bg-card">
-                <CardHeader className="p-4 pb-3 bg-muted/30 border-b border-border">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-teal-700" />
-                      <CardTitle className="text-sm font-bold">Paste Raw Alert Text or JSON</CardTitle>
-                    </div>
-                    <Badge variant="outline" className="text-[10px] bg-teal-50 text-teal-700 border-teal-200">
-                      Multi-HDFC Support
-                    </Badge>
-                  </div>
-                  <CardDescription className="text-xs">
-                    Paste email alert text or JSON from execution logs. Automatically routes to the matching HDFC account.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-4 space-y-3 text-xs">
-                  <div>
-                    <Label className="text-xs font-semibold text-muted-foreground mb-1 block">
-                      Paste Raw Alert Text or Execution Log JSON:
-                    </Label>
-                    <Textarea
-                      rows={4}
-                      value={pastedEmailText}
-                      onChange={(e) => handleParseHdfcEmails(e.target.value)}
-                      placeholder="e.g.&#10;HDFC Bank: Rs 52,500.00 credited to a/c **5678 on 29-SEP-26 by UPI-SRI RAM HOSP-UTR92837418&#10;&#10;Or paste JSON: [{ &quot;amount&quot;: 52500, &quot;accountSuffix&quot;: &quot;5678&quot; ... }]"
-                      className="text-xs font-mono"
-                    />
-                  </div>
-
-                  {parsedEmailResults.length > 0 && (
-                    <div className="space-y-2 pt-2 border-t border-border">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-teal-700 dark:text-teal-400">
-                          {parsedEmailResults.length} Alert{parsedEmailResults.length > 1 ? 's' : ''} Detected:
-                        </span>
-                        <Button
-                          size="sm"
-                          onClick={handleImportParsedEmails}
-                          className="h-7 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs"
-                        >
-                          <Check className="w-3.5 h-3.5 mr-1" /> Import {parsedEmailResults.length} to Ledger
-                        </Button>
-                      </div>
-
-                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                        {parsedEmailResults.map((res, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2.5 rounded-lg border border-border bg-muted/30 space-y-1.5"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-sm text-foreground">
-                                ₹{res.amount.toLocaleString('en-IN')}
-                              </span>
-                              <Badge className={res.type === 'credit' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}>
-                                {res.type.toUpperCase()}
-                              </Badge>
-                            </div>
-
-                            <div className="text-[11px] flex items-center justify-between text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <Landmark className="w-3 h-3 text-teal-700" />
-                                <strong className="text-foreground">
-                                  {res.matchedAccount
-                                    ? res.matchedAccount.accountName
-                                    : res.accountSuffix
-                                    ? `HDFC Account (ending **${res.accountSuffix})`
-                                    : 'Default HDFC Account'}
-                                </strong>
-                              </span>
-                              <span>{res.date}</span>
-                            </div>
-
-                            <div className="text-[11px] text-muted-foreground truncate">
-                              {res.narration}
-                            </div>
-                            <div className="text-[10px] font-mono text-muted-foreground">
-                              Ref: {res.referenceNumber}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="pt-2 text-[11px] text-muted-foreground space-y-1 border-t border-border">
-                    <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>How Multi-Account HDFC Matching Works:</span>
-                    </div>
-                    <p className="leading-relaxed pl-5 text-[11px]">
-                      HDFC email alerts include your masked account number (e.g. <code>**5678</code> or <code>ending in 1234</code>). The parser checks the last 4 digits against all your configured HDFC bank accounts in the <strong>Accounts</strong> tab to route transactions to the exact account automatically.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 4: BANK ACCOUNTS CONFIGURATION                                        */}
-      {/* ========================================================================= */}
-      {activeTab === "accounts" && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
-            <div>
-              <h2 className="font-sans font-bold text-sm text-foreground">
-                Configured Bank Accounts &amp; Cash Counters ({accounts.length})
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Manage bank accounts used for collections, transfers, and expense withdrawals.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* Option buttons commented out as requested
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={isClearingAll || (accounts.length === 0 && transactions.length === 0)}
-                onClick={handleWipeAllBankDataAndAccounts}
-                className="h-8 px-3 text-xs font-semibold text-rose-700 bg-rose-50/70 border-rose-200 hover:bg-rose-100 rounded-md"
-                title="Completely delete all accounts and transactions (Clean slate)"
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-600" />
-                {isClearingAll ? 'Wiping...' : 'Wipe All Bank Data & Accounts'}
-              </Button>
-
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  const mainAcc: BankAccount = {
-                    id: 'acc_hdfc_main_6569',
-                    accountName: 'SRR Ortho Main (6569)',
-                    bankName: 'HDFC Bank',
-                    accountNumber: '50200000006569',
-                    ifscCode: 'HDFC0001234',
-                    branch: 'Kalyan Nagar, Hyderabad',
-                    accountType: 'current',
-                    upiId: 'srrmain@hdfcbank',
-                    openingBalance: 0,
-                    colorTheme: 'teal',
-                    isDefault: true,
-                    notes: 'Primary Business Current Account for Hospital Collections & Supplier NEFTs',
-                    createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-                    updatedAt: Date.now(),
-                  };
-                  const savingsAcc: BankAccount = {
-                    id: 'acc_hdfc_savings_1538',
-                    accountName: 'SRR Savings / UPI (1538)',
-                    bankName: 'HDFC Bank',
-                    accountNumber: '50100000001538',
-                    ifscCode: 'HDFC0001234',
-                    branch: 'Kalyan Nagar, Hyderabad',
-                    accountType: 'savings',
-                    upiId: '9396857455@hdfcbank',
-                    openingBalance: 0,
-                    colorTheme: 'blue',
-                    isDefault: false,
-                    notes: 'Savings & UPI Operations Account',
-                    createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-                    updatedAt: Date.now(),
-                  };
-                  await saveBankAccountToFirestore(mainAcc);
-                  await saveBankAccountToFirestore(savingsAcc);
-                  toast.success('⚡ Restored HDFC Main (6569) & Savings (1538) accounts!');
-                  loadAllData(true);
-                }}
-                className="h-8 px-2.5 text-xs font-semibold text-teal-700 bg-teal-50 border-teal-300 hover:bg-teal-100 rounded-md"
-                title="Create or restore standard HDFC 6569 (Current) and 1538 (Savings) accounts"
-              >
-                <Sparkles className="w-3.5 h-3.5 mr-1 text-teal-600" /> + Add 6569 &amp; 1538 Accounts
-              </Button>
-              */}
-
-              <Button
-                size="sm"
-                onClick={handleOpenAddAccount}
-                className="h-8 px-3 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add Bank Account
-              </Button>
-            </div>
-          </div>
-
-          {accounts.length === 0 ? (
-            <Card className="border-dashed border-2 border-border p-8 text-center rounded-2xl bg-card">
-              <div className="w-12 h-12 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center mx-auto mb-3">
-                <Building2 className="w-6 h-6" />
-              </div>
-              <h3 className="font-bold text-base text-foreground font-sans">Treasury Is Completely Blank</h3>
-              <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1 mb-4">
-                No bank accounts exist in your database. Click below to add your accounts (e.g., <strong>Main Current A/c (6569)</strong>, <strong>Savings A/c (1538)</strong>, or <strong>Petty Cash</strong>) with their opening balances.
-              </p>
-              <Button
-                onClick={handleOpenAddAccount}
-                className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1.5" /> + Add Your First Bank Account
-              </Button>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {accounts.map((acc) => {
-              const stats = accountBalances[acc.id] || { balance: acc.openingBalance || 0, totalCredits: 0, totalDebits: 0, creditCount: 0, debitCount: 0 };
-
-              return (
-                <Card key={acc.id} className={`border-border shadow-sm rounded-xl overflow-hidden relative ${isAccount6569(acc) && !is6569Unlocked ? 'border-amber-400/60 dark:border-amber-500/60' : ''}`}>
-                  {isAccount6569(acc) && !is6569Unlocked && (
-                    <div className="absolute inset-0 bg-slate-900/85 dark:bg-slate-950/90 backdrop-blur-md z-20 flex flex-col items-center justify-center p-4 text-center rounded-xl border border-teal-500/40 shadow-2xl">
-                      <div className="w-10 h-10 rounded-full bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center mb-2 shadow-inner">
-                        <Lock className="w-5 h-5" />
-                      </div>
-                      <h4 className="text-xs font-bold text-white tracking-wide">{acc.accountName} Protected</h4>
-                      <p className="text-[11px] text-slate-300 mt-1 mb-3 max-w-[220px] leading-snug">
-                        Enter admin password to view ledger & bank balance data.
-                      </p>
-                      <Button
-                        size="sm"
-                        onClick={() => setIs6569AuthDialogOpen(true)}
-                        className="bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs h-8 px-4 rounded-lg shadow-md gap-1.5 cursor-pointer"
-                      >
-                        <Lock className="w-3.5 h-3.5" /> Unlock Account Data
-                      </Button>
-                    </div>
-                  )}
-                  <CardHeader className="p-4 pb-3 bg-muted/30 border-b border-border">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center font-bold">
-                          {acc.accountType === 'cash_in_hand' ? <Wallet className="w-4 h-4" /> : <Landmark className="w-4 h-4" />}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <CardTitle className="text-sm font-bold">{acc.accountName}</CardTitle>
-                            {isAccount6569(acc) && (
-                              is6569Unlocked ? (
-                                <Badge
-                                  onClick={handleLock6569}
-                                  variant="outline"
-                                  className="cursor-pointer text-[10px] bg-emerald-50 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-300 hover:bg-emerald-100 gap-1 rounded-md py-0.5 px-1.5 font-sans"
-                                  title="Click to lock account"
-                                >
-                                  <Lock className="w-3 h-3 text-emerald-600" /> Unlocked (Lock)
-                                </Badge>
-                              ) : (
-                                <Badge
-                                  onClick={() => setIs6569AuthDialogOpen(true)}
-                                  variant="outline"
-                                  className="cursor-pointer text-[10px] bg-amber-50 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-300 hover:bg-amber-100 gap-1 rounded-md py-0.5 px-1.5 font-sans"
-                                  title="Click to unlock with admin password"
-                                >
-                                  <Lock className="w-3 h-3 text-amber-600" /> Locked
-                                </Badge>
-                              )
-                            )}
-                          </div>
-                          <CardDescription className="text-xs text-muted-foreground">{acc.bankName}</CardDescription>
-                        </div>
-                      </div>
-
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleOpenAddTx('credit', acc.id)}>
-                            <ArrowDownLeft className="w-3.5 h-3.5 mr-2 text-emerald-600" /> Record Credit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleOpenAddTx('debit', acc.id)}>
-                            <ArrowUpRight className="w-3.5 h-3.5 mr-2 text-rose-600" /> Record Debit
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleOpenEditAccount(acc)}>
-                            <Edit className="w-3.5 h-3.5 mr-2" /> Edit Account
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDeleteAccount(acc)} className="text-rose-600">
-                            <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete Account
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="p-4 space-y-3">
-                    <div className="text-xs space-y-1">
-                      <div className="flex items-center justify-between text-muted-foreground">
-                        <span>Account Number:</span>
-                        <span className="font-mono font-bold text-foreground">
-                          {acc.accountNumber.length > 8
-                            ? `•••• •••• ${acc.accountNumber.slice(-4)}`
-                            : acc.accountNumber}
-                        </span>
-                      </div>
-                      {acc.ifscCode && acc.ifscCode !== 'CASH' && (
-                        <div className="flex items-center justify-between text-muted-foreground">
-                          <span>IFSC Code:</span>
-                          <span className="font-mono font-medium text-foreground">{acc.ifscCode}</span>
-                        </div>
-                      )}
-                      {acc.branch && (
-                        <div className="flex items-center justify-between text-muted-foreground">
-                          <span>Branch:</span>
-                          <span className="text-foreground">{acc.branch}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-2 border-t border-border flex items-end justify-between">
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          Ledger Balance
-                        </div>
-                        <div className="text-lg font-black font-sans font-mono text-teal-700 dark:text-teal-400 mt-0.5">
-                          ₹{stats.balance.toLocaleString("en-IN")}
-                        </div>
-                        {stats.latestAlertBalance !== undefined && (
-                          <div className="text-[10px] font-semibold text-teal-800 dark:text-teal-300 font-mono mt-0.5 flex items-center gap-1">
-                            <span>⚡ Bank Stated: ₹{stats.latestAlertBalance.toLocaleString('en-IN')}</span>
-                            {stats.latestAlertDate && (
-                              <span className="text-muted-foreground font-sans text-[9px]">({stats.latestAlertDate})</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleOpenAddTx('credit', acc.id)}
-                          className="h-7 text-xs px-2 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 rounded-md"
-                        >
-                          + Deposit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleOpenAddTx('debit', acc.id)}
-                          className="h-7 text-xs px-2 text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 rounded-md"
-                        >
-                          - Payout
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* TAB 5: AUTO EXPENSE TAGGING                                               */}
@@ -3673,21 +3317,11 @@ export const BankAccountsView: React.FC = () => {
           onRefresh={() => loadAllData(true)}
           is6569Unlocked={is6569Unlocked}
           onUnlock6569={() => setIs6569AuthDialogOpen(true)}
+          ledgerConfig={ledgerConfig}
         />
       )}
 
-      {/* ========================================================================= */}
-      {/* TAB 6: DAILY EXPENSE ANALYTICS                                            */}
-      {/* ========================================================================= */}
-      {activeTab === "daily_expense" && (
-        <DailyExpenseTab
-          transactions={transactions}
-          accounts={accounts}
-          onRefresh={() => loadAllData(true)}
-          is6569Unlocked={is6569Unlocked}
-          onUnlock6569={() => setIs6569AuthDialogOpen(true)}
-        />
-      )}
+
 
       {/* ========================================================================= */}
       {/* MODAL: LINK BANK CREDIT DIRECTLY TO A CASH INVOICE                        */}
@@ -4111,7 +3745,7 @@ export const BankAccountsView: React.FC = () => {
                   <SelectContent>
                     {accounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
-                        {isAccount6569(acc) && !is6569Unlocked ? "🔒 " + acc.accountName + " [Locked]" : acc.accountName}
+                        {acc.accountName}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -4921,7 +4555,7 @@ export const BankAccountsView: React.FC = () => {
                         Mandatory Bank Credit Link &amp; Match *
                       </Label>
                       <Badge variant="outline" className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border-indigo-200">
-                        {availableBankCredits.length} Statement Credits
+                        {availableBankCredits.filter((tx) => is6569Unlocked || !is6569TransactionLocked(tx, ledgerConfig, tx6569RankMap, false, accounts)).length} Statement Credits
                       </Badge>
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -4935,7 +4569,11 @@ export const BankAccountsView: React.FC = () => {
                         {/* 1. BANK ACCOUNTS TABS (1538 ALWAYS FIRST ON THE LEFT!) */}
                         {sortedBankAccounts.map((acc) => {
                           const isSelected = selectedBankAccountId === acc.id;
-                          const count = availableBankCredits.filter((t) => t.accountId === acc.id).length;
+                          const is6569Acc = isAccount6569(acc.id);
+                          const count = availableBankCredits
+                            .filter((t) => t.accountId === acc.id || (is6569Acc && (isAccount6569(t.accountId) || t.accountSuffix === '6569' || (t.description && t.description.includes('6569')))))
+                            .filter((tx) => is6569Unlocked || !is6569TransactionLocked(tx, ledgerConfig, tx6569RankMap, false, accounts))
+                            .length;
                           const accSuffix = acc.accountNumber ? acc.accountNumber.slice(-4) : (acc.accountName.match(/\d{4}/)?.[0] || '');
                           const is1538 = accSuffix === '1538' || acc.id.includes('1538');
 
@@ -4953,7 +4591,9 @@ export const BankAccountsView: React.FC = () => {
                               }`}
                             >
                               <Building2 className="w-3.5 h-3.5" />
-                              <span>{acc.bankName || acc.accountName.split('(')[0].trim()}</span>
+                              <span>
+                                {acc.bankName || acc.accountName.split('(')[0].trim()}
+                              </span>
                               {accSuffix && (
                                 <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
                                   isSelected ? "bg-white/20 text-white font-mono" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
@@ -4962,7 +4602,11 @@ export const BankAccountsView: React.FC = () => {
                                 </span>
                               )}
                               <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
-                                isSelected ? "bg-white/20 text-white font-mono" : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+                                isSelected 
+                                  ? "bg-white/20 text-white font-mono" 
+                                  : is6569Acc && !is6569Unlocked
+                                  ? "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-200"
+                                  : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
                               }`}>
                                 {count}
                               </span>
@@ -4985,10 +4629,27 @@ export const BankAccountsView: React.FC = () => {
                           <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
                             selectedBankAccountId === "all" ? "bg-white/20 text-white font-mono" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
                           }`}>
-                            {availableBankCredits.length}
+                            {availableBankCredits.filter((tx) => is6569Unlocked || !is6569TransactionLocked(tx, ledgerConfig, tx6569RankMap, false, accounts)).length}
                           </span>
                         </button>
                       </div>
+
+                      {isAccount6569(selectedBankAccountId) && (
+                        <div className="flex items-center justify-between text-[11px] bg-teal-50/80 border border-teal-200 text-teal-900 dark:bg-teal-950/40 dark:border-teal-800 dark:text-teal-200 px-2.5 py-1.5 rounded-lg my-1">
+                          <span>
+                            Account 6569: Showing unlocked credits per ledger rule ({ledgerConfig.unlockRule === 'count' ? `Last ${ledgerConfig.customLimit || ledgerConfig.defaultLimit || 10} Txns` : 'Configured Window'}).
+                          </span>
+                          {!is6569Unlocked && (
+                            <button
+                              type="button"
+                              onClick={() => setIs6569AuthDialogOpen(true)}
+                              className="font-bold underline hover:text-teal-950 dark:hover:text-teal-100 flex items-center gap-1 cursor-pointer shrink-0 ml-2"
+                            >
+                              <Lock className="w-2.5 h-2.5" /> Unlock All
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800/60 space-y-0 flex-1 min-h-[220px] max-h-[350px] overflow-y-auto">

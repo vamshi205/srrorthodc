@@ -4435,12 +4435,12 @@ Website: srrorthoplus.com`;
         {/* VIEW: SETTINGS */}
         {view === 'settings' && (
           <div className="w-full space-y-4 px-2 sm:px-4 py-3 md:py-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
+            <div className="bg-white/95 p-4 sm:p-5 rounded-2xl border border-teal-100 shadow-sm backdrop-blur">
               <h1 className="text-xl font-bold tracking-tight text-slate-900">Settings</h1>
               <p className="text-xs text-slate-500">Manage your company profile and application preferences.</p>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200/80 p-5 sm:p-6 shadow-2xs">
+            <div className="bg-white/95 rounded-2xl border border-teal-100 p-5 sm:p-6 shadow-sm backdrop-blur">
               <div className="space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -4520,7 +4520,7 @@ Website: srrorthoplus.com`;
                     </div>
                   </div>
 
-                  <div className="flex flex-col md:flex-row items-center gap-5 p-4 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <div className="flex flex-col md:flex-row items-center gap-5 p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
                     <div className="flex-1 space-y-2">
                       <div>
                         <p className="text-xs font-bold text-slate-900">Upload Signature Image</p>
@@ -4576,7 +4576,7 @@ Website: srrorthoplus.com`;
                           className="max-w-full max-h-full object-contain p-1.5" 
                         />
                       ) : (
-                        <span className="text-[11px] text-slate-400 italic">No signature uploaded</span>
+                        <span className="text-[11px] text-slate-500 italic">No signature uploaded</span>
                       )}
                     </div>
                   </div>

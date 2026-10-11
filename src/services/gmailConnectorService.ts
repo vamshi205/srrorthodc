@@ -14,11 +14,157 @@ export interface ParsedHdfcEmailResult {
 }
 
 /**
+ * Specialized smart extractor for sensitive Account 6569.
+ * Extracts the true Remitter / Hospital Name and real bank UTR from HDFC composite alerts.
+ */
+export function extract6569Details(
+  rawText: string,
+  isCredit: boolean,
+  fallback?: string
+): { narration: string; refNo: string; remitter?: string } {
+  if (!rawText) {
+    return {
+      narration: fallback || (isCredit ? 'HDFC Bank Credit Alert' : 'HDFC Bank Debit Alert'),
+      refNo: '',
+    };
+  }
+
+  const text = rawText.replace(/\r?\n\s*/g, ' ').trim();
+
+  // 1. UPI format (Sender: ... or VPA)
+  const senderMatch = rawText.match(/Sender\s*:\s*([^\n\r]+)/i);
+  if (senderMatch) {
+    const rawLine = senderMatch[1].trim();
+    const vpaMatch = rawLine.match(/\((?:VPA:\s*)?([^)]+)\)/i);
+    const nameOnly = rawLine
+      .replace(/\([^)]*\)/g, '')
+      .replace(/\b(?:c\.|d\.|UPI Reference)[\s\S]*/i, '')
+      .trim();
+    const vpa = vpaMatch ? vpaMatch[1].trim() : '';
+    const upiRef = rawText.match(/UPI\s*Reference\s*No\.?:\s*([0-9]+)/i)?.[1] || '';
+    return {
+      narration: vpa ? `UPI: ${nameOnly} (${vpa})` : `UPI: ${nameOnly}`,
+      refNo: upiRef,
+      remitter: nameOnly,
+    };
+  }
+
+  // 2. Transfer to payee <Name> (NetBanking Transfer)
+  const payeeMatch = rawText.match(/Transfer\s+to\s+payee\s+([A-Za-z0-9\s]+?)(?:\s+via|\.|\n|$)/i);
+  if (payeeMatch) {
+    const payeeName = payeeMatch[1].trim();
+    return {
+      narration: `Payout: ${payeeName} (NetBanking Transfer)`,
+      refNo: `NetBanking-${payeeName}`,
+      remitter: payeeName,
+    };
+  }
+
+  // 3. NEFT Dr (Vendor Payout): NEFT Dr-<IFSC>-<VENDOR>-<BRANCH>-<UTR> account on
+  const neftDrMatch = text.match(
+    /NEFT\s+Dr-([A-Za-z0-9]+)-([^\-]+)-([^\-]+)-([A-Za-z0-9]+)(?:\s+account\s+on|\b)/i
+  );
+  if (neftDrMatch) {
+    const vendor = neftDrMatch[2].trim();
+    const branch = neftDrMatch[3].trim();
+    const utr = neftDrMatch[4]
+      .trim()
+      .replace(/accounton$/i, '')
+      .replace(/account$/i, '');
+    return {
+      narration: `NEFT Payout: ${vendor}${branch ? ` (${branch})` : ''}`,
+      refNo: utr,
+      remitter: vendor,
+    };
+  }
+
+  // 4. "Reference Details: ..." section (Credits & Transfers)
+  const refDetailsMatch = rawText.match(
+    /Reference\s*Details\s*:\s*([\s\S]*?)(?=\n\s*(?:Available Balance|For real-time|Thank you|\n\n|$))/i
+  );
+  if (refDetailsMatch) {
+    const refContent = refDetailsMatch[1].replace(/\r?\n\s*/g, ' ').trim();
+
+    // 4A. NEFT Cr / RTGS Cr / IMPS Cr: NEFT Cr-<IFSC>-<REMITTER>-<OUR_NAME>-<UTR>
+    if (/^(?:NEFT|RTGS|IMPS)\s*Cr-/i.test(refContent)) {
+      const parts = refContent.split('-').map((p) => p.trim()).filter(Boolean);
+      const remitter = parts[2] || '';
+      const utr = parts.length >= 5 ? parts[4] : (parts.length === 4 ? parts[3] : parts[parts.length - 1]);
+      return {
+        narration: `NEFT: ${remitter}`,
+        refNo: utr.replace(/[^A-Za-z0-9]/g, ''),
+        remitter: remitter,
+      };
+    }
+
+    // 4B. Cheque Clearing: CHQ DEP - CTS CLG1 - WBO HYDERABAD
+    if (/^CHQ\s*DEP/i.test(refContent)) {
+      const parts = refContent.split('-').map((p) => p.trim()).filter(Boolean);
+      const clg = parts[1] || 'CTS CLG';
+      const loc = parts[2] || '';
+      return {
+        narration: `Cheque Deposit (${clg}${loc ? ` - ${loc}` : ''})`,
+        refNo: clg,
+        remitter: `Cheque Clearing ${clg}`,
+      };
+    }
+
+    // 4C. Fund Transfer: FT - Cr - XXXXXXXXXX9944 - MALCON LIFE SCIENCES
+    if (/^FT\s*-\s*Cr/i.test(refContent)) {
+      const parts = refContent.split('-').map((p) => p.trim()).filter(Boolean);
+      const accOrRef = parts[2] || '';
+      const remitter = parts[3] || parts[parts.length - 1] || '';
+      return {
+        narration: `FT: ${remitter}`,
+        refNo: accOrRef.replace(/[^A-Za-z0-9]/g, ''),
+        remitter: remitter,
+      };
+    }
+
+    // 4D. TPT format: XXXXXXXXXX2575-TPT-392-DOCTAZ HEALTH CARE PRIVATE LIMITED
+    if (/TPT/i.test(refContent)) {
+      const parts = refContent.split('-').map((p) => p.trim()).filter(Boolean);
+      const remitter = parts[parts.length - 1];
+      const refPart = parts[0];
+      return {
+        narration: `TPT: ${remitter}`,
+        refNo: refPart,
+        remitter: remitter,
+      };
+    }
+
+    // 4E. Reverse format: SRI RAJA RAJESHWARI ORTHO PLUS Cr - XXXXXXXXXX2022 - HORIZON MEDICAL SUPPLIES
+    if (/sri\s*raja\s*rajeshwari|srr\s*ortho/i.test(refContent)) {
+      const parts = refContent.split('-').map((p) => p.trim()).filter(Boolean);
+      const lastPart = parts[parts.length - 1];
+      const midPart = parts.length > 2 ? parts[1] : '';
+      return {
+        narration: `NEFT: ${lastPart}`,
+        refNo: midPart.replace(/[^A-Za-z0-9]/g, ''),
+        remitter: lastPart,
+      };
+    }
+  }
+
+  // 5. Fallback generic
+  return {
+    narration: fallback || (isCredit ? 'HDFC Bank Credit Alert' : 'HDFC Bank Debit Alert'),
+    refNo: '',
+  };
+}
+
+/**
  * Extracts clean counterparty / sender narration from HDFC alert text
  */
-export function extractHdfcNarration(text: string, isCredit: boolean, fallback?: string): string {
+export function extractHdfcNarration(text: string, isCredit: boolean, fallback?: string, accountSuffix?: string): string {
   if (!text || !text.trim()) return fallback || (isCredit ? 'HDFC Bank Credit Alert' : 'HDFC Bank Debit Alert');
 
+  // If this alert belongs to 6569, use specialized high-precision extractor
+  if (accountSuffix === '6569' || /[*xX]*6569\b/i.test(text)) {
+    return extract6569Details(text, isCredit, fallback).narration;
+  }
+
+  // UNTOUCHED 1538 & OTHER ACCOUNTS EXTRACTION LOGIC
   // 1. Check for Sender: Line (e.g. Sender: JELLA KIRAN KUMAR GOUD (VPA: 9959393339@ybl))
   const senderMatch = text.match(/Sender\s*:\s*([^\n\r]+)/i);
   if (senderMatch) {
@@ -202,45 +348,53 @@ export function parseHdfcEmailAlert(
     }
   }
 
-  // 5. Extract Reference / UTR Number
+  // 5. & 6. Extract Reference / UTR Number & Narration
   let refNo = '';
-  const upiRefMatch = text.match(/(?:UPI\s*(?:transaction\s*)?reference\s*no\.?|UPI\s*ref(?:erence)?\s*(?:no\.?)?)[:\s\-]*([0-9]{8,22})/i);
-  const neftRefMatch = text.match(/(?:NEFT|IMPS|RTGS)\s*(?:Cr|Dr)-([A-Za-z0-9]+)-(.+)/i);
-  const genericRefMatch =
-    text.match(/(?:UTR|Ref\s*No|UPI\s*Ref|Txn\s*ID|Reference\s*No|Ref\s*#)[:\s\-]*([A-Za-z0-9]{6,25})/i) ||
-    text.match(/UPI[:\/\-\s]*([0-9]{10,18})/i) ||
-    text.match(/IMPS[:\/\-\s]*([0-9]{10,18})/i) ||
-    text.match(/NEFT[:\/\-\s]*([A-Za-z0-9]{8,22})/i);
+  let narration = '';
 
-  const refDetailsMatch = text.match(/Reference\s*Details\s*:\s*([^\n\r]+(?:\r?\n\s*[^\n\r]+)?)/i);
-
-  if (upiRefMatch) {
-    refNo = upiRefMatch[1].trim();
-  } else if (neftRefMatch) {
-    const parts = neftRefMatch[2].split('-');
-    if (parts.length >= 2) {
-      refNo = parts[parts.length - 1].trim().replace(/[^a-zA-Z0-9]/g, '');
-    } else {
-      refNo = neftRefMatch[1].trim();
-    }
-  } else if (refDetailsMatch) {
-    const rawRefText = refDetailsMatch[1].replace(/\r?\n\s*/g, ' ').trim();
-    const parts = rawRefText.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean);
-    if (parts.length >= 3) {
-      refNo = parts[1].replace(/[^a-zA-Z0-9]/g, '');
-    } else if (parts.length >= 2) {
-      refNo = parts[0].replace(/[^a-zA-Z0-9]/g, '');
-    } else {
-      refNo = rawRefText.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
-    }
-  } else if (genericRefMatch) {
-    refNo = genericRefMatch[1].trim();
+  if (accountSuffix === '6569') {
+    const details6569 = extract6569Details(text, isCredit);
+    narration = details6569.narration;
+    refNo = details6569.refNo || `HDFC-6569-${Date.now().toString().slice(-6)}`;
   } else {
-    refNo = `HDFC-${accountSuffix ? `${accountSuffix}-` : ''}${Date.now().toString().slice(-6)}`;
-  }
+    // UNTOUCHED 1538 & OTHER ACCOUNTS EXTRACTION LOGIC
+    const upiRefMatch = text.match(/(?:UPI\s*(?:transaction\s*)?reference\s*no\.?|UPI\s*ref(?:erence)?\s*(?:no\.?)?)[:\s\-]*([0-9]{8,22})/i);
+    const neftRefMatch = text.match(/(?:NEFT|IMPS|RTGS)\s*(?:Cr|Dr)-([A-Za-z0-9]+)-(.+)/i);
+    const genericRefMatch =
+      text.match(/(?:UTR|Ref\s*No|UPI\s*Ref|Txn\s*ID|Reference\s*No|Ref\s*#)[:\s\-]*([A-Za-z0-9]{6,25})/i) ||
+      text.match(/UPI[:\/\-\s]*([0-9]{10,18})/i) ||
+      text.match(/IMPS[:\/\-\s]*([0-9]{10,18})/i) ||
+      text.match(/NEFT[:\/\-\s]*([A-Za-z0-9]{8,22})/i);
 
-  // 6. Extract Sender / Beneficiary / Narration
-  const narration = extractHdfcNarration(text, isCredit);
+    const refDetailsMatch = text.match(/Reference\s*Details\s*:\s*([^\n\r]+(?:\r?\n\s*[^\n\r]+)?)/i);
+
+    if (upiRefMatch) {
+      refNo = upiRefMatch[1].trim();
+    } else if (neftRefMatch) {
+      const parts = neftRefMatch[2].split('-');
+      if (parts.length >= 2) {
+        refNo = parts[parts.length - 1].trim().replace(/[^a-zA-Z0-9]/g, '');
+      } else {
+        refNo = neftRefMatch[1].trim();
+      }
+    } else if (refDetailsMatch) {
+      const rawRefText = refDetailsMatch[1].replace(/\r?\n\s*/g, ' ').trim();
+      const parts = rawRefText.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 3) {
+        refNo = parts[1].replace(/[^a-zA-Z0-9]/g, '');
+      } else if (parts.length >= 2) {
+        refNo = parts[0].replace(/[^a-zA-Z0-9]/g, '');
+      } else {
+        refNo = rawRefText.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
+      }
+    } else if (genericRefMatch) {
+      refNo = genericRefMatch[1].trim();
+    } else {
+      refNo = `HDFC-${accountSuffix ? `${accountSuffix}-` : ''}${Date.now().toString().slice(-6)}`;
+    }
+
+    narration = extractHdfcNarration(text, isCredit, undefined, accountSuffix);
+  }
 
   // 7. Extract Date & Time from Email text if available
   const now = new Date();

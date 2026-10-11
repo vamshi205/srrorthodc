@@ -42,7 +42,6 @@ import {
   Hash,
   GitMerge,
   ArrowRight,
-  ArrowLeft,
   ArrowLeftRight,
   AlertTriangle,
   Stethoscope,
@@ -76,10 +75,9 @@ import {
 
 interface CustomersProps {
   embedded?: boolean;
-  onBack?: () => void;
 }
 
-export default function Customers({ embedded = false, onBack }: CustomersProps = {}) {
+export default function Customers({ embedded = false }: CustomersProps = {}) {
   const navigate = useNavigate();
   const { fetchProcedures, loading } = useProcedures();
 
@@ -725,28 +723,22 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
         )}
         <div className="space-y-3 pt-0 pb-12 w-full">
             {/* Header & KPI Summary */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-4 rounded-xl border border-border shadow-sm">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card/95 p-4 sm:p-5 rounded-2xl border border-border shadow-sm backdrop-blur-sm">
           <div className="flex items-center gap-3">
-            {onBack && (
-              <Button variant="ghost" onClick={onBack} className="gap-2 h-9 px-2.5">
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Back</span>
-              </Button>
-            )}
-            <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950 border border-emerald-300 dark:border-emerald-700 flex items-center justify-center text-emerald-800 dark:text-emerald-200 shadow-sm shrink-0">
-              <Building2 className="w-5 h-5 text-emerald-700 dark:text-emerald-400" />
+            <div className="w-9 h-9 rounded-lg bg-accent border border-primary/20 flex items-center justify-center text-accent-foreground shadow-2xs shrink-0">
+              <Building2 className="w-5 h-5 text-primary" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-bold font-sans text-foreground tracking-tight">
+                <h1 className="text-base sm:text-lg font-bold font-sans text-foreground tracking-tight">
                   Hospital &amp; Customer Directory
                 </h1>
-                <Badge variant="outline" className="bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 text-[11px] font-bold rounded-full">
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 text-[10px] font-bold rounded-full">
                   Admin Directory
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Maintain complete hospital profiles with OT Numbers, Landlines, Personal Surgeon Numbers, and staff contacts.
+                Maintain complete hospital profiles with OT Numbers, Landlines, Surgeon Direct Lines, and staff contacts.
               </p>
             </div>
           </div>
@@ -804,8 +796,8 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
             </Card>
 
             <Card className="border-border shadow-sm p-4 rounded-xl">
-              <div className="text-[11px] font-bold text-indigo-700 dark:text-indigo-400 uppercase">Total Contacts</div>
-              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-indigo-700 dark:text-indigo-400 mt-1">
+              <div className="text-[11px] font-bold text-teal-700 dark:text-teal-400 uppercase">Total Contacts</div>
+              <div className="text-xl sm:text-2xl font-black font-sans font-mono text-teal-700 dark:text-teal-400 mt-1">
                 {totalDirectContacts}
               </div>
               <p className="text-[10px] text-muted-foreground mt-0.5">Doctors, OT &amp; Purchase</p>
@@ -829,21 +821,21 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white">
+                    <span className="font-extrabold text-xs sm:text-sm text-foreground dark:text-white">
                       Hospital Names from Delivery Challans ({unmatchedDcsList.reduce((sum, i) => sum + i.count, 0)} DCs)
                     </span>
                     <Badge className="bg-amber-200 text-amber-900 text-[10px] font-bold border-0">
                       Sync Available
                     </Badge>
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1">
+                  <p className="text-[11px] text-muted-foreground dark:text-slate-400 mt-1">
                     The following hospital or customer names exist in your DCs and can be synced or added to your customer directory:
                   </p>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {unmatchedDcsList.map((item) => (
                       <span
                         key={item.rawName}
-                        className="inline-flex items-center gap-1.5 text-[11px] bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 px-2.5 py-1 rounded-lg text-slate-800 dark:text-slate-200 shadow-2xs"
+                        className="inline-flex items-center gap-1.5 text-[11px] bg-card dark:bg-slate-900 border border-amber-200 dark:border-amber-900 px-2.5 py-1 rounded-lg text-foreground dark:text-slate-200 shadow-2xs"
                       >
                         {item.matchedCustomer ? (
                           <>
@@ -855,7 +847,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                         ) : (
                           <>
                             <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            <strong className="text-slate-900 dark:text-white font-bold">{item.rawName}</strong>
+                            <strong className="text-foreground dark:text-white font-bold">{item.rawName}</strong>
                             <span className="text-[10px] text-slate-400">({item.count} DCs)</span>
                             <button
                               type="button"
@@ -915,7 +907,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search hospital, OT number, doctor, mobile, location..."
-                className="pl-9 h-9 text-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
+                className="pl-9 h-9 text-xs bg-card dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-xl"
               />
             </div>
 
@@ -965,15 +957,15 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
               )}
 
               {/* View Switcher: List (Default) vs Grid */}
-              <div className="ml-auto sm:ml-2 flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+              <div className="ml-auto sm:ml-2 flex items-center bg-muted dark:bg-slate-800 p-0.5 rounded-lg border border-border dark:border-slate-700">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setViewMode("list")}
                   className={`h-6 px-2.5 text-xs font-bold rounded-md gap-1.5 transition-all ${
                     viewMode === "list"
-                      ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs font-extrabold border border-slate-200 dark:border-slate-700"
-                      : "text-muted-foreground hover:text-slate-900 dark:hover:text-slate-100"
+                      ? "bg-card dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs font-extrabold border border-border dark:border-slate-700"
+                      : "text-muted-foreground hover:text-foreground dark:hover:text-slate-100"
                   }`}
                   title="List View (Professional Directory Table)"
                 >
@@ -985,8 +977,8 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                   onClick={() => setViewMode("grid")}
                   className={`h-6 px-2.5 text-xs font-bold rounded-md gap-1.5 transition-all ${
                     viewMode === "grid"
-                      ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs font-extrabold border border-slate-200 dark:border-slate-700"
-                      : "text-muted-foreground hover:text-slate-900 dark:hover:text-slate-100"
+                      ? "bg-card dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs font-extrabold border border-border dark:border-slate-700"
+                      : "text-muted-foreground hover:text-foreground dark:hover:text-slate-100"
                   }`}
                   title="Grid Cards View"
                 >
@@ -998,9 +990,9 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
 
           {/* Hospitals List / Table View */}
           {filteredCustomers.length === 0 ? (
-            <div className="p-12 text-center bg-white/60 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="p-12 text-center bg-card/60 dark:bg-slate-900 rounded-2xl border border-border dark:border-slate-800 shadow-xs">
               <Building2 className="w-12 h-12 text-muted-foreground/40 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+              <h3 className="text-base font-bold text-foreground dark:text-slate-200">
                 No hospitals or customers match your search
               </h3>
               <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
@@ -1014,11 +1006,11 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
             /* ========================================================================= */
             /* Professional Enterprise Table List View (Default)                         */
             /* ========================================================================= */
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900 shadow-sm overflow-hidden backdrop-blur-md">
+            <div className="rounded-2xl border border-border dark:border-slate-800 bg-card/95 dark:bg-slate-900 shadow-sm overflow-hidden backdrop-blur-md">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-[11px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 select-none">
+                    <tr className="bg-muted dark:bg-slate-950 border-b border-border dark:border-slate-800 text-[11px] font-extrabold uppercase tracking-wider text-foreground dark:text-slate-300 select-none">
                       <th className="py-3.5 px-3.5 w-12 text-center">#</th>
                       <th className="py-3.5 px-4 min-w-[240px]">Hospital &amp; Location</th>
                       <th className="py-3.5 px-4 min-w-[290px]">Direct Department Lines</th>
@@ -1042,7 +1034,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
 
                           {/* Hospital Name & Info */}
                           <td className="py-3.5 px-4">
-                            <div className="font-extrabold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-1.5">
+                            <div className="font-extrabold text-foreground dark:text-slate-100 text-sm flex items-center gap-1.5">
                               <Building2 className="w-4 h-4 text-teal-600 shrink-0" />
                               <span>{cust.name}</span>
                             </div>
@@ -1055,9 +1047,9 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                               </div>
                             )}
                             {cust.contactPerson && (
-                              <div className="text-[11px] text-slate-600 dark:text-slate-400 font-medium flex items-center gap-1 mt-0.5">
+                              <div className="text-[11px] text-muted-foreground dark:text-slate-400 font-medium flex items-center gap-1 mt-0.5">
                                 <User className="w-3 h-3 text-teal-500 shrink-0" />
-                                <span>Dr / Incharge: <strong className="text-slate-800 dark:text-slate-200">{cust.contactPerson}</strong></span>
+                                <span>Dr / Incharge: <strong className="text-foreground dark:text-slate-200">{cust.contactPerson}</strong></span>
                               </div>
                             )}
                             {cust.notes && (
@@ -1154,7 +1146,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                                 {cust.contacts.slice(0, 2).map((c, i) => (
                                   <div key={i} className="flex items-center justify-between gap-1 text-[11px]">
                                     <span className="truncate max-w-[150px]">
-                                      <span className="font-bold text-slate-700 dark:text-slate-300">
+                                      <span className="font-bold text-foreground dark:text-slate-300">
                                         {c.role || "Staff"}:
                                       </span>{" "}
                                       {c.name}
@@ -1182,7 +1174,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                             ) : (
                               <button
                                 onClick={() => openEditModal(cust)}
-                                className="text-[11px] text-slate-400 hover:text-teal-700 dark:hover:text-teal-300 flex items-center gap-1 border border-dashed border-slate-200 dark:border-slate-800 px-2 py-1 rounded-md"
+                                className="text-[11px] text-slate-400 hover:text-teal-700 dark:hover:text-teal-300 flex items-center gap-1 border border-dashed border-border dark:border-slate-800 px-2 py-1 rounded-md"
                               >
                                 <Plus className="w-3 h-3" /> Add Staff Contacts
                               </button>
@@ -1222,10 +1214,10 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                                 onClick={() =>
                                   navigate(`/cash-invoice?client=${encodeURIComponent(cust.name)}`)
                                 }
-                                className="h-7 text-[11px] gap-1 border-slate-300 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold px-2 shadow-2xs"
+                                className="h-7 text-[11px] gap-1 border-slate-300 text-foreground dark:text-slate-300 hover:bg-muted dark:hover:bg-slate-800 font-bold px-2 shadow-2xs"
                                 title="Create Cash Memo / Invoice"
                               >
-                                <Receipt className="w-3 h-3 text-slate-600" /> + Bill
+                                <Receipt className="w-3 h-3 text-muted-foreground" /> + Bill
                               </Button>
                               <Button
                                 size="icon"
@@ -1240,7 +1232,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                                 size="icon"
                                 variant="ghost"
                                 onClick={() => openEditModal(cust)}
-                                className="h-7 w-7 text-slate-500 hover:text-teal-700"
+                                className="h-7 w-7 text-muted-foreground hover:text-teal-700"
                                 title="Edit hospital numbers and staff"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -1273,13 +1265,13 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                 return (
                   <div
                     key={`${cust.id || "cust"}_${cust.name}_${idx}`}
-                    className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900 backdrop-blur-xs shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                    className="p-4 rounded-xl border border-border dark:border-slate-800 bg-card/80 dark:bg-slate-900 backdrop-blur-xs shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
                   >
                     <div>
                       {/* Top Row: Name & Quick Dues Badge */}
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <h3 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm leading-snug">
+                          <h3 className="font-extrabold text-foreground dark:text-slate-100 text-sm leading-snug">
                             {cust.name}
                           </h3>
                           {cust.address && (
@@ -1303,7 +1295,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       </div>
 
                       {/* Phone Numbers Box */}
-                      <div className="mt-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 space-y-2">
+                      <div className="mt-3 p-2.5 rounded-lg bg-muted dark:bg-slate-950 border border-slate-100 dark:border-slate-800 space-y-2">
                         {/* OT Direct Number */}
                         <div className="flex items-center justify-between text-xs">
                           <span className="flex items-center gap-1.5 font-bold text-teal-800 dark:text-teal-300">
@@ -1394,7 +1386,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       {(cust.contactPerson || (cust.contacts && cust.contacts.length > 0)) && (
                         <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
                           {cust.contactPerson && (
-                            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1 mb-1">
+                            <div className="font-bold text-foreground dark:text-slate-200 flex items-center gap-1 mb-1">
                               <User className="w-3.5 h-3.5 text-teal-600" />
                               <span>{cust.contactPerson}</span>
                             </div>
@@ -1407,7 +1399,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                                   className="text-[11px] text-muted-foreground flex items-center justify-between"
                                 >
                                   <span className="truncate max-w-[150px]">
-                                    <span className="font-bold text-slate-700 dark:text-slate-300">
+                                    <span className="font-bold text-foreground dark:text-slate-300">
                                       {c.role || "Staff"}:
                                     </span>{" "}
                                     {c.name || "Contact"}
@@ -1456,10 +1448,10 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                           onClick={() =>
                             navigate(`/cash-invoice?client=${encodeURIComponent(cust.name)}`)
                           }
-                          className="h-7 text-[11px] gap-1 border-slate-300 text-slate-700 hover:bg-slate-50 font-bold"
+                          className="h-7 text-[11px] gap-1 border-slate-300 text-foreground hover:bg-muted font-bold"
                           title="Create Cash Invoice for this hospital"
                         >
-                          <Receipt className="w-3 h-3 text-slate-600" /> Cash Memo
+                          <Receipt className="w-3 h-3 text-muted-foreground" /> Cash Memo
                         </Button>
                       </div>
 
@@ -1468,7 +1460,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                           size="icon"
                           variant="ghost"
                           onClick={() => openMergeModal(cust)}
-                          className="h-7 w-7 text-slate-500 hover:text-amber-600 hover:bg-amber-50"
+                          className="h-7 w-7 text-muted-foreground hover:text-amber-600 hover:bg-amber-50"
                           title="Merge hospital..."
                         >
                           <GitMerge className="w-3.5 h-3.5" />
@@ -1477,7 +1469,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                           size="icon"
                           variant="ghost"
                           onClick={() => openEditModal(cust)}
-                          className="h-7 w-7 text-slate-500 hover:text-teal-700"
+                          className="h-7 w-7 text-muted-foreground hover:text-teal-700"
                           title="Edit hospital numbers and staff"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -1517,7 +1509,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
               {/* Hospital Name & Location */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                     Hospital / Customer Name <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -1529,7 +1521,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                     Location / Address (Optional)
                   </Label>
                   <Input
@@ -1544,7 +1536,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
               {/* Email & Notes */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                     Email Address (Optional)
                   </Label>
                   <Input
@@ -1556,7 +1548,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                     Notes / Remarks (Optional)
                   </Label>
                   <Input
@@ -1583,13 +1575,13 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
 
                   {/* 1-Click Role Add Buttons */}
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[11px] font-bold text-slate-500">Quick Add:</span>
+                    <span className="text-[11px] font-bold text-muted-foreground">Quick Add:</span>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={() => handleAddRoleContact("OT Person")}
-                      className="h-6 px-2 text-[11px] font-bold border-emerald-300 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 bg-white dark:bg-slate-900"
+                      className="h-6 px-2 text-[11px] font-bold border-emerald-300 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 bg-card dark:bg-slate-900"
                     >
                       <Plus className="w-2.5 h-2.5 mr-0.5 text-emerald-600" /> OT Person
                     </Button>
@@ -1598,7 +1590,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       variant="outline"
                       size="sm"
                       onClick={() => handleAddRoleContact("Accounts")}
-                      className="h-6 px-2 text-[11px] font-bold border-amber-300 text-amber-800 dark:text-amber-300 hover:bg-amber-50 bg-white dark:bg-slate-900"
+                      className="h-6 px-2 text-[11px] font-bold border-amber-300 text-amber-800 dark:text-amber-300 hover:bg-amber-50 bg-card dark:bg-slate-900"
                     >
                       <Plus className="w-2.5 h-2.5 mr-0.5 text-amber-600" /> Accounts
                     </Button>
@@ -1607,7 +1599,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       variant="outline"
                       size="sm"
                       onClick={() => handleAddRoleContact("Reception")}
-                      className="h-6 px-2 text-[11px] font-bold border-sky-300 text-sky-800 dark:text-sky-300 hover:bg-sky-50 bg-white dark:bg-slate-900"
+                      className="h-6 px-2 text-[11px] font-bold border-sky-300 text-sky-800 dark:text-sky-300 hover:bg-sky-50 bg-card dark:bg-slate-900"
                     >
                       <Plus className="w-2.5 h-2.5 mr-0.5 text-sky-600" /> Reception
                     </Button>
@@ -1616,7 +1608,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       variant="outline"
                       size="sm"
                       onClick={() => handleAddRoleContact("Doctor")}
-                      className="h-6 px-2 text-[11px] font-bold border-purple-300 text-purple-800 dark:text-purple-300 hover:bg-purple-50 bg-white dark:bg-slate-900"
+                      className="h-6 px-2 text-[11px] font-bold border-purple-300 text-purple-800 dark:text-purple-300 hover:bg-purple-50 bg-card dark:bg-slate-900"
                     >
                       <Plus className="w-2.5 h-2.5 mr-0.5 text-purple-600" /> Doctor
                     </Button>
@@ -1625,7 +1617,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       variant="outline"
                       size="sm"
                       onClick={() => handleAddRoleContact("Others")}
-                      className="h-6 px-2 text-[11px] font-bold border-slate-300 text-slate-700 dark:text-slate-300 hover:bg-slate-100 bg-white dark:bg-slate-900"
+                      className="h-6 px-2 text-[11px] font-bold border-slate-300 text-foreground dark:text-slate-300 hover:bg-muted bg-card dark:bg-slate-900"
                     >
                       <Plus className="w-2.5 h-2.5 mr-0.5" /> Others
                     </Button>
@@ -1634,7 +1626,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
 
                 {/* Contacts List Rows */}
                 {formContacts.length === 0 ? (
-                  <div className="p-3 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-white/60 dark:bg-slate-900">
+                  <div className="p-3 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-card/60 dark:bg-slate-900">
                     No contacts added yet. Click one of the buttons above to add.
                   </div>
                 ) : (
@@ -1642,14 +1634,14 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                     {formContacts.map((contact, idx) => (
                       <div
                         key={contact.id || idx}
-                        className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs"
+                        className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center bg-card dark:bg-slate-900 p-2.5 rounded-lg border border-border dark:border-slate-800 shadow-2xs"
                       >
                         {/* 1. Category / Role Selection - ONLY the 5 clean options! */}
                         <div className="sm:col-span-4">
                           <select
                             value={contact.role}
                             onChange={(e) => handleUpdateContact(idx, "role", e.target.value)}
-                            className="w-full h-8 text-xs font-bold rounded-md border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-600"
+                            className="w-full h-8 text-xs font-bold rounded-md border border-slate-300 dark:border-slate-700 bg-muted dark:bg-slate-950 px-2 text-foreground dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-600"
                           >
                             <option value="OT Person">🩺 OT Person</option>
                             <option value="Accounts">💳 Accounts</option>
@@ -1729,7 +1721,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
         >
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
+              <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground dark:text-slate-100">
                 <Building2 className="w-5 h-5 text-teal-600" />
                 {selectedHospitalForContacts?.name} — Staff Directory
               </DialogTitle>
@@ -1740,22 +1732,22 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
 
             <div className="space-y-3 pt-2">
               {/* Department Numbers Summary */}
-              <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
+              <div className="grid grid-cols-3 gap-2 p-3 bg-muted dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
                 <div>
                   <div className="text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400">OT Desk</div>
-                  <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                  <div className="font-bold text-foreground dark:text-slate-100 mt-0.5 truncate">
                     {selectedHospitalForContacts?.otNumber || "—"}
                   </div>
                 </div>
                 <div>
                   <div className="text-[10px] font-bold uppercase text-sky-700 dark:text-sky-400">Board Line</div>
-                  <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                  <div className="font-bold text-foreground dark:text-slate-100 mt-0.5 truncate">
                     {selectedHospitalForContacts?.hospitalNumber || "—"}
                   </div>
                 </div>
                 <div>
                   <div className="text-[10px] font-bold uppercase text-purple-700 dark:text-purple-400">Doctor Mobile</div>
-                  <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                  <div className="font-bold text-foreground dark:text-slate-100 mt-0.5 truncate">
                     {selectedHospitalForContacts?.personalNumber || selectedHospitalForContacts?.mobile || "—"}
                   </div>
                 </div>
@@ -1765,12 +1757,12 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
               <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
                 {selectedHospitalForContacts?.contacts && selectedHospitalForContacts.contacts.length > 0 ? (
                   selectedHospitalForContacts.contacts.map((c, i) => (
-                    <div key={i} className="p-3 flex items-center justify-between gap-3 text-xs bg-white dark:bg-slate-900">
+                    <div key={i} className="p-3 flex items-center justify-between gap-3 text-xs bg-card dark:bg-slate-900">
                       <div className="min-w-0">
-                        <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
+                        <div className="font-bold text-foreground dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
                           <User className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                           <span>{c.name}</span>
-                          <Badge variant="outline" className="text-[9.5px] px-1.5 py-0 text-slate-600 dark:text-slate-300">
+                          <Badge variant="outline" className="text-[9.5px] px-1.5 py-0 text-muted-foreground dark:text-slate-300">
                             {c.role || "Staff"}
                           </Badge>
                         </div>
@@ -1865,7 +1857,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                   <select
                     value={mergeTargetId}
                     onChange={(e) => setMergeTargetId(e.target.value)}
-                    className="w-full h-9 text-xs font-bold rounded-lg border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 px-2.5 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full h-9 text-xs font-bold rounded-lg border border-emerald-300 dark:border-emerald-700 bg-card dark:bg-slate-900 px-2.5 text-foreground dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">-- Choose Primary Hospital (Profile to Keep) --</option>
                     {customers.map((c) => (
@@ -1880,8 +1872,8 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                     const target = customers.find((c) => c.id === mergeTargetId);
                     if (!target) return null;
                     return (
-                      <div className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 space-y-1">
-                        <div className="font-bold text-slate-900 dark:text-slate-100 truncate">{target.name}</div>
+                      <div className="text-[11px] text-muted-foreground dark:text-slate-300 bg-card dark:bg-slate-900 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 space-y-1">
+                        <div className="font-bold text-foreground dark:text-slate-100 truncate">{target.name}</div>
                         {target.address && <div className="text-muted-foreground truncate">📍 {target.address}</div>}
                         <div className="flex items-center gap-2 flex-wrap pt-0.5 text-[10px]">
                           {target.otNumber && <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">OT: {target.otNumber}</span>}
@@ -1903,10 +1895,10 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                     variant="outline"
                     size="sm"
                     onClick={handleSwapMerge}
-                    className="h-7 px-3 text-[11px] font-bold rounded-full border-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 shadow-xs flex items-center gap-1.5"
+                    className="h-7 px-3 text-[11px] font-bold rounded-full border-slate-300 bg-card dark:bg-slate-800 hover:bg-muted shadow-xs flex items-center gap-1.5"
                     title="Swap Destination and Duplicate profiles"
                   >
-                    <ArrowLeftRight className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
+                    <ArrowLeftRight className="w-3.5 h-3.5 text-muted-foreground dark:text-slate-400" />
                     Swap Keep &amp; Merge
                   </Button>
                 </div>
@@ -1926,7 +1918,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                   <select
                     value={mergeSourceId}
                     onChange={(e) => setMergeSourceId(e.target.value)}
-                    className="w-full h-9 text-xs font-bold rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 px-2.5 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-9 text-xs font-bold rounded-lg border border-amber-300 dark:border-amber-700 bg-card dark:bg-slate-900 px-2.5 text-foreground dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
                   >
                     <option value="">-- Choose Duplicate Hospital (Profile to Merge) --</option>
                     {customers.map((c) => (
@@ -1941,8 +1933,8 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                     const source = customers.find((c) => c.id === mergeSourceId);
                     if (!source) return null;
                     return (
-                      <div className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800 space-y-1">
-                        <div className="font-bold text-slate-900 dark:text-slate-100 truncate">{source.name}</div>
+                      <div className="text-[11px] text-muted-foreground dark:text-slate-300 bg-card dark:bg-slate-900 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800 space-y-1">
+                        <div className="font-bold text-foreground dark:text-slate-100 truncate">{source.name}</div>
                         {source.address && <div className="text-muted-foreground truncate">📍 {source.address}</div>}
                         <div className="flex items-center gap-2 flex-wrap pt-0.5 text-[10px]">
                           {source.otNumber && <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">OT: {source.otNumber}</span>}
@@ -1959,11 +1951,11 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
               </div>
 
               {/* Merge Options */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-                <div className="font-bold text-slate-800 dark:text-slate-200 text-[11px] uppercase tracking-wider">
+              <div className="p-3 bg-muted dark:bg-slate-900 rounded-xl border border-border dark:border-slate-800 space-y-2 text-xs">
+                <div className="font-bold text-foreground dark:text-slate-200 text-[11px] uppercase tracking-wider">
                   Merge Settings:
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                <label className="flex items-center gap-2 cursor-pointer text-foreground dark:text-slate-300">
                   <input
                     type="checkbox"
                     checked={mergeCombineNotes}
@@ -1972,7 +1964,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                   />
                   <span>Combine notes, address and remarks into primary profile</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                <label className="flex items-center gap-2 cursor-pointer text-foreground dark:text-slate-300">
                   <input
                     type="checkbox"
                     checked={mergeUpdateDcs}
@@ -1981,7 +1973,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                   />
                   <span>Update past Delivery Challans with primary hospital name</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                <label className="flex items-center gap-2 cursor-pointer text-foreground dark:text-slate-300">
                   <input
                     type="checkbox"
                     checked={mergeUpdateInvoices}
@@ -2051,8 +2043,8 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
 
             <div className="space-y-4 pt-1 text-xs">
               {/* Target Hospital Card */}
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
-                <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+              <div className="p-3 rounded-xl bg-muted dark:bg-slate-900 border border-border dark:border-slate-800 space-y-1">
+                <div className="text-sm font-extrabold text-foreground dark:text-slate-100 flex items-center gap-1.5">
                   <Building2 className="w-4 h-4 text-teal-600 shrink-0" />
                   <span>{customerToDelete?.name}</span>
                 </div>
@@ -2084,7 +2076,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-center">
-                      <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 shadow-2xs">
+                      <div className="p-2 rounded-lg bg-card dark:bg-slate-900 border border-amber-200 dark:border-amber-900 shadow-2xs">
                         <div className="text-lg font-black text-amber-800 dark:text-amber-300">
                           {deleteSummary.dcCount}
                         </div>
@@ -2092,7 +2084,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                           Delivery Challans
                         </div>
                       </div>
-                      <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 shadow-2xs">
+                      <div className="p-2 rounded-lg bg-card dark:bg-slate-900 border border-amber-200 dark:border-amber-900 shadow-2xs">
                         <div className="text-lg font-black text-amber-800 dark:text-amber-300">
                           {deleteSummary.invoiceCount}
                         </div>
@@ -2122,18 +2114,18 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                    <p className="text-[11px] text-muted-foreground dark:text-slate-300 leading-snug">
                       Preserve all {deleteSummary.dcCount} DCs and {deleteSummary.invoiceCount} invoices by re-linking them to another hospital profile (e.g. if this name is a typo or alternate spelling).
                     </p>
 
                     <div className="space-y-1.5 pt-1">
-                      <Label className="text-[10.5px] font-bold text-slate-700 dark:text-slate-300">
+                      <Label className="text-[10.5px] font-bold text-foreground dark:text-slate-300">
                         Select Destination Hospital to receive these records:
                       </Label>
                       <select
                         value={mergeTargetId}
                         onChange={(e) => setMergeTargetId(e.target.value)}
-                        className="w-full h-8 text-xs font-bold rounded-md border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 px-2.5 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        className="w-full h-8 text-xs font-bold rounded-md border border-emerald-300 dark:border-emerald-700 bg-card dark:bg-slate-900 px-2.5 text-foreground dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                       >
                         <option value="">-- Choose Hospital to Merge Into --</option>
                         {customers
@@ -2160,7 +2152,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
 
                   {/* Force Delete Option */}
                   <div className="p-3.5 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 space-y-2.5">
-                    <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                    <div className="text-[11px] text-muted-foreground dark:text-slate-400">
                       Or, if you really want to permanently delete this hospital profile without re-linking its records:
                     </div>
 
@@ -2185,7 +2177,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                         onKeyDown={(e) => {
                           if (e.key === "Enter") handleConfirmDelete();
                         }}
-                        className="h-8 text-xs font-mono border-red-300 dark:border-red-800 bg-white dark:bg-slate-900 focus-visible:ring-red-500"
+                        className="h-8 text-xs font-mono border-red-300 dark:border-red-800 bg-card dark:bg-slate-900 focus-visible:ring-red-500"
                       />
                     </div>
 
@@ -2204,7 +2196,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300">
+                  <div className="p-3.5 rounded-lg bg-muted dark:bg-slate-900 border border-border dark:border-slate-800 text-xs text-muted-foreground dark:text-slate-300">
                     No active Delivery Challans or Cash Invoices are attached to this hospital. Deletion requires administrator password.
                   </div>
 
@@ -2229,7 +2221,7 @@ export default function Customers({ embedded = false, onBack }: CustomersProps =
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleConfirmDelete();
                       }}
-                      className="h-8 text-xs font-mono border-red-300 dark:border-red-800 bg-white dark:bg-slate-900 focus-visible:ring-red-500"
+                      className="h-8 text-xs font-mono border-red-300 dark:border-red-800 bg-card dark:bg-slate-900 focus-visible:ring-red-500"
                     />
                   </div>
                 </div>

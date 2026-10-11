@@ -4,6 +4,11 @@ import {
   BankAccount,
   ExpenseCategory,
   saveBankTransactionToFirestore,
+  LedgerDisplayConfig,
+  getLedgerDisplayConfig,
+  build6569TransactionRankMap,
+  is6569TransactionLocked,
+  isAccount6569Identifier,
 } from "@/services/bankAccountFirebaseService";
 import {
   getDeliveryTeamPersonnelNames,
@@ -39,6 +44,7 @@ import {
   Navigation,
   Mail,
   Download,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +75,7 @@ interface ExpenseTaggingTabProps {
   onRefresh: () => void;
   is6569Unlocked?: boolean;
   onUnlock6569?: () => void;
+  ledgerConfig?: LedgerDisplayConfig;
 }
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
@@ -81,16 +88,8 @@ const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Other Operational Expense",
 ];
 
-const isAccount6569 = (accIdentifier?: string | BankAccount | null): boolean => {
-  if (!accIdentifier) return false;
-  if (typeof accIdentifier === 'string') {
-    const clean = accIdentifier.toLowerCase();
-    return clean.includes('6569') || clean.includes('acc_hdfc_main_6569');
-  }
-  const idClean = (accIdentifier.id || '').toLowerCase();
-  const numClean = (accIdentifier.accountNumber || '').toLowerCase();
-  const nameClean = (accIdentifier.accountName || '').toLowerCase();
-  return idClean.includes('6569') || numClean.includes('6569') || nameClean.includes('6569');
+const isAccount6569 = (accIdentifier?: string | BankAccount | null, accs?: BankAccount[]): boolean => {
+  return isAccount6569Identifier(accIdentifier, accs);
 };
 
 export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
@@ -99,7 +98,10 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   onRefresh,
   is6569Unlocked = false,
   onUnlock6569,
+  ledgerConfig,
 }) => {
+  const activeConfig = useMemo(() => ledgerConfig || getLedgerDisplayConfig(), [ledgerConfig]);
+  const rankMap = useMemo(() => build6569TransactionRankMap(transactions, accounts), [transactions, accounts]);
   const [selectedPersonnel, setSelectedPersonnel] = useState<string>("all");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "tagged" | "untagged">("all");
@@ -127,7 +129,11 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
 
   const handleAccountChange = (newAccId: string) => {
     const isTarget1538 = newAccId === defaultAccId || newAccId.includes("1538");
-    if (!isTarget1538) {
+    const isTarget6569 = isAccount6569(newAccId, accounts);
+    if (isTarget6569) {
+      // Switch date range to all time so user immediately sees their configured 6569 debits
+      setDateRangeFilter("all");
+    } else if (!isTarget1538 && newAccId !== "all") {
       toast.warning("Caution: Daily UPI delivery expenses are primarily tracked from HDFC 1538 Account!", {
         description: "Showing debits for selected account. Be sure to verify statement before tagging.",
         duration: 4500,
@@ -220,33 +226,30 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
       selectedAccountId.includes("1538") ||
       selectedObj?.accountNumber?.includes("1538") ||
       selectedObj?.accountName?.includes("1538");
+    const isTarget6569 = isAccount6569(selectedAccountId, accounts);
 
     return transactions.filter((t) => {
-      const is6569Tx =
-        t.accountSuffix === "6569" ||
-        isAccount6569(t.accountId) ||
-        (t.description && t.description.includes("6569"));
-
-      if (is6569Tx && !is6569Unlocked) {
-        return false;
-      }
-
       const isDebit =
         t.type === "debit" ||
         (t.type as string)?.toLowerCase() === "debit" ||
         (t.amount > 0 && Boolean(t.expenseCategory));
 
       const isTx1538 = t.accountSuffix === "1538" || (t.accountId && t.accountId.includes("1538"));
+      const isTx6569 =
+        isAccount6569(t.accountId, accounts) ||
+        t.accountSuffix === "6569" ||
+        (t.description && t.description.includes("6569"));
 
       const matchesAccount =
         !selectedAccountId ||
         selectedAccountId === "all" ||
         t.accountId === selectedAccountId ||
-        (isTarget1538 && isTx1538);
+        (isTarget1538 && isTx1538) ||
+        (isTarget6569 && isTx6569);
 
       return isDebit && matchesAccount;
     });
-  }, [transactions, selectedAccountId, accounts, is6569Unlocked]);
+  }, [transactions, selectedAccountId, accounts]);
 
   // Auto-compute AI Suggestions across all debit transactions (incorporating historical records)
   const liveSuggestionsMap = useMemo(() => {
@@ -404,7 +407,24 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     ];
 
     const rows = filteredDebits.map((tx) => {
+      const isLocked = is6569TransactionLocked(tx, activeConfig, rankMap, is6569Unlocked, accounts);
       const acc = accounts.find((a) => a.id === tx.accountId);
+      if (isLocked) {
+        return [
+          `"${tx.date}"`,
+          `""`,
+          `"${acc?.accountName || tx.accountId || "HDFC 6569"}"`,
+          `"[LOCKED BY ADMIN CONFIG]"`,
+          `""`,
+          0,
+          `"[LOCKED]"`,
+          `"[LOCKED]"`,
+          `""`,
+          `""`,
+          "",
+          `"Locked"`,
+        ];
+      }
       return [
         `"${tx.date}"`,
         `"${tx.time || ""}"`,
@@ -503,6 +523,9 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     const personTotalsMap = new Map<string, number>();
 
     filteredDebits.forEach((t) => {
+      const isLocked = is6569TransactionLocked(t, activeConfig, rankMap, is6569Unlocked, accounts);
+      if (isLocked) return;
+
       if (t.isExpenseTagged) {
         totalTaggedExpense += t.amount || 0;
         taggedCount++;
@@ -532,7 +555,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
       topPerson,
       topPersonAmount,
     };
-  }, [filteredDebits]);
+  }, [filteredDebits, activeConfig, rankMap, is6569Unlocked, accounts]);
 
   return (
     <div className="space-y-4 font-sans text-foreground">
@@ -676,10 +699,9 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
               {accounts.map((acc) => {
                 const is1538Acc = acc.accountNumber?.includes("1538") || acc.accountName?.includes("1538") || acc.id.includes("1538");
                 const is6569Acc = isAccount6569(acc);
-                const isLocked = is6569Acc && !is6569Unlocked;
                 return (
                   <SelectItem key={acc.id} value={acc.id} className="text-[11px] font-medium">
-                    {is1538Acc ? `⭐ ${acc.accountName}` : isLocked ? `🔒 ${acc.accountName} [Locked]` : acc.accountName}
+                    {is1538Acc ? `⭐ ${acc.accountName}` : is6569Acc ? `🏢 ${acc.accountName}` : acc.accountName}
                   </SelectItem>
                 );
               })}
@@ -709,20 +731,22 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
         </div>
       </div>
 
-      {/* 🔒 6569 Account Lock Security Alert Banner */}
-      {isAccount6569(selectedAccountId) && !is6569Unlocked && (
-        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 rounded-xl flex items-center justify-between gap-3 text-xs font-semibold text-amber-900 dark:text-amber-200 shadow-xs">
+      {/* 6569 Account Config Status Banner */}
+      {isAccount6569(selectedAccountId, accounts) && (
+        <div className="p-3 bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 rounded-xl flex items-center justify-between gap-3 text-xs font-semibold text-teal-950 dark:text-teal-200 shadow-xs">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>HDFC Main (6569) account transactions are protected &amp; hidden. Enter admin password to view 6569 expenses.</span>
+            <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0" />
+            <span>
+              HDFC Main (6569): Showing {is6569Unlocked ? "all debits (session unlocked)" : `unlocked debits per admin configuration (${activeConfig.unlockRule === 'count' ? `Latest ${activeConfig.customLimit || activeConfig.defaultLimit || 10} Txns` : 'Configured Window'})`}. {!is6569Unlocked && "Older debits are blurred below."}
+            </span>
           </div>
-          {onUnlock6569 && (
+          {onUnlock6569 && !is6569Unlocked && (
             <Button
               size="sm"
               onClick={onUnlock6569}
               className="h-7 px-3 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-md shrink-0 gap-1 cursor-pointer"
             >
-              🔒 Unlock Account (6569)
+              <Lock className="w-3 h-3" /> Unlock All (6569)
             </Button>
           )}
         </div>
@@ -753,6 +777,59 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
               ) : (
                 filteredDebits.map((tx) => {
                   const acc = accounts.find((a) => a.id === tx.accountId);
+                  const isRowLocked = is6569TransactionLocked(tx, activeConfig, rankMap, is6569Unlocked, accounts);
+
+                  if (isRowLocked) {
+                    return (
+                      <tr key={tx.id} className="bg-amber-50/20 hover:bg-amber-50/40 border-l-2 border-l-amber-400 transition-colors">
+                        <td className="p-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs text-slate-400 filter blur-[3.5px] select-none">
+                              {new Date(tx.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                            </span>
+                            <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-800 border-amber-300 font-bold px-1.5 py-0 flex items-center gap-0.5">
+                              <Lock className="w-2.5 h-2.5 text-amber-600" /> Locked
+                            </Badge>
+                          </div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap font-medium text-slate-500">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100/70 border border-amber-300 px-2 py-0.5 rounded-md">
+                            {acc?.accountName || "SRR Ortho Main (6569)"}
+                          </span>
+                        </td>
+                        <td className="p-3 max-w-xs sm:max-w-md">
+                          <div className="filter blur-[4px] select-none text-slate-400 text-xs font-mono">
+                            HDFC Bank Statement Protected ••••••••••••••••••
+                          </div>
+                          <div className="text-[10px] text-amber-700/80 mt-0.5 flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>Protected by 6569 ledger rule</span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-right whitespace-nowrap">
+                          <span className="font-mono font-bold text-xs text-slate-400 filter blur-[4px] select-none">
+                            ₹••••••••
+                          </span>
+                        </td>
+                        <td colSpan={2} className="p-3 text-slate-400 text-[11px] italic">
+                          Older debit transaction beyond unlocked window
+                        </td>
+                        <td className="p-3 text-center whitespace-nowrap">
+                          {onUnlock6569 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={onUnlock6569}
+                              className="h-7 text-xs px-2.5 font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-300 rounded-md cursor-pointer gap-1"
+                            >
+                              <Lock className="w-3 h-3 text-amber-600" /> Unlock
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   const suggestion = aiSuggestions.get(tx.id) || liveSuggestionsMap.get(tx.id);
                   // ONLY use saved expensePersonnelName for actual tagged status. Untagged stays empty until user confirms.
                   const currentPersonnel = tx.expensePersonnelName || "";

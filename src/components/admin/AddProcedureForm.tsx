@@ -693,67 +693,66 @@ export function AddProcedureForm() {
   if (viewMode === 'catalog') {
     return (
       <div className="space-y-6 w-full pb-16">
-        {/* Top Header Card */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6 sm:p-8 text-white shadow-xl border border-indigo-500/20">
-          <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-1/3 -mb-8 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-semibold uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5" />
-                Procedure Master Management
+        {/* Unified Executive Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card/95 p-4 sm:p-5 rounded-2xl border border-border shadow-sm backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center shadow-2xs">
+                <Layers className="w-5 h-5 text-teal-600" />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-sans text-white">
-                Surgical Procedures Catalog
-              </h1>
-              <p className="text-sm text-slate-300 max-w-2xl">
-                Configure procedures, default surgical sets, implants, sizes, quantities, and inventory location maps for streamlined Delivery Challans.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                onClick={() => fetchProcedures(true)}
-                variant="outline"
-                size="sm"
-                className="bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm"
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${proceduresLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-              <Button
-                onClick={startCreateNew}
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30 font-semibold px-5 py-2 h-10"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create New Procedure
-              </Button>
+              <div>
+                <h1 className="text-base sm:text-lg font-bold font-sans tracking-tight text-foreground">
+                  DC System Management
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  Configure surgical procedures, default implants, sizes, and instrument sets
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-white/10">
-            <div className="bg-white/5 backdrop-blur-md rounded-xl p-3 border border-white/10">
-              <span className="text-xs font-medium text-slate-400 block">Total Procedures</span>
-              <span className="text-2xl font-bold text-white">{stats.total}</span>
-            </div>
-            <div className="bg-white/5 backdrop-blur-md rounded-xl p-3 border border-white/10">
-              <span className="text-xs font-medium text-slate-400 block">Orthopedic / Trauma</span>
-              <span className="text-2xl font-bold text-indigo-300">
-                {(stats.specialtyCounts['Orthopedic'] || 0) + (stats.specialtyCounts['Trauma'] || 0)}
-              </span>
-            </div>
-            <div className="bg-white/5 backdrop-blur-md rounded-xl p-3 border border-white/10">
-              <span className="text-xs font-medium text-slate-400 block">Spine & Surgery</span>
-              <span className="text-2xl font-bold text-teal-300">
-                {(stats.specialtyCounts['Spine'] || 0) + (stats.specialtyCounts['Surgery'] || 0)}
-              </span>
-            </div>
-            <div className="bg-white/5 backdrop-blur-md rounded-xl p-3 border border-white/10">
-              <span className="text-xs font-medium text-slate-400 block">Avg Implants / Proc</span>
-              <span className="text-2xl font-bold text-amber-300">{stats.avgItems}</span>
-            </div>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => fetchProcedures(true)}
+              variant="outline"
+              size="sm"
+              className="h-9 text-xs font-semibold gap-1.5 border-border hover:bg-muted text-foreground"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${proceduresLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button
+              onClick={startCreateNew}
+              size="sm"
+              className="h-9 text-xs font-semibold gap-1.5 bg-teal-600 hover:bg-teal-700 text-white shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Create Procedure
+            </Button>
+          </div>
+        </div>
+
+        {/* Quick Metrics Bar in clean light theme */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-card rounded-xl p-3.5 border border-border shadow-xs">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block">Total Procedures</span>
+            <span className="text-xl sm:text-2xl font-bold text-foreground mt-0.5 block">{stats.total}</span>
+          </div>
+          <div className="bg-card rounded-xl p-3.5 border border-border shadow-xs">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block">Orthopedic / Trauma</span>
+            <span className="text-xl sm:text-2xl font-bold text-teal-700 mt-0.5 block">
+              {(stats.specialtyCounts['Orthopedic'] || 0) + (stats.specialtyCounts['Trauma'] || 0)}
+            </span>
+          </div>
+          <div className="bg-card rounded-xl p-3.5 border border-border shadow-xs">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block">Spine & Surgery</span>
+            <span className="text-xl sm:text-2xl font-bold text-sky-700 mt-0.5 block">
+              {(stats.specialtyCounts['Spine'] || 0) + (stats.specialtyCounts['Surgery'] || 0)}
+            </span>
+          </div>
+          <div className="bg-card rounded-xl p-3.5 border border-border shadow-xs">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block">Avg Implants / Proc</span>
+            <span className="text-xl sm:text-2xl font-bold text-teal-700 mt-0.5 block">{stats.avgItems}</span>
           </div>
         </div>
 
@@ -765,12 +764,12 @@ export function AddProcedureForm() {
               placeholder="Search procedures, implants, or instruments..."
               value={catalogSearch}
               onChange={(e) => setCatalogSearch(e.target.value)}
-              className="pl-10 h-11 bg-white border-slate-200 rounded-xl shadow-xs focus-visible:ring-indigo-500"
+              className="pl-10 h-11 bg-card border-border rounded-xl shadow-xs focus-visible:ring-teal-500"
             />
             {catalogSearch && (
               <button
                 onClick={() => setCatalogSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-muted-foreground"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -788,13 +787,13 @@ export function AddProcedureForm() {
                   onClick={() => setSelectedSpecialtyFilter(type)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 ${
                     selectedSpecialtyFilter === type
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                      ? 'bg-teal-600 text-white shadow-sm'
+                      : 'bg-card border border-border text-foreground hover:bg-muted'
                   }`}
                 >
                   <span>{type}</span>
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                    selectedSpecialtyFilter === type ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                    selectedSpecialtyFilter === type ? 'bg-card/20 text-white' : 'bg-muted text-muted-foreground'
                   }`}>
                     {count}
                   </span>
@@ -804,17 +803,17 @@ export function AddProcedureForm() {
 
             <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block" />
 
-            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+            <div className="inline-flex rounded-lg border border-border bg-card p-1">
               <button
                 onClick={() => setCatalogLayout('grid')}
-                className={`p-1.5 rounded-md text-xs ${catalogLayout === 'grid' ? 'bg-indigo-50 text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-900'}`}
+                className={`p-1.5 rounded-md text-xs ${catalogLayout === 'grid' ? 'bg-teal-50 text-teal-600 font-bold' : 'text-muted-foreground hover:text-foreground'}`}
                 title="Grid View"
               >
                 <Grid className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setCatalogLayout('table')}
-                className={`p-1.5 rounded-md text-xs ${catalogLayout === 'table' ? 'bg-indigo-50 text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-900'}`}
+                className={`p-1.5 rounded-md text-xs ${catalogLayout === 'table' ? 'bg-teal-50 text-teal-600 font-bold' : 'text-muted-foreground hover:text-foreground'}`}
                 title="Table View"
               >
                 <List className="w-4 h-4" />
@@ -825,15 +824,15 @@ export function AddProcedureForm() {
 
         {/* Procedures Grid / Table */}
         {filteredProcedures.length === 0 ? (
-          <div className="text-center py-16 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-white">
+          <div className="text-center py-16 px-4 rounded-2xl border-2 border-dashed border-border bg-card">
             <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-            <h3 className="text-base font-bold text-slate-800">No procedures found</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+            <h3 className="text-base font-bold text-foreground">No procedures found</h3>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
               {catalogSearch || selectedSpecialtyFilter !== 'All'
                 ? "Try clearing your search query or choosing a different specialty filter."
                 : "Get started by adding your first surgical procedure template."}
             </p>
-            <Button onClick={startCreateNew} className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white">
+            <Button onClick={startCreateNew} className="mt-4 bg-teal-600 hover:bg-teal-700 text-white">
               <Plus className="w-4 h-4 mr-2" />
               Create Procedure
             </Button>
@@ -849,7 +848,7 @@ export function AddProcedureForm() {
               return (
                 <Card
                   key={proc.docId || proc.name || index}
-                  className="group relative overflow-hidden border border-slate-200 hover:border-indigo-400 hover:shadow-lg transition-all duration-200 bg-white rounded-2xl flex flex-col justify-between"
+                  className="group relative overflow-hidden border border-border hover:border-teal-400 hover:shadow-lg transition-all duration-200 bg-card rounded-2xl flex flex-col justify-between"
                 >
                   <CardHeader className="p-5 pb-3">
                     <div className="flex items-start justify-between gap-3">
@@ -858,9 +857,9 @@ export function AddProcedureForm() {
                         className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${
                           proc.type === 'Trauma' ? 'bg-amber-100 text-amber-800' :
                           proc.type === 'Spine' ? 'bg-purple-100 text-purple-800' :
-                          proc.type === 'Orthopedic' ? 'bg-indigo-100 text-indigo-800' :
+                          proc.type === 'Orthopedic' ? 'bg-teal-100 text-teal-800' :
                           proc.type === 'Surgery' ? 'bg-emerald-100 text-emerald-800' :
-                          'bg-slate-100 text-slate-700'
+                          'bg-muted text-foreground'
                         }`}
                       >
                         {proc.type || 'General'}
@@ -869,7 +868,7 @@ export function AddProcedureForm() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                          className="h-8 w-8 text-muted-foreground hover:text-teal-600 hover:bg-teal-50 rounded-lg"
                           title="Preview Procedure"
                           onClick={() => setPreviewProcedure(proc)}
                         >
@@ -878,7 +877,7 @@ export function AddProcedureForm() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                          className="h-8 w-8 text-muted-foreground hover:text-teal-600 hover:bg-teal-50 rounded-lg"
                           title="Duplicate Procedure"
                           onClick={() => duplicateProcedure(proc)}
                         >
@@ -887,10 +886,10 @@ export function AddProcedureForm() {
                       </div>
                     </div>
 
-                    <CardTitle className="text-base font-bold text-slate-900 mt-2 line-clamp-1 group-hover:text-indigo-600 transition-colors">
+                    <CardTitle className="text-base font-bold text-foreground mt-2 line-clamp-1 group-hover:text-teal-600 transition-colors">
                       {proc.name}
                     </CardTitle>
-                    <CardDescription className="text-xs text-slate-500 line-clamp-2 mt-1">
+                    <CardDescription className="text-xs text-muted-foreground line-clamp-2 mt-1">
                       {proc.items && proc.items.length > 0
                         ? proc.items.map(i => i.split('{')[0].trim()).join(', ')
                         : 'No implants configured'}
@@ -905,7 +904,7 @@ export function AddProcedureForm() {
                         </div>
                         <div>
                           <span className="text-[10px] text-slate-400 uppercase font-semibold block">Implants</span>
-                          <span className="font-bold text-slate-700">{totalImplants} items</span>
+                          <span className="font-bold text-foreground">{totalImplants} items</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -914,7 +913,7 @@ export function AddProcedureForm() {
                         </div>
                         <div>
                           <span className="text-[10px] text-slate-400 uppercase font-semibold block">Instruments</span>
-                          <span className="font-bold text-slate-700">{instCount} sets</span>
+                          <span className="font-bold text-foreground">{instCount} sets</span>
                         </div>
                       </div>
                     </div>
@@ -922,7 +921,7 @@ export function AddProcedureForm() {
                     <div className="flex items-center justify-between gap-2 pt-1">
                       <Button
                         onClick={() => loadProcedureForEdit(proc)}
-                        className="flex-1 bg-slate-900 hover:bg-indigo-600 text-white text-xs font-semibold h-9 rounded-xl transition-colors shadow-xs"
+                        className="flex-1 bg-slate-900 hover:bg-teal-600 text-white text-xs font-semibold h-9 rounded-xl transition-colors shadow-xs"
                       >
                         <Edit className="w-3.5 h-3.5 mr-1.5" />
                         Edit Template
@@ -937,7 +936,7 @@ export function AddProcedureForm() {
                           });
                           setDeleteDialogOpen(true);
                         }}
-                        className="h-9 w-9 border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 rounded-xl"
+                        className="h-9 w-9 border-border text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 rounded-xl"
                         title="Delete Procedure"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -949,10 +948,10 @@ export function AddProcedureForm() {
             })}
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+          <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-bold">
+                <thead className="bg-muted/80 border-b border-border text-muted-foreground uppercase tracking-wider font-bold">
                   <tr>
                     <th className="py-3.5 px-4">Procedure Name</th>
                     <th className="py-3.5 px-4">Specialty</th>
@@ -964,8 +963,8 @@ export function AddProcedureForm() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredProcedures.map((proc, index) => (
-                    <tr key={proc.docId || proc.name || index} className="hover:bg-indigo-50/30 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900">
+                    <tr key={proc.docId || proc.name || index} className="hover:bg-teal-50/30 transition-colors">
+                      <td className="py-3.5 px-4 font-bold text-foreground">
                         {proc.name}
                       </td>
                       <td className="py-3.5 px-4">
@@ -973,13 +972,13 @@ export function AddProcedureForm() {
                           {proc.type || 'General'}
                         </Badge>
                       </td>
-                      <td className="py-3.5 px-4 text-center font-semibold text-slate-700">
+                      <td className="py-3.5 px-4 text-center font-semibold text-foreground">
                         {proc.items?.length || 0}
                       </td>
-                      <td className="py-3.5 px-4 text-center font-semibold text-slate-700">
+                      <td className="py-3.5 px-4 text-center font-semibold text-foreground">
                         {proc.fixedItems?.length || 0}
                       </td>
-                      <td className="py-3.5 px-4 text-center font-semibold text-slate-700">
+                      <td className="py-3.5 px-4 text-center font-semibold text-foreground">
                         {proc.instruments?.length || 0}
                       </td>
                       <td className="py-3.5 px-4 text-right">
@@ -988,7 +987,7 @@ export function AddProcedureForm() {
                             size="sm"
                             variant="ghost"
                             onClick={() => setPreviewProcedure(proc)}
-                            className="h-8 text-xs text-slate-600 hover:text-indigo-600"
+                            className="h-8 text-xs text-muted-foreground hover:text-teal-600"
                           >
                             <Eye className="w-3.5 h-3.5 mr-1" /> Preview
                           </Button>
@@ -996,14 +995,14 @@ export function AddProcedureForm() {
                             size="sm"
                             variant="outline"
                             onClick={() => duplicateProcedure(proc)}
-                            className="h-8 text-xs text-slate-600 hover:text-indigo-600 border-slate-200"
+                            className="h-8 text-xs text-muted-foreground hover:text-teal-600 border-border"
                           >
                             <Copy className="w-3.5 h-3.5 mr-1" /> Duplicate
                           </Button>
                           <Button
                             size="sm"
                             onClick={() => loadProcedureForEdit(proc)}
-                            className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
+                            className="h-8 text-xs bg-teal-600 hover:bg-teal-700 text-white"
                           >
                             <Edit className="w-3.5 h-3.5 mr-1" /> Edit
                           </Button>
@@ -1040,7 +1039,7 @@ export function AddProcedureForm() {
               </div>
               <AlertDialogTitle>Delete Procedure?</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete <span className="font-bold text-slate-900">"{procedureToDelete?.name}"</span>? This action cannot be undone and will remove all default items and instrument mappings for this procedure.
+                Are you sure you want to delete <span className="font-bold text-foreground">"{procedureToDelete?.name}"</span>? This action cannot be undone and will remove all default items and instrument mappings for this procedure.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1065,7 +1064,7 @@ export function AddProcedureForm() {
                   <Badge variant="secondary">{previewProcedure.type || 'General'}</Badge>
                   <span className="text-xs text-slate-400">Delivery Challan Simulation</span>
                 </div>
-                <DialogTitle className="text-xl font-bold text-slate-900">{previewProcedure.name}</DialogTitle>
+                <DialogTitle className="text-xl font-bold text-foreground">{previewProcedure.name}</DialogTitle>
                 <DialogDescription>
                   This is how the procedure contents appear when selecting items during DC generation.
                 </DialogDescription>
@@ -1074,7 +1073,7 @@ export function AddProcedureForm() {
               <div className="space-y-6 pt-4">
                 {/* Selectable Implants Preview */}
                 <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-2">
                     <Package className="w-4 h-4 text-blue-600" />
                     Selectable Implants ({previewProcedure.items?.length || 0})
                   </h4>
@@ -1083,12 +1082,12 @@ export function AddProcedureForm() {
                       {previewProcedure.items.map((itemStr, i) => {
                         const parsed = parseItemString(itemStr);
                         return (
-                          <div key={i} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50">
-                            <div className="font-bold text-sm text-slate-800">{parsed.name}</div>
+                          <div key={i} className="p-3 rounded-xl border border-border bg-muted/50">
+                            <div className="font-bold text-sm text-foreground">{parsed.name}</div>
                             {parsed.sizes.length > 0 ? (
                               <div className="flex flex-wrap gap-1.5 mt-2">
                                 {parsed.sizes.map((sz, szIdx) => (
-                                  <Badge key={szIdx} variant="outline" className="bg-white text-xs font-medium border-slate-300">
+                                  <Badge key={szIdx} variant="outline" className="bg-card text-xs font-medium border-slate-300">
                                     {sz.size} <span className="ml-1 text-slate-400">(Qty: {sz.qty})</span>
                                   </Badge>
                                 ))}
@@ -1108,7 +1107,7 @@ export function AddProcedureForm() {
                 {/* Fixed Items Preview */}
                 {previewProcedure.fixedItems && previewProcedure.fixedItems.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                       Always Included / Fixed Items ({previewProcedure.fixedItems.length})
                     </h4>
@@ -1126,7 +1125,7 @@ export function AddProcedureForm() {
                 {/* Instruments Preview */}
                 {previewProcedure.instruments && previewProcedure.instruments.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-2">
                       <Wrench className="w-4 h-4 text-purple-600" />
                       Instruments & Trays ({previewProcedure.instruments.length})
                     </h4>
@@ -1150,7 +1149,7 @@ export function AddProcedureForm() {
                     setPreviewProcedure(null);
                     loadProcedureForEdit(target);
                   }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                  className="bg-teal-600 hover:bg-teal-700 text-white"
                 >
                   <Edit className="w-4 h-4 mr-2" /> Edit This Procedure
                 </Button>
@@ -1171,13 +1170,13 @@ export function AddProcedureForm() {
   return (
     <div className="space-y-6 w-full pb-24">
       {/* Top Breadcrumb / Header Navigation */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card rounded-2xl p-4 sm:p-5 border border-border shadow-xs">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setViewMode('catalog')}
-            className="text-slate-600 hover:text-slate-900 -ml-1 gap-1.5 h-9"
+            className="text-muted-foreground hover:text-foreground -ml-1 gap-1.5 h-9"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="font-semibold">Catalog</span>
@@ -1192,7 +1191,7 @@ export function AddProcedureForm() {
                 {items.length} items • {instruments.length} instruments
               </span>
             </div>
-            <h2 className="text-lg font-bold text-slate-900 truncate">
+            <h2 className="text-lg font-bold text-foreground truncate">
               {procedureName.trim() || 'Untitled Procedure'}
             </h2>
           </div>
@@ -1213,7 +1212,7 @@ export function AddProcedureForm() {
                 };
                 setPreviewProcedure(currentProc);
               }}
-              className="border-slate-200 text-slate-700 hover:bg-slate-50 h-9"
+              className="border-border text-foreground hover:bg-muted h-9"
             >
               <Eye className="w-4 h-4 mr-1.5" /> Preview DC
             </Button>
@@ -1222,7 +1221,7 @@ export function AddProcedureForm() {
           <Button
             onClick={handleSave}
             disabled={isSaving}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-600/20 h-9 px-4 gap-2"
+            className="bg-teal-600 hover:bg-teal-700 text-white font-semibold shadow-md shadow-teal-600/20 h-9 px-4 gap-2"
           >
             <Save className="w-4 h-4" />
             {isSaving ? 'Saving...' : isEditMode ? 'Update Procedure' : 'Save Procedure'}
@@ -1231,18 +1230,18 @@ export function AddProcedureForm() {
       </div>
 
       {/* Procedure Basic Settings Card */}
-      <Card className="border border-slate-200 bg-white rounded-2xl shadow-xs overflow-hidden">
+      <Card className="border border-border bg-card rounded-2xl shadow-xs overflow-hidden">
         <CardContent className="p-5 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
             <div className="md:col-span-2 space-y-2">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
                 Procedure Title <span className="text-red-500">*</span>
               </Label>
               <Input
                 placeholder="e.g. Total Hip Replacement, PFN A2, Distal Radius ORIF..."
                 value={procedureName}
                 onChange={(e) => setProcedureName(e.target.value)}
-                className="h-11 text-base font-semibold border-slate-200 focus-visible:ring-indigo-500 rounded-xl"
+                className="h-11 text-base font-semibold border-border focus-visible:ring-teal-500 rounded-xl"
               />
               <p className="text-[11px] text-slate-400">
                 A clear, recognizable name used by surgeons and delivery personnel on Delivery Challans.
@@ -1250,11 +1249,11 @@ export function AddProcedureForm() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-600">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Specialty Category
               </Label>
               <Select value={procedureType} onValueChange={setProcedureType}>
-                <SelectTrigger className="h-11 border-slate-200 bg-white rounded-xl font-medium focus:ring-indigo-500">
+                <SelectTrigger className="h-11 border-border bg-card rounded-xl font-medium focus:ring-teal-500">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
@@ -1275,19 +1274,19 @@ export function AddProcedureForm() {
 
       {/* Main Tabs: Implants vs Instruments */}
       <Tabs defaultValue="items" className="space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-          <TabsList className="bg-slate-100 p-1 rounded-xl h-11">
-            <TabsTrigger value="items" className="rounded-lg text-xs sm:text-sm font-semibold gap-2 data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-xs">
+        <div className="flex items-center justify-between border-b border-border pb-2">
+          <TabsList className="bg-muted p-1 rounded-xl h-11">
+            <TabsTrigger value="items" className="rounded-lg text-xs sm:text-sm font-semibold gap-2 data-[state=active]:bg-card data-[state=active]:text-teal-600 data-[state=active]:shadow-xs">
               <Package className="w-4 h-4" />
               <span>Implants & Consumables</span>
-              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-slate-200 text-slate-700">
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-slate-200 text-foreground">
                 {items.length}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="instruments" className="rounded-lg text-xs sm:text-sm font-semibold gap-2 data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-xs">
+            <TabsTrigger value="instruments" className="rounded-lg text-xs sm:text-sm font-semibold gap-2 data-[state=active]:bg-card data-[state=active]:text-teal-600 data-[state=active]:shadow-xs">
               <Wrench className="w-4 h-4" />
               <span>Instruments & Trays</span>
-              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-slate-200 text-slate-700">
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-slate-200 text-foreground">
                 {instruments.length}
               </Badge>
             </TabsTrigger>
@@ -1299,7 +1298,7 @@ export function AddProcedureForm() {
         {/* ------------------------------------------------------------- */}
         <TabsContent value="items" className="space-y-4 m-0 focus-visible:ring-0">
           {/* Action & Filter Toolbar for Items */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50/70 p-3 rounded-xl border border-slate-200">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-muted/70 p-3 rounded-xl border border-border">
             <div className="flex items-center gap-2">
               <div className="relative flex-1 sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -1307,26 +1306,26 @@ export function AddProcedureForm() {
                   placeholder="Filter items by name/size..."
                   value={itemSearchQuery}
                   onChange={(e) => setItemSearchQuery(e.target.value)}
-                  className="pl-8 h-9 text-xs bg-white border-slate-200 rounded-lg"
+                  className="pl-8 h-9 text-xs bg-card border-border rounded-lg"
                 />
               </div>
 
-              <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+              <div className="inline-flex rounded-lg border border-border bg-card p-0.5 text-xs">
                 <button
                   onClick={() => setItemFilterTab('all')}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${itemFilterTab === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'}`}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${itemFilterTab === 'all' ? 'bg-teal-600 text-white' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   All ({items.length})
                 </button>
                 <button
                   onClick={() => setItemFilterTab('selectable')}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${itemFilterTab === 'selectable' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'}`}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${itemFilterTab === 'selectable' ? 'bg-teal-600 text-white' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   Selectable ({selectableCount})
                 </button>
                 <button
                   onClick={() => setItemFilterTab('fixed')}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${itemFilterTab === 'fixed' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'}`}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${itemFilterTab === 'fixed' ? 'bg-teal-600 text-white' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   Fixed ({fixedCount})
                 </button>
@@ -1337,7 +1336,7 @@ export function AddProcedureForm() {
               <Button
                 onClick={() => addItem(false)}
                 size="sm"
-                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold h-9 rounded-lg gap-1.5 shadow-xs"
+                className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold h-9 rounded-lg gap-1.5 shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Selectable Item
@@ -1346,7 +1345,7 @@ export function AddProcedureForm() {
                 onClick={() => addItem(true)}
                 size="sm"
                 variant="outline"
-                className="bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-xs font-semibold h-9 rounded-lg gap-1.5"
+                className="bg-card border-teal-200 text-teal-700 hover:bg-teal-50 text-xs font-semibold h-9 rounded-lg gap-1.5"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Fixed Item
@@ -1356,25 +1355,25 @@ export function AddProcedureForm() {
 
           {/* Items List */}
           {items.length === 0 ? (
-            <div className="text-center py-16 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-white">
+            <div className="text-center py-16 px-4 rounded-2xl border-2 border-dashed border-border bg-card">
               <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-              <h3 className="text-base font-bold text-slate-800">No implants configured yet</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              <h3 className="text-base font-bold text-foreground">No implants configured yet</h3>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
                 Add implants that should be part of this procedure. You can configure selectable sizes or fixed items always dispatched.
               </p>
               <div className="flex items-center justify-center gap-3 mt-4">
-                <Button onClick={() => addItem(false)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold">
+                <Button onClick={() => addItem(false)} className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold">
                   <Plus className="w-4 h-4 mr-1.5" />
                   Add Selectable Item
                 </Button>
-                <Button onClick={() => addItem(true)} variant="outline" className="text-indigo-600 border-indigo-200 text-xs font-semibold">
+                <Button onClick={() => addItem(true)} variant="outline" className="text-teal-600 border-teal-200 text-xs font-semibold">
                   <Plus className="w-4 h-4 mr-1.5" />
                   Add Fixed Item
                 </Button>
               </div>
             </div>
           ) : filteredEditorItems.length === 0 ? (
-            <div className="text-center py-12 px-4 rounded-xl border border-slate-200 bg-white text-xs text-slate-500">
+            <div className="text-center py-12 px-4 rounded-xl border border-border bg-card text-xs text-muted-foreground">
               No items match the filter query "{itemSearchQuery}".
             </div>
           ) : (
@@ -1387,7 +1386,7 @@ export function AddProcedureForm() {
                   <Card
                     key={actualIndex}
                     className={`border transition-all duration-200 rounded-2xl overflow-hidden shadow-xs ${
-                      item.isFixed ? 'border-amber-200 bg-amber-50/10' : 'border-slate-200 bg-white'
+                      item.isFixed ? 'border-amber-200 bg-amber-50/10' : 'border-border bg-card'
                     }`}
                   >
                     <div className="p-4 sm:p-5 space-y-4">
@@ -1396,7 +1395,7 @@ export function AddProcedureForm() {
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           {/* Reorder Buttons & Index */}
                           <div className="flex items-center gap-1">
-                            <div className="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center text-[11px] font-bold text-slate-600">
+                            <div className="w-6 h-6 rounded-md bg-muted flex items-center justify-center text-[11px] font-bold text-muted-foreground">
                               {actualIndex + 1}
                             </div>
                             <div className="flex flex-col">
@@ -1404,7 +1403,7 @@ export function AddProcedureForm() {
                                 type="button"
                                 disabled={actualIndex === 0}
                                 onClick={() => moveItem(actualIndex, 'up')}
-                                className="text-slate-400 hover:text-slate-700 disabled:opacity-30 p-0.5"
+                                className="text-slate-400 hover:text-foreground disabled:opacity-30 p-0.5"
                                 title="Move up"
                               >
                                 <ChevronUp className="w-3.5 h-3.5" />
@@ -1413,7 +1412,7 @@ export function AddProcedureForm() {
                                 type="button"
                                 disabled={actualIndex === items.length - 1}
                                 onClick={() => moveItem(actualIndex, 'down')}
-                                className="text-slate-400 hover:text-slate-700 disabled:opacity-30 p-0.5"
+                                className="text-slate-400 hover:text-foreground disabled:opacity-30 p-0.5"
                                 title="Move down"
                               >
                                 <ChevronDown className="w-3.5 h-3.5" />
@@ -1427,14 +1426,14 @@ export function AddProcedureForm() {
                               placeholder="e.g. Locking Compression Plate, Cortical Screw, Bone Cement..."
                               value={item.name}
                               onChange={(e) => updateItem(actualIndex, 'name', e.target.value)}
-                              className="font-bold text-sm h-10 border-slate-200 focus-visible:ring-indigo-500 rounded-xl bg-white"
+                              className="font-bold text-sm h-10 border-border focus-visible:ring-teal-500 rounded-xl bg-card"
                             />
                           </div>
                         </div>
 
                         {/* Item Type Toggle & Quick Actions */}
                         <div className="flex items-center gap-2 justify-between sm:justify-end">
-                          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-xs">
+                          <div className="inline-flex rounded-lg border border-border bg-card p-1 text-xs">
                             <button
                               type="button"
                               onClick={() => {
@@ -1444,7 +1443,7 @@ export function AddProcedureForm() {
                                 }
                               }}
                               className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
-                                !item.isFixed ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                                !item.isFixed ? 'bg-teal-600 text-white shadow-xs' : 'text-muted-foreground hover:text-foreground'
                               }`}
                             >
                               📋 Selectable
@@ -1453,7 +1452,7 @@ export function AddProcedureForm() {
                               type="button"
                               onClick={() => updateItem(actualIndex, 'isFixed', true)}
                               className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
-                                item.isFixed ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                                item.isFixed ? 'bg-amber-600 text-white shadow-xs' : 'text-muted-foreground hover:text-foreground'
                               }`}
                             >
                               📌 Fixed Qty
@@ -1468,7 +1467,7 @@ export function AddProcedureForm() {
                                 min="1"
                                 value={item.fixedQty || '1'}
                                 onChange={(e) => updateItem(actualIndex, 'fixedQty', e.target.value)}
-                                className="w-14 h-7 text-xs text-center font-bold border-amber-300 bg-white rounded-md p-1"
+                                className="w-14 h-7 text-xs text-center font-bold border-amber-300 bg-card rounded-md p-1"
                               />
                             </div>
                           )}
@@ -1478,7 +1477,7 @@ export function AddProcedureForm() {
                             size="icon"
                             variant="ghost"
                             onClick={() => duplicateItem(actualIndex)}
-                            className="h-8 w-8 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                            className="h-8 w-8 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg"
                             title="Duplicate Item"
                           >
                             <Copy className="w-3.5 h-3.5" />
@@ -1499,11 +1498,11 @@ export function AddProcedureForm() {
 
                       {/* Sizes Section (For Selectable Items) */}
                       {!item.isFixed && (
-                        <div className="bg-slate-50/80 rounded-xl p-3 sm:p-4 border border-slate-200/80 space-y-2.5">
+                        <div className="bg-muted/80 rounded-xl p-3 sm:p-4 border border-border/80 space-y-2.5">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
-                              <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                              <Layers className="w-3.5 h-3.5 text-teal-600" />
+                              <span className="text-xs font-bold uppercase tracking-wider text-foreground">
                                 Available Sizes & Default Quantities ({item.sizes.length})
                               </span>
                             </div>
@@ -1513,7 +1512,7 @@ export function AddProcedureForm() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => openBulkSizeModal(actualIndex)}
-                                className="h-7 text-xs bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50 font-semibold rounded-md gap-1"
+                                className="h-7 text-xs bg-card text-teal-600 border-teal-200 hover:bg-teal-50 font-semibold rounded-md gap-1"
                               >
                                 <Sparkles className="w-3 h-3" /> Quick Add Preset
                               </Button>
@@ -1521,7 +1520,7 @@ export function AddProcedureForm() {
                                 type="button"
                                 size="sm"
                                 onClick={() => addItemSize(actualIndex)}
-                                className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md gap-1"
+                                className="h-7 text-xs bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-md gap-1"
                               >
                                 <Plus className="w-3 h-3" /> Add Size
                               </Button>
@@ -1532,7 +1531,7 @@ export function AddProcedureForm() {
                             {item.sizes.map((sizeQty, sizeIdx) => (
                               <div
                                 key={sizeIdx}
-                                className="inline-flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden shadow-2xs hover:border-indigo-400 transition-colors"
+                                className="inline-flex items-center bg-card border border-border rounded-lg overflow-hidden shadow-2xs hover:border-teal-400 transition-colors"
                               >
                                 <Input
                                   placeholder="Size (e.g. 3.5mm / 10 Hole)"
@@ -1541,7 +1540,7 @@ export function AddProcedureForm() {
                                   className="w-28 sm:w-32 h-8 text-xs font-semibold border-0 rounded-none focus-visible:ring-0 px-2.5"
                                 />
                                 <div className="h-4 w-px bg-slate-200" />
-                                <div className="px-1.5 py-1 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase">
+                                <div className="px-1.5 py-1 bg-muted text-[10px] font-bold text-muted-foreground uppercase">
                                   Qty
                                 </div>
                                 <Input
@@ -1549,13 +1548,13 @@ export function AddProcedureForm() {
                                   min="1"
                                   value={sizeQty.qty}
                                   onChange={(e) => updateItemSize(actualIndex, sizeIdx, 'qty', e.target.value)}
-                                  className="w-12 h-8 text-xs font-bold text-center border-0 rounded-none focus-visible:ring-0 px-1 bg-indigo-50/50 text-indigo-900"
+                                  className="w-12 h-8 text-xs font-bold text-center border-0 rounded-none focus-visible:ring-0 px-1 bg-teal-50/50 text-teal-900"
                                 />
                                 {item.sizes.length > 1 && (
                                   <button
                                     type="button"
                                     onClick={() => removeItemSize(actualIndex, sizeIdx)}
-                                    className="h-8 px-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border-l border-slate-200 transition-colors"
+                                    className="h-8 px-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border-l border-border transition-colors"
                                     title="Remove size"
                                   >
                                     <X className="w-3 h-3" />
@@ -1576,10 +1575,10 @@ export function AddProcedureForm() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className={`h-8 text-xs rounded-lg gap-1.5 font-medium border-slate-200 ${
+                                className={`h-8 text-xs rounded-lg gap-1.5 font-medium border-border ${
                                   item.location?.room || item.location?.rack || item.location?.box
                                     ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                    : 'bg-white text-slate-600'
+                                    : 'bg-card text-muted-foreground'
                                 }`}
                               >
                                 <MapPin className="w-3.5 h-3.5" />
@@ -1593,10 +1592,10 @@ export function AddProcedureForm() {
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-72 p-3 space-y-2 rounded-xl" align="start">
-                              <span className="text-xs font-bold text-slate-800 block">Inventory Storage Location</span>
+                              <span className="text-xs font-bold text-foreground block">Inventory Storage Location</span>
                               <div className="grid grid-cols-3 gap-2">
                                 <div>
-                                  <Label className="text-[10px] text-slate-500 font-bold uppercase">Room</Label>
+                                  <Label className="text-[10px] text-muted-foreground font-bold uppercase">Room</Label>
                                   <Input
                                     placeholder="A1"
                                     value={item.location?.room || ''}
@@ -1605,7 +1604,7 @@ export function AddProcedureForm() {
                                   />
                                 </div>
                                 <div>
-                                  <Label className="text-[10px] text-slate-500 font-bold uppercase">Rack</Label>
+                                  <Label className="text-[10px] text-muted-foreground font-bold uppercase">Rack</Label>
                                   <Input
                                     placeholder="R2"
                                     value={item.location?.rack || ''}
@@ -1614,7 +1613,7 @@ export function AddProcedureForm() {
                                   />
                                 </div>
                                 <div>
-                                  <Label className="text-[10px] text-slate-500 font-bold uppercase">Box</Label>
+                                  <Label className="text-[10px] text-muted-foreground font-bold uppercase">Box</Label>
                                   <Input
                                     placeholder="B3"
                                     value={item.location?.box || ''}
@@ -1632,7 +1631,7 @@ export function AddProcedureForm() {
                               placeholder="Image Drive Link..."
                               value={item.imageUrl || ''}
                               onChange={(e) => updateItem(actualIndex, 'imageUrl', e.target.value)}
-                              className="h-8 text-xs w-44 sm:w-56 bg-white border-slate-200 rounded-lg"
+                              className="h-8 text-xs w-44 sm:w-56 bg-card border-border rounded-lg"
                             />
                             <div className="relative">
                               <input
@@ -1653,7 +1652,7 @@ export function AddProcedureForm() {
                                 type="button"
                                 size="icon"
                                 variant="outline"
-                                className="h-8 w-8 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg"
+                                className="h-8 w-8 border-border text-muted-foreground hover:bg-muted rounded-lg"
                                 title="Upload to Drive"
                                 disabled={isUploading}
                               >
@@ -1666,7 +1665,7 @@ export function AddProcedureForm() {
                                 href={item.imageUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-md"
+                                className="p-1.5 text-teal-600 hover:text-teal-800 hover:bg-teal-50 rounded-md"
                                 title="View Image"
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
@@ -1687,13 +1686,13 @@ export function AddProcedureForm() {
         {/* TAB 2: INSTRUMENTS & TRAYS */}
         {/* ------------------------------------------------------------- */}
         <TabsContent value="instruments" className="space-y-4 m-0 focus-visible:ring-0">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50/70 p-3 rounded-xl border border-slate-200">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-muted/70 p-3 rounded-xl border border-border">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                <Wrench className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+                <Wrench className="w-4 h-4 text-teal-600" />
                 Instrument Trays & Specialized Sets ({instruments.length})
               </h3>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-muted-foreground">
                 Instruments packed and checked during dispatch for this surgical procedure.
               </p>
             </div>
@@ -1701,7 +1700,7 @@ export function AddProcedureForm() {
             <Button
               onClick={() => addInstrument('')}
               size="sm"
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold h-9 rounded-lg gap-1.5"
+              className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold h-9 rounded-lg gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" />
               Add Instrument Set
@@ -1709,8 +1708,8 @@ export function AddProcedureForm() {
           </div>
 
           {/* Quick Suggestions for Instruments */}
-          <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+          <div className="bg-card p-3 rounded-xl border border-border space-y-2">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
               ⚡ Quick Suggestions (Click to Add):
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -1719,7 +1718,7 @@ export function AddProcedureForm() {
                   key={instName}
                   type="button"
                   onClick={() => addInstrument(instName)}
-                  className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 transition-colors flex items-center gap-1"
+                  className="px-2.5 py-1 rounded-md text-xs font-medium bg-muted hover:bg-teal-50 text-foreground hover:text-teal-700 border border-border transition-colors flex items-center gap-1"
                 >
                   <Plus className="w-3 h-3 text-slate-400" />
                   {instName}
@@ -1730,13 +1729,13 @@ export function AddProcedureForm() {
 
           {/* Instruments List */}
           {instruments.length === 0 ? (
-            <div className="text-center py-16 px-4 rounded-2xl border-2 border-dashed border-slate-200 bg-white">
+            <div className="text-center py-16 px-4 rounded-2xl border-2 border-dashed border-border bg-card">
               <Wrench className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-              <h3 className="text-base font-bold text-slate-800">No instruments added yet</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              <h3 className="text-base font-bold text-foreground">No instruments added yet</h3>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
                 Add instruments, surgical trays, or drills associated with this procedure.
               </p>
-              <Button onClick={() => addInstrument('')} className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold">
+              <Button onClick={() => addInstrument('')} className="mt-4 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold">
                 <Plus className="w-4 h-4 mr-1.5" />
                 Add Instrument Set
               </Button>
@@ -1744,7 +1743,7 @@ export function AddProcedureForm() {
           ) : (
             <div className="space-y-3">
               {instruments.map((instrument, instIdx) => (
-                <Card key={instIdx} className="border border-slate-200 bg-white rounded-2xl overflow-hidden shadow-xs">
+                <Card key={instIdx} className="border border-border bg-card rounded-2xl overflow-hidden shadow-xs">
                   <div className="p-4 sm:p-5 space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1758,7 +1757,7 @@ export function AddProcedureForm() {
                               type="button"
                               disabled={instIdx === 0}
                               onClick={() => moveInstrument(instIdx, 'up')}
-                              className="text-slate-400 hover:text-slate-700 disabled:opacity-30 p-0.5"
+                              className="text-slate-400 hover:text-foreground disabled:opacity-30 p-0.5"
                               title="Move up"
                             >
                               <ChevronUp className="w-3.5 h-3.5" />
@@ -1767,7 +1766,7 @@ export function AddProcedureForm() {
                               type="button"
                               disabled={instIdx === instruments.length - 1}
                               onClick={() => moveInstrument(instIdx, 'down')}
-                              className="text-slate-400 hover:text-slate-700 disabled:opacity-30 p-0.5"
+                              className="text-slate-400 hover:text-foreground disabled:opacity-30 p-0.5"
                               title="Move down"
                             >
                               <ChevronDown className="w-3.5 h-3.5" />
@@ -1781,7 +1780,7 @@ export function AddProcedureForm() {
                             placeholder="e.g. Large Fragment Instrument Set, Reamer Box..."
                             value={instrument.name}
                             onChange={(e) => updateInstrument(instIdx, 'name', e.target.value)}
-                            className="font-bold text-sm h-10 border-slate-200 focus-visible:ring-indigo-500 rounded-xl"
+                            className="font-bold text-sm h-10 border-border focus-visible:ring-teal-500 rounded-xl"
                           />
                         </div>
                       </div>
@@ -1792,7 +1791,7 @@ export function AddProcedureForm() {
                           size="icon"
                           variant="ghost"
                           onClick={() => duplicateInstrument(instIdx)}
-                          className="h-8 w-8 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                          className="h-8 w-8 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg"
                           title="Duplicate Instrument"
                         >
                           <Copy className="w-3.5 h-3.5" />
@@ -1817,10 +1816,10 @@ export function AddProcedureForm() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className={`h-8 text-xs rounded-lg gap-1.5 font-medium border-slate-200 ${
+                            className={`h-8 text-xs rounded-lg gap-1.5 font-medium border-border ${
                               instrument.location?.room || instrument.location?.rack || instrument.location?.box
                                 ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                : 'bg-white text-slate-600'
+                                : 'bg-card text-muted-foreground'
                             }`}
                           >
                             <MapPin className="w-3.5 h-3.5" />
@@ -1834,10 +1833,10 @@ export function AddProcedureForm() {
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-72 p-3 space-y-2 rounded-xl" align="start">
-                          <span className="text-xs font-bold text-slate-800 block">Instrument Storage Location</span>
+                          <span className="text-xs font-bold text-foreground block">Instrument Storage Location</span>
                           <div className="grid grid-cols-3 gap-2">
                             <div>
-                              <Label className="text-[10px] text-slate-500 font-bold uppercase">Room</Label>
+                              <Label className="text-[10px] text-muted-foreground font-bold uppercase">Room</Label>
                               <Input
                                 placeholder="A1"
                                 value={instrument.location?.room || ''}
@@ -1846,7 +1845,7 @@ export function AddProcedureForm() {
                               />
                             </div>
                             <div>
-                              <Label className="text-[10px] text-slate-500 font-bold uppercase">Rack</Label>
+                              <Label className="text-[10px] text-muted-foreground font-bold uppercase">Rack</Label>
                               <Input
                                 placeholder="R2"
                                 value={instrument.location?.rack || ''}
@@ -1855,7 +1854,7 @@ export function AddProcedureForm() {
                               />
                             </div>
                             <div>
-                              <Label className="text-[10px] text-slate-500 font-bold uppercase">Box</Label>
+                              <Label className="text-[10px] text-muted-foreground font-bold uppercase">Box</Label>
                               <Input
                                 placeholder="B3"
                                 value={instrument.location?.box || ''}
@@ -1872,7 +1871,7 @@ export function AddProcedureForm() {
                           placeholder="Image Link..."
                           value={instrument.imageUrl || ''}
                           onChange={(e) => updateInstrument(instIdx, 'imageUrl', e.target.value)}
-                          className="h-8 text-xs w-44 sm:w-56 bg-white border-slate-200 rounded-lg"
+                          className="h-8 text-xs w-44 sm:w-56 bg-card border-border rounded-lg"
                         />
                         <div className="relative">
                           <input
@@ -1893,7 +1892,7 @@ export function AddProcedureForm() {
                             type="button"
                             size="icon"
                             variant="outline"
-                            className="h-8 w-8 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg"
+                            className="h-8 w-8 border-border text-muted-foreground hover:bg-muted rounded-lg"
                             title="Upload to Drive"
                             disabled={isUploading}
                           >
@@ -1906,7 +1905,7 @@ export function AddProcedureForm() {
                             href={instrument.imageUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-md"
+                            className="p-1.5 text-teal-600 hover:text-teal-800 hover:bg-teal-50 rounded-md"
                             title="View Image"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
@@ -1927,21 +1926,21 @@ export function AddProcedureForm() {
         <DialogContent className="max-w-lg rounded-2xl">
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
+              <div className="w-7 h-7 rounded-lg bg-teal-100 flex items-center justify-center text-teal-600">
                 <Sparkles className="w-4 h-4" />
               </div>
-              <DialogTitle className="text-lg font-bold text-slate-900">
+              <DialogTitle className="text-lg font-bold text-foreground">
                 Bulk Add / Generate Sizes
               </DialogTitle>
             </div>
             <DialogDescription>
-              Quickly generate all sizes for <span className="font-bold text-slate-800">{activeItemIndexForBulkSizes !== null ? items[activeItemIndexForBulkSizes]?.name || 'this item' : ''}</span> without typing them one by one.
+              Quickly generate all sizes for <span className="font-bold text-foreground">{activeItemIndexForBulkSizes !== null ? items[activeItemIndexForBulkSizes]?.name || 'this item' : ''}</span> without typing them one by one.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
             <div>
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-2">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-2">
                 Quick Orthopedic Presets
               </Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1950,10 +1949,10 @@ export function AddProcedureForm() {
                     key={idx}
                     type="button"
                     onClick={() => setBulkSizeInput(preset.sizes)}
-                    className="text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-indigo-50/60 hover:border-indigo-300 transition-colors text-xs"
+                    className="text-left p-2.5 rounded-xl border border-border bg-muted/60 hover:bg-teal-50/60 hover:border-teal-300 transition-colors text-xs"
                   >
-                    <span className="font-bold text-slate-800 block truncate">{preset.label}</span>
-                    <span className="text-[10px] text-slate-500 block truncate mt-0.5">{preset.sizes}</span>
+                    <span className="font-bold text-foreground block truncate">{preset.label}</span>
+                    <span className="text-[10px] text-muted-foreground block truncate mt-0.5">{preset.sizes}</span>
                   </button>
                 ))}
               </div>
@@ -1961,11 +1960,11 @@ export function AddProcedureForm() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Custom Comma-Separated Sizes
                 </Label>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-slate-500">Default Qty:</span>
+                  <span className="text-[11px] text-muted-foreground">Default Qty:</span>
                   <Input
                     type="number"
                     min="1"
@@ -1980,14 +1979,14 @@ export function AddProcedureForm() {
                 placeholder="e.g. 10mm, 12mm, 14mm, 16mm, 18mm, 20mm, 22mm, 24mm (or 10mm:2, 12mm:2 for custom quantities)"
                 value={bulkSizeInput}
                 onChange={(e) => setBulkSizeInput(e.target.value)}
-                className="w-full text-xs font-mono p-3 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500 bg-white"
+                className="w-full text-xs font-mono p-3 border border-border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-teal-500 bg-card"
               />
             </div>
           </div>
 
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setBulkSizeModalOpen(false)}>Cancel</Button>
-            <Button onClick={applyBulkSizes} className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">
+            <Button onClick={applyBulkSizes} className="bg-teal-600 hover:bg-teal-700 text-white font-semibold">
               Apply Sizes
             </Button>
           </DialogFooter>
@@ -1995,13 +1994,13 @@ export function AddProcedureForm() {
       </Dialog>
 
       {/* Floating Bottom Action Bar in Editor */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 py-3 sm:py-4 px-4 sm:px-8 z-40 shadow-lg">
+      <div className="fixed bottom-0 left-0 right-0 bg-card/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-border dark:border-slate-800 py-3 sm:py-4 px-4 sm:px-8 z-40 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               onClick={() => setViewMode('catalog')}
-              className="border-slate-300 text-slate-700"
+              className="border-slate-300 text-foreground"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Catalog
@@ -2029,7 +2028,7 @@ export function AddProcedureForm() {
             <Button
               onClick={handleSave}
               disabled={isSaving}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-indigo-600/25 px-6 font-semibold"
+              className="bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-700 hover:to-teal-700 text-white shadow-md shadow-teal-600/25 px-6 font-semibold"
             >
               <Save className="w-4 h-4 mr-2" />
               {isSaving ? 'Saving...' : isEditMode ? 'Update Procedure' : 'Save Procedure'}

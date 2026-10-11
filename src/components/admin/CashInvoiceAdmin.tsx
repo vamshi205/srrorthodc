@@ -18,7 +18,6 @@ import {
   UserCheck,
   HardDrive,
   Trash2,
-  ArrowLeft,
   Building2,
   Phone,
   MapPin,
@@ -27,6 +26,7 @@ import {
   Search,
   Edit2,
   Sparkles,
+  IndianRupee,
 } from "lucide-react";
 import {
   Customer,
@@ -39,11 +39,7 @@ import {
 } from "@/lib/customerStorage";
 import { loadSavedDcs } from "@/lib/savedDcStorage";
 
-type CashInvoiceAdminProps = {
-  onBack: () => void;
-};
-
-export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) => {
+export const CashInvoiceAdmin: React.FC = () => {
   const [xlsxLoaded, setXlsxLoaded] = useState(false);
 
   // Form states
@@ -545,26 +541,30 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
   };
 
   return (
-    <div className="space-y-6 w-full py-2 sm:py-4">
-      {/* Back button and title */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" onClick={onBack} className="gap-2 h-9">
-          <ArrowLeft className="w-4 h-4" /> Back to Choice
-        </Button>
-        <div>
-          <h1 className="text-xl font-sans font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-            Cash Invoice Management
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Configure catalog price lists, defaults, template aesthetics, and cloud backups.
-          </p>
+    <div className="space-y-5 w-full py-1">
+      {/* Unified Executive Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card/95 p-4 sm:p-5 rounded-2xl border border-border shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-accent border border-primary/20 text-accent-foreground flex items-center justify-center shadow-2xs">
+              <IndianRupee className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold font-sans tracking-tight text-foreground">
+                Cash Invoice &amp; Price Catalog Admin
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Configure item pricing spreadsheets, default company banking details, billing terms, and data maintenance.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
       <Card className="glass-card rounded-xl border border-border shadow-md">
         <CardContent className="p-6">
           <Tabs defaultValue="catalog" className="w-full">
-            <TabsList className="grid grid-cols-2 sm:grid-cols-5 h-auto sm:h-10 w-full max-w-4xl mb-6 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-5 h-auto sm:h-10 w-full max-w-4xl mb-6 bg-muted dark:bg-slate-800 rounded-lg p-1 gap-1">
               <TabsTrigger value="catalog" className="text-xs font-semibold gap-1.5"><Database className="w-3.5 h-3.5" /> Catalog &amp; Imports</TabsTrigger>
               <TabsTrigger value="customers" className="text-xs font-semibold gap-1.5"><Building2 className="w-3.5 h-3.5 text-teal-600" /> Customers &amp; Hospitals</TabsTrigger>
               <TabsTrigger value="profile" className="text-xs font-semibold gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Profile</TabsTrigger>
@@ -577,7 +577,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
               {/* SECTION 1: Product Catalog Database */}
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Product Price Catalog Database</h3>
+                  <h3 className="text-sm font-extrabold text-foreground dark:text-slate-100">Product Price Catalog Database</h3>
                   <p className="text-xs text-muted-foreground">
                     Upload your price list Excel spreadsheet to enable autocomplete product recommendations on the Invoice canvas.
                   </p>
@@ -585,9 +585,9 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-1">
                   {/* File Dropzone Card */}
-                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-6 bg-slate-50/50 dark:bg-slate-900/20 text-center hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-all">
+                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-6 bg-muted/50 dark:bg-slate-900/20 text-center hover:bg-muted dark:hover:bg-slate-900/30 transition-all">
                     <span className="text-3xl mb-2">📊</span>
-                    <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Price List Spreadsheet</p>
+                    <p className="text-xs font-bold text-foreground dark:text-slate-100">Price List Spreadsheet</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">Drag & drop or upload .xlsx, .xls, or .csv</p>
                     <Label htmlFor="catalog-file-input" className="mt-4">
                       <span className="btn-gradient inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium cursor-pointer shadow-sm shadow-teal-500/10">
@@ -604,13 +604,13 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                   </div>
 
                   {/* Catalog Status Info */}
-                  <div className="flex flex-col justify-between border border-border rounded-lg p-4 bg-slate-50/30 dark:bg-slate-950/20">
+                  <div className="flex flex-col justify-between border border-border rounded-lg p-4 bg-muted/30 dark:bg-slate-950/20">
                     <div className="space-y-3">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Current Catalog Status</h4>
                       <div className="space-y-1.5 text-xs">
                         <div className="flex justify-between py-1 border-b border-border/40">
                           <span className="text-muted-foreground">Price Catalog:</span>
-                          <span className="font-semibold text-slate-900 dark:text-slate-100 truncate max-w-[200px]" title={catalogName}>{catalogName}</span>
+                          <span className="font-semibold text-foreground dark:text-slate-100 truncate max-w-[200px]" title={catalogName}>{catalogName}</span>
                         </div>
                         <div className="flex justify-between py-1 border-b border-border/40">
                           <span className="text-muted-foreground">Database Records:</span>
@@ -630,7 +630,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
               {/* SECTION 2: Bulk Import Invoice Items */}
               <div className="border-t border-border/40 pt-6 space-y-4">
                 <div className="space-y-1">
-                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Bulk Import Invoice Items (Draft)</h3>
+                  <h3 className="text-sm font-extrabold text-foreground dark:text-slate-100">Bulk Import Invoice Items (Draft)</h3>
                   <p className="text-xs text-muted-foreground">
                     Upload an Excel/CSV spreadsheet containing line items to bulk-load them into the active invoice sheet.
                   </p>
@@ -638,9 +638,9 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-1">
                   {/* Items File Dropzone Card */}
-                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-6 bg-slate-50/50 dark:bg-slate-900/20 text-center hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-all">
+                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-6 bg-muted/50 dark:bg-slate-900/20 text-center hover:bg-muted dark:hover:bg-slate-900/30 transition-all">
                     <span className="text-3xl mb-2">📥</span>
-                    <p className="text-xs font-bold text-slate-900 dark:text-slate-100">Invoice Items Spreadsheet</p>
+                    <p className="text-xs font-bold text-foreground dark:text-slate-100">Invoice Items Spreadsheet</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">Drag & drop or upload .xlsx, .xls, or .csv</p>
                     <Label htmlFor="items-file-input" className="mt-4">
                       <span className="btn-gradient inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium cursor-pointer shadow-sm shadow-purple-500/10">
@@ -657,7 +657,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                   </div>
 
                   {/* Items Status Info */}
-                  <div className="flex flex-col justify-between border border-border rounded-lg p-4 bg-slate-50/30 dark:bg-slate-950/20">
+                  <div className="flex flex-col justify-between border border-border rounded-lg p-4 bg-muted/30 dark:bg-slate-950/20">
                     <div className="space-y-3">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Current Import Status</h4>
                       <div className="space-y-1.5 text-xs">
@@ -680,7 +680,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
             {/* Profile Defaults tab */}
             <TabsContent value="profile" className="space-y-6">
               <div className="space-y-2">
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Default Company & Payment Details</h3>
+                <h3 className="text-sm font-extrabold text-foreground dark:text-slate-100">Default Company & Payment Details</h3>
                 <p className="text-xs text-muted-foreground">
                   Update your default business profile, bank account, UPI ID, and authorized signature. These values populate new cash bills automatically.
                 </p>
@@ -755,7 +755,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
             {/* Google Drive sync tab */}
             <TabsContent value="gdrive" className="space-y-6">
               <div className="space-y-2">
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Google Drive Cloud Backups</h3>
+                <h3 className="text-sm font-extrabold text-foreground dark:text-slate-100">Google Drive Cloud Backups</h3>
                 <p className="text-xs text-muted-foreground">
                   Synchronize catalog prices, saved invoices, and customer directories securely across devices using your private Google Drive file backup space.
                 </p>
@@ -806,7 +806,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                 </div>
 
                 {/* Cloud Status Card */}
-                <div className="flex flex-col justify-between border border-border rounded-lg p-4 bg-slate-50/30 dark:bg-slate-950/20">
+                <div className="flex flex-col justify-between border border-border rounded-lg p-4 bg-muted/30 dark:bg-slate-950/20">
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Connection Status</h4>
                     <div className="space-y-1.5 text-xs">
@@ -817,7 +817,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       {gdriveStatus === "Connected" && gdriveUserEmail && (
                         <div className="flex justify-between py-1 border-b border-border/40">
                           <span className="text-muted-foreground">Connected Email:</span>
-                          <span className="font-semibold text-slate-900 dark:text-slate-100">{gdriveUserEmail}</span>
+                          <span className="font-semibold text-foreground dark:text-slate-100">{gdriveUserEmail}</span>
                         </div>
                       )}
                     </div>
@@ -835,7 +835,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
             {/* Maintenance tab */}
             <TabsContent value="data" className="space-y-6">
               <div className="space-y-2">
-                <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">Preferences & Data Maintenance</h3>
+                <h3 className="text-sm font-extrabold text-foreground dark:text-slate-100">Preferences & Data Maintenance</h3>
                 <p className="text-xs text-muted-foreground">
                   Select default templates and perform database cleanup operations for saved invoices and local directories.
                 </p>
@@ -843,7 +843,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
                 {/* Default Template Choice */}
-                <div className="space-y-3 border border-border rounded-lg p-4 bg-slate-50/20">
+                <div className="space-y-3 border border-border rounded-lg p-4 bg-muted/20">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Default Bill Template</h4>
                   <div className="space-y-1.5">
                     <Label htmlFor="admin-template-theme" className="text-[10px] text-muted-foreground">A4 Layout Aesthetic</Label>
@@ -862,13 +862,13 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                 </div>
 
                 {/* Storage maintenance card */}
-                <div className="space-y-4 border border-border rounded-lg p-4 bg-slate-50/20">
+                <div className="space-y-4 border border-border rounded-lg p-4 bg-muted/20">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Local Browser Directories</h4>
                   
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="text-xs">
-                        <p className="font-bold text-slate-900 dark:text-slate-100">Saved Cash Invoices</p>
+                        <p className="font-bold text-foreground dark:text-slate-100">Saved Cash Invoices</p>
                         <p className="text-[10px] text-muted-foreground">{invoicesCount} Invoices in browser</p>
                       </div>
                       {invoicesCount > 0 && (
@@ -880,7 +880,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
 
                     <div className="flex items-center justify-between border-t border-border/40 pt-3">
                       <div className="text-xs">
-                        <p className="font-bold text-slate-900 dark:text-slate-100">Customer Directory</p>
+                        <p className="font-bold text-foreground dark:text-slate-100">Customer Directory</p>
                         <p className="text-[10px] text-muted-foreground">{customersCount} Customers in browser</p>
                       </div>
                       {customersCount > 0 && (
@@ -898,7 +898,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
             <TabsContent value="customers" className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/60">
                 <div>
-                  <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <h3 className="text-base font-extrabold text-foreground dark:text-slate-100 flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-teal-600" />
                     Customer &amp; Hospital Directory
                   </h3>
@@ -946,7 +946,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       value={custName}
                       onChange={(e) => setCustName(e.target.value)}
                       placeholder="e.g. Apollo Hospital, Jubilee Hills"
-                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950 font-bold"
+                      className="mt-1 h-8 text-xs bg-card dark:bg-slate-950 font-bold"
                     />
                   </div>
 
@@ -960,7 +960,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       value={custHospitalNumber}
                       onChange={(e) => setCustHospitalNumber(e.target.value)}
                       placeholder="e.g. 040-23607777"
-                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
+                      className="mt-1 h-8 text-xs bg-card dark:bg-slate-950"
                     />
                   </div>
 
@@ -974,7 +974,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       value={custOtNumber}
                       onChange={(e) => setCustOtNumber(e.target.value)}
                       placeholder="e.g. 9848011223"
-                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950 font-semibold"
+                      className="mt-1 h-8 text-xs bg-card dark:bg-slate-950 font-semibold"
                     />
                   </div>
 
@@ -988,7 +988,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       value={custPersonalNumber}
                       onChange={(e) => setCustPersonalNumber(e.target.value)}
                       placeholder="e.g. 9848099881"
-                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950 font-semibold"
+                      className="mt-1 h-8 text-xs bg-card dark:bg-slate-950 font-semibold"
                     />
                   </div>
                 </div>
@@ -1000,7 +1000,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       value={custContactPerson}
                       onChange={(e) => setCustContactPerson(e.target.value)}
                       placeholder="e.g. Dr. Rao / Sister Sujatha"
-                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
+                      className="mt-1 h-8 text-xs bg-card dark:bg-slate-950"
                     />
                   </div>
 
@@ -1010,7 +1010,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       value={custAddress}
                       onChange={(e) => setCustAddress(e.target.value)}
                       placeholder="e.g. Jubilee Hills, Hyderabad"
-                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
+                      className="mt-1 h-8 text-xs bg-card dark:bg-slate-950"
                     />
                   </div>
 
@@ -1021,15 +1021,15 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                       value={custEmail}
                       onChange={(e) => setCustEmail(e.target.value)}
                       placeholder="e.g. apollo@hospital.com"
-                      className="mt-1 h-8 text-xs bg-white dark:bg-slate-950"
+                      className="mt-1 h-8 text-xs bg-card dark:bg-slate-950"
                     />
                   </div>
                 </div>
 
                 {/* Dynamic Additional Contacts */}
-                <div className="p-3 rounded-lg border border-border/80 bg-white/60 dark:bg-slate-900/40 space-y-2">
+                <div className="p-3 rounded-lg border border-border/80 bg-card/60 dark:bg-slate-900/40 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <span className="text-xs font-bold text-foreground dark:text-slate-200">
                       Additional Contacts &amp; Numbers (Surgeons, OT Nurses, Stores, Accounts)
                     </span>
                     <Button
@@ -1065,13 +1065,13 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                             placeholder="Staff Name"
                             value={contact.name}
                             onChange={(e) => handleUpdateContactRow(idx, "name", e.target.value)}
-                            className="h-7 text-xs bg-white dark:bg-slate-950"
+                            className="h-7 text-xs bg-card dark:bg-slate-950"
                           />
                           <Input
                             placeholder="Phone Number"
                             value={contact.phone}
                             onChange={(e) => handleUpdateContactRow(idx, "phone", e.target.value)}
-                            className="h-7 text-xs bg-white dark:bg-slate-950"
+                            className="h-7 text-xs bg-card dark:bg-slate-950"
                           />
                           <Button
                             type="button"
@@ -1118,9 +1118,9 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                   </Badge>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                <div className="rounded-xl border border-border dark:border-slate-800 overflow-x-auto">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 dark:bg-slate-950 text-muted-foreground border-b border-slate-200 dark:border-slate-800 font-bold uppercase text-[10px]">
+                    <thead className="bg-muted dark:bg-slate-950 text-muted-foreground border-b border-border dark:border-slate-800 font-bold uppercase text-[10px]">
                       <tr>
                         <th className="py-2.5 px-4">Hospital / Customer</th>
                         <th className="py-2.5 px-3">Phone Lines (OT / Hosp / Pers)</th>
@@ -1138,8 +1138,8 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                         </tr>
                       ) : (
                         filteredCustomers.map((cust) => (
-                          <tr key={cust.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/40">
-                            <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-slate-100">
+                          <tr key={cust.id} className="hover:bg-muted/60 dark:hover:bg-slate-900/40">
+                            <td className="py-2.5 px-4 font-bold text-foreground dark:text-slate-100">
                               <div className="text-teal-800 dark:text-teal-300 font-bold text-sm">{cust.name}</div>
                               {cust.email && <div className="text-[10.5px] text-muted-foreground">✉️ {cust.email}</div>}
                             </td>
@@ -1165,14 +1165,14 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                                 )}
                                 {!cust.otNumber && !cust.hospitalNumber && !cust.personalNumber && cust.mobile && (
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[9.5px] font-extrabold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">MOB</span>
-                                    <a href={`tel:${cust.mobile}`} className="font-semibold text-slate-700 hover:underline">{cust.mobile}</a>
+                                    <span className="text-[9.5px] font-extrabold bg-muted text-foreground px-1.5 py-0.5 rounded">MOB</span>
+                                    <a href={`tel:${cust.mobile}`} className="font-semibold text-foreground hover:underline">{cust.mobile}</a>
                                   </div>
                                 )}
                               </div>
                             </td>
                             <td className="py-2.5 px-3 text-muted-foreground">
-                              {cust.contactPerson && <div className="font-bold text-slate-800 dark:text-slate-200">👤 {cust.contactPerson}</div>}
+                              {cust.contactPerson && <div className="font-bold text-foreground dark:text-slate-200">👤 {cust.contactPerson}</div>}
                               {Array.isArray(cust.contacts) && cust.contacts.length > 0 && (
                                 <div className="mt-1 space-y-0.5">
                                   {cust.contacts.slice(0, 3).map((c, i) => (
@@ -1196,7 +1196,7 @@ export const CashInvoiceAdmin: React.FC<CashInvoiceAdminProps> = ({ onBack }) =>
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => handleEditCustomerClick(cust)}
-                                className="h-7 w-7 text-slate-500 hover:text-teal-700"
+                                className="h-7 w-7 text-muted-foreground hover:text-teal-700"
                                 title="Edit"
                               >
                                 <Edit2 className="w-3 h-3" />

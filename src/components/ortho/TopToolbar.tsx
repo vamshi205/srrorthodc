@@ -25,8 +25,8 @@ import { getTodayBankReminders } from '@/lib/bankReminders';
 import {
   Activity,
   Plus,
-  Images,
-  List,
+  Package,
+  ClipboardList,
   FileText,
   RefreshCw,
   Printer,
@@ -38,6 +38,7 @@ import {
   Receipt,
   ArrowLeft,
   Building2,
+  UsersRound,
   Landmark,
   ChevronDown,
   BellRing,
@@ -275,7 +276,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               className={getNavBtnClass(isImageDb)}
               onClick={() => navigate('/images')}
             >
-              <Images className={`w-3.5 h-3.5 ${isImageDb ? 'text-teal-900' : 'text-teal-200'}`} /> Packing
+              <Package className={`w-3.5 h-3.5 ${isImageDb ? 'text-teal-900' : 'text-teal-200'}`} /> Packing
             </Button>
 
             <Button
@@ -302,7 +303,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               className={getNavBtnClass(isCustomers)}
               onClick={() => navigate('/customers')}
             >
-              <Building2 className={`w-3.5 h-3.5 ${isCustomers ? 'text-teal-900' : 'text-teal-200'}`} /> Customers
+              <UsersRound className={`w-3.5 h-3.5 ${isCustomers ? 'text-teal-900' : 'text-teal-200'}`} /> Customers
             </Button>
 
             <Button
@@ -325,7 +326,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               }`}
               onClick={() => navigate('/saved')}
             >
-              <List className={`w-3.5 h-3.5 ${isDcTracker ? 'text-slate-950' : 'text-amber-300'}`} /> DC Tracker
+              <ClipboardList className={`w-3.5 h-3.5 ${isDcTracker ? 'text-slate-950' : 'text-amber-300'}`} /> DC Tracker
             </Button>
           </div>
 
@@ -479,7 +480,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                         className={getMobileNavClass(isImageDb)}
                         onClick={() => navigate('/images')}
                       >
-                        <Images className="w-4 h-4 text-teal-400" /> Packing
+                        <Package className="w-4 h-4 text-teal-400" /> Packing
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>
@@ -506,7 +507,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                         className={getMobileNavClass(isCustomers)}
                         onClick={() => navigate('/customers')}
                       >
-                        <Building2 className="w-4 h-4 text-emerald-400" /> Customers & Hospitals
+                        <UsersRound className="w-4 h-4 text-emerald-400" /> Customers & Hospitals
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>
@@ -519,7 +520,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                         }`}
                         onClick={() => navigate('/saved')}
                       >
-                        <List className={`w-4 h-4 ${isDcTracker ? 'text-slate-950' : 'text-amber-300'}`} /> DC Tracker
+                        <ClipboardList className={`w-4 h-4 ${isDcTracker ? 'text-slate-950' : 'text-amber-300'}`} /> DC Tracker
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>

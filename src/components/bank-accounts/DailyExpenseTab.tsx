@@ -3,6 +3,10 @@ import {
   BankTransaction,
   BankAccount,
   ExpenseCategory,
+  getLedgerDisplayConfig,
+  build6569TransactionRankMap,
+  is6569TransactionLocked,
+  isAccount6569Identifier,
 } from "@/services/bankAccountFirebaseService";
 import {
   getDeliveryTeamPersonnelNames,
@@ -38,6 +42,10 @@ import {
   AlertTriangle,
   Building2,
   MapPin,
+  Lock,
+  Eye,
+  EyeOff,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +66,9 @@ interface DailyExpenseTabProps {
   onRefresh: () => void;
   is6569Unlocked?: boolean;
   onUnlock6569?: () => void;
+  isUnlocked?: boolean;
+  onUnlock?: () => void;
+  onLock?: () => void;
 }
 
 const isAccount6569 = (accIdentifier?: string | BankAccount | null): boolean => {
@@ -81,13 +92,34 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   "Spot Payout / Allowance": <Zap className="w-3.5 h-3.5 text-purple-500" />,
 };
 
+const VALID_ADMIN_PASSWORDS = [
+  "srrortho",
+  "srrPadma123$a",
+  "padma123",
+  "6569",
+  "admin123",
+  "admin",
+];
+
 export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
   transactions,
   accounts,
   onRefresh,
   is6569Unlocked = false,
   onUnlock6569,
+  isUnlocked,
+  onUnlock,
+  onLock,
 }) => {
+  const [internalUnlocked, setInternalUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem("srrortho:unlocked_daily_expense") === "true";
+  });
+  const isDailyExpenseUnlocked = isUnlocked !== undefined ? isUnlocked : internalUnlocked;
+
+  const [passwordInput, setPasswordInput] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+
   const [periodFilter, setPeriodFilter] = useState<ExpensePeriod>("month");
   const [selectedPersonnel, setSelectedPersonnel] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -95,25 +127,70 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
 
   const deliveryTeamNames = useMemo(() => getDeliveryTeamPersonnelNames(), []);
 
-  // Filtered transactions excluding locked 6569 account data
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const input = passwordInput.trim();
+    const isValid =
+      VALID_ADMIN_PASSWORDS.some((p) => p.toLowerCase() === input.toLowerCase()) ||
+      input === "srrPadma123$a";
+
+    if (isValid) {
+      sessionStorage.setItem("srrortho:unlocked_daily_expense", "true");
+      setInternalUnlocked(true);
+      setPasswordInput("");
+      setPasswordError("");
+      if (onUnlock) {
+        onUnlock();
+      } else {
+        toast.success("🔓 Daily Expense Analytics unlocked!");
+      }
+    } else {
+      setPasswordError("Incorrect administrator password. Please try again.");
+      toast.error("Incorrect administrator password");
+    }
+  };
+
+  const handleLockAnalytics = () => {
+    sessionStorage.removeItem("srrortho:unlocked_daily_expense");
+    setInternalUnlocked(false);
+    setPasswordInput("");
+    setPasswordError("");
+    if (onLock) {
+      onLock();
+    } else {
+      toast.info("🔒 Daily Expense Analytics locked");
+    }
+  };
+
+  const rankMap = useMemo(() => build6569TransactionRankMap(transactions, accounts), [transactions, accounts]);
+
+  // Filtered transactions incorporating unlocked 6569 account data per ledger configuration
   const safeTransactions = useMemo(() => {
+    if (!isDailyExpenseUnlocked) return [];
     if (is6569Unlocked) return transactions;
-    return transactions.filter((t) => {
-      const is6569 =
-        t.accountSuffix === "6569" ||
-        isAccount6569(t.accountId) ||
-        (t.description && t.description.includes("6569"));
-      return !is6569;
-    });
-  }, [transactions, is6569Unlocked]);
+    const config = getLedgerDisplayConfig();
+    return transactions.filter((t) => !is6569TransactionLocked(t, config, rankMap, false, accounts));
+  }, [transactions, is6569Unlocked, isDailyExpenseUnlocked, rankMap, accounts]);
 
   // Compute analytics using safeTransactions
   const analytics = useMemo(() => {
+    if (!isDailyExpenseUnlocked) {
+      return {
+        totalSpent: 0,
+        todayTotal: 0,
+        topSpenderName: "-",
+        topSpenderAmount: 0,
+        topCategoryName: "-",
+        topCategoryAmount: 0,
+        personnelSummaries: [],
+      };
+    }
     return calculateExpenseAnalytics(safeTransactions, periodFilter, selectedPersonnel);
-  }, [safeTransactions, periodFilter, selectedPersonnel]);
+  }, [safeTransactions, periodFilter, selectedPersonnel, isDailyExpenseUnlocked]);
 
   // Filter individual transaction logs within executive accordions
   const filteredSummaries = useMemo(() => {
+    if (!isDailyExpenseUnlocked) return [];
     if (!searchQuery.trim()) return analytics.personnelSummaries;
     const q = searchQuery.toLowerCase();
     return analytics.personnelSummaries.filter((s) => {
@@ -126,7 +203,7 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
       );
       return matchName || matchTx;
     });
-  }, [analytics.personnelSummaries, searchQuery]);
+  }, [analytics.personnelSummaries, searchQuery, isDailyExpenseUnlocked]);
 
   const toggleExpand = (name: string) => {
     setExpandedCards((prev) => ({ ...prev, [name]: !prev[name] }));
@@ -170,6 +247,67 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
 
     toast.success("Downloaded Daily Expense CSV Report");
   };
+
+  // 🔒 Lock Screen if Password Authorization is required
+  if (!isDailyExpenseUnlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[460px] p-6 sm:p-12 bg-card rounded-2xl border border-border shadow-sm text-center animate-in fade-in duration-200">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner mb-4">
+          <Lock className="w-8 h-8" />
+        </div>
+        <h3 className="text-xl font-bold text-foreground">
+          Daily Expense Analytics Protected
+        </h3>
+        <p className="text-xs text-muted-foreground max-w-sm mt-1.5 mb-6 leading-relaxed">
+          This dashboard contains confidential delivery team expense analytics, fuel payouts, and travel route tracking. Enter administrator password to view.
+        </p>
+
+        <form onSubmit={handlePasswordSubmit} className="w-full max-w-xs space-y-3">
+          <div className="relative text-left">
+            <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <Input
+              type={showPassword ? "text" : "password"}
+              placeholder="Enter admin password..."
+              value={passwordInput}
+              onChange={(e) => {
+                setPasswordInput(e.target.value);
+                setPasswordError("");
+              }}
+              className="pl-9 pr-9 h-10 text-xs rounded-xl border-border focus-visible:ring-1 focus-visible:ring-amber-500"
+              autoFocus
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors"
+              title={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {passwordError && (
+            <p className="text-xs font-semibold text-rose-500 animate-in fade-in duration-150 text-left">
+              {passwordError}
+            </p>
+          )}
+
+          <Button
+            type="submit"
+            className="w-full h-10 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl gap-2 shadow-sm cursor-pointer"
+          >
+            <Lock className="w-3.5 h-3.5" /> Unlock Daily Expense Analytics
+          </Button>
+        </form>
+
+        <div className="mt-6 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+          <span>Session-based security • Password required per browser session</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 font-sans text-foreground">
@@ -336,6 +474,17 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
             className="h-8 text-xs font-semibold gap-1.5 border-teal-300 text-teal-800 dark:text-teal-300 hover:bg-teal-50"
           >
             <Download className="w-3.5 h-3.5" /> Export Report
+          </Button>
+
+          {/* Re-lock Button */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleLockAnalytics}
+            className="h-8 text-xs font-semibold gap-1.5 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+            title="Lock Daily Expense Analytics"
+          >
+            <Lock className="w-3.5 h-3.5 text-amber-600" /> Lock Analytics
           </Button>
         </div>
       </div>

@@ -1226,3 +1226,239 @@ export async function cleanOrphanedBankTransactionLinks(): Promise<number> {
     return 0;
   }
 }
+
+// ============================================================================
+// LEDGER TRANSACTION DISPLAY & SECURITY SETTINGS
+// ============================================================================
+
+export type UnlockRuleType = 'count' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom_days';
+
+export interface LedgerDisplayConfig {
+  unlockRule: UnlockRuleType; // 'count' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom_days'
+  defaultLimit: number | 'all'; // e.g. 15, 20, 30 (default), 50, 100, 'all'
+  defaultDateRange: 'all' | 'today' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'year' | 'custom_days';
+  customDays?: number;
+  customLimit?: number;
+  applyOnlyTo6569: boolean;
+}
+
+export const DEFAULT_LEDGER_CONFIG: LedgerDisplayConfig = {
+  unlockRule: 'count',
+  defaultLimit: 10,
+  defaultDateRange: 'all',
+  customDays: 10,
+  customLimit: 10,
+  applyOnlyTo6569: true,
+};
+
+export const getLedgerDisplayConfig = (): LedgerDisplayConfig => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem('srrortho:ledger_display_config');
+      if (raw) return { ...DEFAULT_LEDGER_CONFIG, ...JSON.parse(raw) };
+    }
+  } catch (e) {
+    console.warn('Error reading ledger config from localStorage:', e);
+  }
+  return DEFAULT_LEDGER_CONFIG;
+};
+
+export const saveLedgerDisplayConfig = async (config: LedgerDisplayConfig): Promise<void> => {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('srrortho:ledger_display_config', JSON.stringify(config));
+      window.dispatchEvent(new CustomEvent('srrortho:ledger_config_updated', { detail: config }));
+    }
+    const docRef = doc(db, 'settings', 'ledger_display_config');
+    await setDoc(docRef, { ...config, updatedAt: Date.now() }, { merge: true });
+  } catch (e) {
+    console.warn('Failed to sync ledger config to firestore:', e);
+  }
+};
+
+export const fetchLedgerDisplayConfigFromFirestore = async (): Promise<LedgerDisplayConfig> => {
+  try {
+    const docRef = doc(db, 'settings', 'ledger_display_config');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as LedgerDisplayConfig;
+      const merged: LedgerDisplayConfig = { ...DEFAULT_LEDGER_CONFIG, ...data };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('srrortho:ledger_display_config', JSON.stringify(merged));
+        window.dispatchEvent(new CustomEvent('srrortho:ledger_config_updated', { detail: merged }));
+      }
+      return merged;
+    }
+  } catch (e) {
+    console.warn('Error fetching ledger display config from firestore:', e);
+  }
+  return getLedgerDisplayConfig();
+};
+
+/**
+ * Check if an account identifier or account object belongs to sensitive Account 6569
+ */
+export function isAccount6569Identifier(
+  accIdentifier?: string | BankAccount | null,
+  accountsList?: BankAccount[]
+): boolean {
+  if (!accIdentifier) return false;
+  if (typeof accIdentifier === 'string') {
+    const clean = accIdentifier.toLowerCase();
+    if (
+      clean.includes('6569') ||
+      clean.includes('acc_hdfc_main_6569') ||
+      clean.includes('acc_1790973304902_eja1') ||
+      clean.includes('sri raja rajeshwari')
+    ) {
+      return true;
+    }
+    if (accountsList && accountsList.length > 0) {
+      const found = accountsList.find((a) => a.id === accIdentifier);
+      if (found) {
+        return (
+          (found.accountNumber || '').includes('6569') ||
+          (found.accountName || '').includes('6569') ||
+          (found.accountName || '').toLowerCase().includes('sri raja rajeshwari') ||
+          (found.id || '').includes('6569') ||
+          (found.id || '') === 'acc_1790973304902_eja1'
+        );
+      }
+    }
+    return false;
+  }
+  const idClean = (accIdentifier.id || '').toLowerCase();
+  const numClean = (accIdentifier.accountNumber || '').toLowerCase();
+  const nameClean = (accIdentifier.accountName || '').toLowerCase();
+  return (
+    idClean.includes('6569') ||
+    idClean === 'acc_1790973304902_eja1' ||
+    numClean.includes('6569') ||
+    nameClean.includes('6569') ||
+    nameClean.includes('sri raja rajeshwari')
+  );
+}
+
+/**
+ * Build rank map for Account 6569 transactions sorted descending by date/time (0 = newest)
+ */
+export function build6569TransactionRankMap(
+  transactions: BankTransaction[],
+  accountsList?: BankAccount[]
+): Map<string, number> {
+  const map = new Map<string, number>();
+  const all6569 = transactions
+    .filter(
+      (t) =>
+        isAccount6569Identifier(t.accountId, accountsList) ||
+        isAccount6569Identifier(t.accountSuffix, accountsList) ||
+        (t.description && t.description.includes('6569'))
+    )
+    .sort((a, b) => {
+      const dateA = new Date(`${a.date}T${a.time || '00:00:00'}`).getTime();
+      const dateB = new Date(`${b.date}T${b.time || '00:00:00'}`).getTime();
+      if (dateB !== dateA) return dateB - dateA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
+  all6569.forEach((t, idx) => {
+    if (t.id) map.set(t.id, idx);
+  });
+  return map;
+}
+
+/**
+ * Check if a specific transaction is locked for Account 6569 based on ledger config
+ */
+export function is6569TransactionLocked(
+  tx: BankTransaction,
+  config: LedgerDisplayConfig,
+  rankMap: Map<string, number>,
+  isSessionUnlocked: boolean = false,
+  accountsList?: BankAccount[]
+): boolean {
+  if (isSessionUnlocked) return false;
+
+  const is6569 =
+    isAccount6569Identifier(tx.accountId, accountsList) ||
+    isAccount6569Identifier(tx.accountSuffix, accountsList) ||
+    (tx.description && tx.description.includes('6569'));
+
+  // Non-6569 transactions are NEVER locked
+  if (!is6569) return false;
+
+  const rule = config.unlockRule || 'count';
+
+  if (rule === 'count') {
+    const cap =
+      config.defaultLimit === 'custom'
+        ? Number(config.customLimit) || 10
+        : typeof config.defaultLimit === 'number'
+        ? config.defaultLimit
+        : Number(config.customLimit) || 10;
+    const rank = rankMap.get(tx.id) ?? 999999;
+    return rank >= cap;
+  }
+
+  // Parse date safely
+  let txDate: Date;
+  if (tx.date) {
+    const parts = tx.date.split(/[-/]/).map(Number);
+    if (parts.length === 3) {
+      if (parts[0] > 1000) {
+        txDate = new Date(parts[0], parts[1] - 1, parts[2]);
+      } else {
+        txDate = new Date(parts[2], parts[1] - 1, parts[0]);
+      }
+    } else {
+      txDate = new Date(tx.date);
+    }
+  } else {
+    txDate = new Date();
+  }
+
+  if (rule === 'custom_days') {
+    const days = Number(config.customDays) > 0 ? Number(config.customDays) : 10;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setHours(0, 0, 0, 0);
+    return txDate < cutoff;
+  }
+
+  const now = new Date();
+  if (rule === 'this_month') {
+    return txDate.getMonth() !== now.getMonth() || txDate.getFullYear() !== now.getFullYear();
+  }
+  if (rule === 'last_month') {
+    const lastMonthIdx = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+    const lastMonthYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    return txDate.getMonth() !== lastMonthIdx || txDate.getFullYear() !== lastMonthYear;
+  }
+  if (rule === 'this_week') {
+    const startOfWeek = new Date(now);
+    const day = startOfWeek.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    startOfWeek.setDate(startOfWeek.getDate() + diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    return txDate < startOfWeek || txDate > endOfWeek;
+  }
+  if (rule === 'last_week') {
+    const startOfThisWeek = new Date(now);
+    const day = startOfThisWeek.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    startOfThisWeek.setDate(startOfThisWeek.getDate() + diff);
+    startOfThisWeek.setHours(0, 0, 0, 0);
+    const startOfLastWeek = new Date(startOfThisWeek);
+    startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+    const endOfLastWeek = new Date(startOfThisWeek);
+    endOfLastWeek.setMilliseconds(-1);
+    return txDate < startOfLastWeek || txDate > endOfLastWeek;
+  }
+
+  return false;
+}
+
+

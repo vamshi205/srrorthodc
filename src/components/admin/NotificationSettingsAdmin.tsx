@@ -15,6 +15,7 @@ import {
   History,
   Trash2,
   Receipt,
+  IndianRupee,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,17 +119,23 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header Info */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Bell className="w-5 h-5 text-amber-500" />
-            Notifications & Reminder Customization
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Configure automated interval frequencies, cutoffs, login alert popups, and chime rules for DC Tracker.
-          </p>
+    <div className="space-y-5 w-full py-1">
+      {/* Unified Executive Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card/95 p-4 sm:p-5 rounded-2xl border border-border shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-accent border border-primary/20 text-accent-foreground flex items-center justify-center shadow-2xs">
+              <Bell className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold font-sans tracking-tight text-foreground">
+                Notifications &amp; Reminder Settings
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Configure automated interval frequencies, return cutoff days, chime audio triggers, and live ticker banner.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -136,7 +143,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             variant="outline"
             size="sm"
             onClick={handleReset}
-            className="h-8 text-xs gap-1.5 border-slate-300"
+            className="h-9 text-xs font-semibold gap-1.5 border-slate-300 text-foreground hover:bg-muted"
           >
             <ResetIcon className="w-3.5 h-3.5" />
             Reset Defaults
@@ -145,7 +152,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
           <Button
             size="sm"
             onClick={handleSave}
-            className={`h-8 text-xs font-bold gap-1.5 shadow-sm transition-all ${
+            className={`h-9 text-xs font-bold gap-1.5 shadow-xs transition-all ${
               isSaved
                 ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                 : "bg-teal-700 hover:bg-teal-800 text-white"
@@ -167,7 +174,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                   <Bell className="w-4 h-4" />
                 </div>
                 <div>
-                  <CardTitle className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <CardTitle className="text-sm sm:text-base font-bold text-foreground dark:text-slate-100 flex items-center gap-2">
                     Reminder Categories &amp; Visibility Controls
                   </CardTitle>
                   <CardDescription className="text-xs">
@@ -185,17 +192,17 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
               config.paymentReminderEnabled 
                 ? "border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-xs" 
-                : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-70"
+                : "border-border dark:border-slate-800 bg-muted/60 dark:bg-slate-900/40 opacity-70"
             }`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                    config.paymentReminderEnabled ? "bg-emerald-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                    config.paymentReminderEnabled ? "bg-emerald-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-muted-foreground"
                   }`}>
                     <Wallet className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                    <div className="text-xs font-extrabold text-foreground dark:text-slate-100">
                       Cash / Payments
                     </div>
                     <div className="text-[10px] text-muted-foreground">
@@ -212,14 +219,14 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                   }}
                 />
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
+              <div className="flex items-center justify-between pt-2 border-t border-border/60 dark:border-slate-800/60 text-[10px]">
                 <span className="text-muted-foreground">Status:</span>
                 {config.paymentReminderEnabled ? (
                   <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] h-5 px-1.5 font-bold">
                     Visible &amp; Active
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-slate-500 border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
+                  <Badge variant="outline" className="text-muted-foreground border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
                     Hidden Everywhere
                   </Badge>
                 )}
@@ -230,17 +237,17 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
               config.collectPaymentScrollerEnabled && config.paymentReminderEnabled
                 ? "border-amber-500/40 bg-amber-50/40 dark:bg-amber-950/20 shadow-xs" 
-                : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-70"
+                : "border-border dark:border-slate-800 bg-muted/60 dark:bg-slate-900/40 opacity-70"
             }`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                    config.collectPaymentScrollerEnabled && config.paymentReminderEnabled ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                    config.collectPaymentScrollerEnabled && config.paymentReminderEnabled ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-200 dark:bg-slate-800 text-muted-foreground"
                   }`}>
                     <IndianRupee className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                    <div className="text-xs font-extrabold text-foreground dark:text-slate-100">
                       Payment Scroller
                     </div>
                     <div className="text-[10px] text-muted-foreground">
@@ -258,14 +265,14 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                   disabled={!config.paymentReminderEnabled}
                 />
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
+              <div className="flex items-center justify-between pt-2 border-t border-border/60 dark:border-slate-800/60 text-[10px]">
                 <span className="text-muted-foreground">Status:</span>
                 {config.collectPaymentScrollerEnabled && config.paymentReminderEnabled ? (
                   <Badge className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-[10px] h-5 px-1.5 font-bold">
                     Scroller Active
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-slate-500 border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
+                  <Badge variant="outline" className="text-muted-foreground border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
                     Scroller Hidden
                   </Badge>
                 )}
@@ -276,17 +283,17 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
               config.returnReminderEnabled 
                 ? "border-cyan-500/40 bg-cyan-50/40 dark:bg-cyan-950/20 shadow-xs" 
-                : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-70"
+                : "border-border dark:border-slate-800 bg-muted/60 dark:bg-slate-900/40 opacity-70"
             }`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                    config.returnReminderEnabled ? "bg-cyan-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                    config.returnReminderEnabled ? "bg-cyan-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-muted-foreground"
                   }`}>
                     <RotateCcw className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                    <div className="text-xs font-extrabold text-foreground dark:text-slate-100">
                       Item Returns
                     </div>
                     <div className="text-[10px] text-muted-foreground">
@@ -303,14 +310,14 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                   }}
                 />
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
+              <div className="flex items-center justify-between pt-2 border-t border-border/60 dark:border-slate-800/60 text-[10px]">
                 <span className="text-muted-foreground">Status:</span>
                 {config.returnReminderEnabled ? (
                   <Badge className="bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] h-5 px-1.5 font-bold">
                     Visible &amp; Active
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-slate-500 border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
+                  <Badge variant="outline" className="text-muted-foreground border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
                     Hidden Everywhere
                   </Badge>
                 )}
@@ -321,17 +328,17 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             <div className={`p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between gap-3 ${
               config.invoiceReminderEnabled 
                 ? "border-purple-500/40 bg-purple-50/40 dark:bg-purple-950/20 shadow-xs" 
-                : "border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 opacity-70"
+                : "border-border dark:border-slate-800 bg-muted/60 dark:bg-slate-900/40 opacity-70"
             }`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                    config.invoiceReminderEnabled ? "bg-purple-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                    config.invoiceReminderEnabled ? "bg-purple-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-muted-foreground"
                   }`}>
                     <Receipt className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                    <div className="text-xs font-extrabold text-foreground dark:text-slate-100">
                       Returned Invoices
                     </div>
                     <div className="text-[10px] text-muted-foreground">
@@ -348,14 +355,14 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                   }}
                 />
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[10px]">
+              <div className="flex items-center justify-between pt-2 border-t border-border/60 dark:border-slate-800/60 text-[10px]">
                 <span className="text-muted-foreground">Status:</span>
                 {config.invoiceReminderEnabled ? (
                   <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[10px] h-5 px-1.5 font-bold">
                     Visible &amp; Active
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-slate-500 border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
+                  <Badge variant="outline" className="text-muted-foreground border-slate-300 dark:border-slate-700 text-[10px] h-5 px-1.5">
                     Hidden Everywhere
                   </Badge>
                 )}
@@ -365,7 +372,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
         </Card>
 
         {/* Section 1: Payment Reminders */}
-        <Card className="rounded-2xl border-border/60 shadow-sm bg-white/70 dark:bg-slate-900/70 backdrop-blur-md">
+        <Card className="rounded-2xl border-border/60 shadow-sm bg-card/70 dark:bg-slate-900/70 backdrop-blur-md">
           <CardHeader className="p-4 pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -390,9 +397,9 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-1 space-y-4">
-            <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60">
+            <div className="flex items-center justify-between p-3 rounded-xl border border-border dark:border-slate-800 bg-card/60 dark:bg-slate-900/60">
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                   Header Live Payment Scroller
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
@@ -410,7 +417,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              <Label className="text-xs font-bold text-foreground dark:text-slate-300">
                 Reminder Interval (High Weightage)
               </Label>
               <Select
@@ -438,7 +445,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              <Label className="text-xs font-bold text-foreground dark:text-slate-300">
                 Minimum Alert Balance (₹)
               </Label>
               <Input
@@ -461,7 +468,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
         </Card>
 
         {/* Section 2: Item Returns Reminders */}
-        <Card className="rounded-2xl border-border/60 shadow-sm bg-white/70 dark:bg-slate-900/70 backdrop-blur-md">
+        <Card className="rounded-2xl border-border/60 shadow-sm bg-card/70 dark:bg-slate-900/70 backdrop-blur-md">
           <CardHeader className="p-4 pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -483,7 +490,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
           </CardHeader>
           <CardContent className="p-4 pt-1 space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              <Label className="text-xs font-bold text-foreground dark:text-slate-300">
                 Default Return Cutoff Threshold (Days)
               </Label>
               <Select
@@ -508,7 +515,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              <Label className="text-xs font-bold text-foreground dark:text-slate-300">
                 Urgent Red Overdue Mark (Days)
               </Label>
               <Select
@@ -542,7 +549,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
-                  <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <CardTitle className="text-sm font-bold text-foreground dark:text-slate-100 flex items-center gap-2">
                     First Login / Morning Reminder Popup
                   </CardTitle>
                   <CardDescription className="text-xs">
@@ -574,9 +581,9 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
           </CardHeader>
           <CardContent className="p-4 pt-3 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 flex items-center justify-between gap-2">
+              <div className="p-3 rounded-xl border border-border dark:border-slate-800 bg-card/80 dark:bg-slate-900/80 flex items-center justify-between gap-2">
                 <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <div className="text-xs font-bold text-foreground dark:text-slate-200">
                     Include Payments
                   </div>
                   <div className="text-[10px] text-muted-foreground">
@@ -592,9 +599,9 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                 />
               </div>
 
-              <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 flex items-center justify-between gap-2">
+              <div className="p-3 rounded-xl border border-border dark:border-slate-800 bg-card/80 dark:bg-slate-900/80 flex items-center justify-between gap-2">
                 <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <div className="text-xs font-bold text-foreground dark:text-slate-200">
                     Include Returns
                   </div>
                   <div className="text-[10px] text-muted-foreground">
@@ -608,9 +615,9 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                 />
               </div>
 
-              <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 flex items-center justify-between gap-2">
+              <div className="p-3 rounded-xl border border-border dark:border-slate-800 bg-card/80 dark:bg-slate-900/80 flex items-center justify-between gap-2">
                 <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <div className="text-xs font-bold text-foreground dark:text-slate-200">
                     Include Invoices
                   </div>
                   <div className="text-[10px] text-muted-foreground">
@@ -631,7 +638,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
         </Card>
 
         {/* Section 4: Sound & Banner Display */}
-        <Card className="rounded-2xl border-border/60 shadow-sm bg-white/70 dark:bg-slate-900/70 backdrop-blur-md md:col-span-2">
+        <Card className="rounded-2xl border-border/60 shadow-sm bg-card/70 dark:bg-slate-900/70 backdrop-blur-md md:col-span-2">
           <CardHeader className="p-4 pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -658,9 +665,9 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60">
+            <div className="flex items-center justify-between p-3 rounded-xl border border-border dark:border-slate-800 bg-card/60 dark:bg-slate-900/60">
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                   Audio Chimes
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
@@ -673,8 +680,8 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
               />
             </div>
 
-            <div className="space-y-1.5 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60">
-              <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+            <div className="space-y-1.5 p-3 rounded-xl border border-border dark:border-slate-800 bg-card/60 dark:bg-slate-900/60">
+              <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                 Banner Auto-Dismiss
               </Label>
               <Select
@@ -698,17 +705,17 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
         </Card>
 
         {/* Section 5: Reminder & Snooze Audit Trail */}
-        <Card className="rounded-2xl border-border/60 shadow-sm bg-white/70 dark:bg-slate-900/70 backdrop-blur-md md:col-span-2">
+        <Card className="rounded-2xl border-border/60 shadow-sm bg-card/70 dark:bg-slate-900/70 backdrop-blur-md md:col-span-2">
           <CardHeader className="p-4 pb-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 flex items-center justify-center">
                   <History className="w-4 h-4" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <CardTitle className="text-sm font-bold">Reminder &amp; Snooze Audit Trail</CardTitle>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-200">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-bold bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300 border-teal-200">
                       {auditLogs.length} Events
                     </Badge>
                   </div>
@@ -733,9 +740,9 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
           </CardHeader>
           <CardContent className="p-4 pt-1">
             {auditLogs.length === 0 ? (
-              <div className="text-center py-8 px-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
-                <History className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+              <div className="text-center py-8 px-4 rounded-xl border border-dashed border-border dark:border-slate-800 bg-muted/50 dark:bg-slate-900/30">
+                <History className="w-8 h-8 text-slate-300 dark:text-muted-foreground mx-auto mb-2" />
+                <p className="text-xs font-semibold text-muted-foreground dark:text-slate-400">
                   No reminder actions or snoozes logged yet
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -745,7 +752,7 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
             ) : (
               <div className="max-h-80 overflow-y-auto space-y-2 pr-1 rounded-xl">
                 {auditLogs.map((log) => {
-                  let badgeStyle = "bg-slate-100 text-slate-800 border-slate-200";
+                  let badgeStyle = "bg-muted text-foreground border-border";
                   if (log.action.includes("SNOOZE")) {
                     badgeStyle = log.action === "SNOOZE_15M"
                       ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300"
@@ -778,28 +785,28 @@ export const NotificationSettingsAdmin: React.FC<NotificationSettingsAdminProps>
                   return (
                     <div
                       key={log.id}
-                      className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                      className="p-3 rounded-xl border border-border/80 dark:border-slate-800 bg-card/60 dark:bg-slate-900/60 flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 hover:bg-muted/80 dark:hover:bg-slate-800/40 transition-colors"
                     >
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Badge variant="outline" className={`text-[10px] font-bold py-0.5 px-2 ${badgeStyle}`}>
                             {log.label}
                           </Badge>
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                          <span className="text-[11px] text-muted-foreground dark:text-slate-400 font-mono">
                             {formattedDate}
                           </span>
-                          <Badge variant="secondary" className="text-[10px] font-normal text-slate-600 dark:text-slate-300 py-0 px-1.5">
+                          <Badge variant="secondary" className="text-[10px] font-normal text-muted-foreground dark:text-slate-300 py-0 px-1.5">
                             By: {log.userEmail}
                           </Badge>
                         </div>
-                        <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed break-words">
+                        <p className="text-xs text-foreground dark:text-slate-300 leading-relaxed break-words">
                           {log.details}
                         </p>
                       </div>
 
                       {log.pendingAmount > 0 && (
                         <div className="text-right shrink-0 self-end sm:self-center">
-                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Pending</span>
+                          <span className="text-[10px] uppercase font-bold text-muted-foreground block">Pending</span>
                           <span className="text-xs font-black text-rose-600 dark:text-rose-400">
                             ₹{log.pendingAmount.toLocaleString("en-IN")}
                           </span>

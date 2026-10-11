@@ -164,6 +164,10 @@ import {
   cleanOrphanedBankTransactionLinks,
   isBankTxMatchingDc,
   recordCashPaymentToCashInHand,
+  getLedgerDisplayConfig,
+  build6569TransactionRankMap,
+  is6569TransactionLocked,
+  isAccount6569Identifier,
   type BankTransaction,
   type BankAccount,
 } from "@/services/bankAccountFirebaseService";
@@ -579,6 +583,12 @@ const SavedDcs = () => {
     }
   };
 
+  const rankMap = useMemo(
+    () => build6569TransactionRankMap(availableBankCredits, bankAccountsList),
+    [availableBankCredits, bankAccountsList]
+  );
+  const ledgerConfig = useMemo(() => getLedgerDisplayConfig(), []);
+
   const filteredBankCredits = useMemo(() => {
     const cashAccIds = new Set(
       bankAccountsList
@@ -594,22 +604,21 @@ const SavedDcs = () => {
       (tx) => !tx.accountId || !cashAccIds.has(tx.accountId),
     );
 
-    // 🔒 If 6569 is locked, filter out 6569 statement credits entirely unless unlocked!
+    // 🔒 Filter out only 6569 statement credits that are locked per ledger configuration (keep unlocked ones!)
     if (!is6569Unlocked) {
       nonCashCredits = nonCashCredits.filter((tx) => {
-        const is6569 =
-          tx.accountSuffix === "6569" ||
-          (tx.accountId && isAccount6569(tx.accountId)) ||
-          (tx.description && tx.description.includes("6569"));
-        return !is6569;
+        return !is6569TransactionLocked(tx, ledgerConfig, rankMap, false, bankAccountsList);
       });
     }
 
     if (selectedBankAccountId === "all") return nonCashCredits;
-    return nonCashCredits.filter(
-      (tx) => tx.accountId === selectedBankAccountId,
-    );
-  }, [availableBankCredits, selectedBankAccountId, bankAccountsList, is6569Unlocked]);
+    const isTarget6569 = isAccount6569Identifier(selectedBankAccountId, bankAccountsList);
+    return nonCashCredits.filter((tx) => {
+      if (tx.accountId === selectedBankAccountId) return true;
+      if (isTarget6569 && (isAccount6569Identifier(tx.accountId, bankAccountsList) || tx.accountSuffix === "6569" || (tx.description && tx.description.includes("6569")))) return true;
+      return false;
+    });
+  }, [availableBankCredits, selectedBankAccountId, bankAccountsList, is6569Unlocked, ledgerConfig, rankMap]);
 
   const activeViewingCashMemo = useMemo(() => {
     if (!viewingCashMemoRef) return null;
@@ -8920,13 +8929,15 @@ const SavedDcs = () => {
                       {/* 1. BANK ACCOUNTS TABS (1538 ALWAYS FIRST ON THE LEFT!) */}
                       {sortedBankAccounts.map((acc) => {
                         const isSelected = selectedBankAccountId === acc.id;
-                        const is6569Acc = isAccount6569(acc);
-                        const isLocked6569 = is6569Acc && !is6569Unlocked;
-                        const count = isLocked6569
-                          ? "🔒"
-                          : availableBankCredits.filter(
-                              (t) => t.accountId === acc.id,
-                            ).length;
+                        const is6569Acc = isAccount6569Identifier(acc, bankAccountsList);
+                        const count = availableBankCredits.filter((t) => {
+                          const matches = t.accountId === acc.id || (is6569Acc && (isAccount6569Identifier(t.accountId, bankAccountsList) || t.accountSuffix === "6569" || (t.description && t.description.includes("6569"))));
+                          if (!matches) return false;
+                          if (!is6569Unlocked && is6569Acc) {
+                            return !is6569TransactionLocked(t, ledgerConfig, rankMap, false, bankAccountsList);
+                          }
+                          return true;
+                        }).length;
                         const accSuffix = acc.accountNumber
                           ? acc.accountNumber.slice(-4)
                           : acc.accountName.match(/\d{4}/)?.[0] || "";
@@ -8937,26 +8948,17 @@ const SavedDcs = () => {
                           <button
                             key={acc.id}
                             type="button"
-                            onClick={() => {
-                              if (isLocked6569) {
-                                setIs6569AuthDialogOpen(true);
-                              } else {
-                                setSelectedBankAccountId(acc.id);
-                              }
-                            }}
+                            onClick={() => setSelectedBankAccountId(acc.id)}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer border ${
                               isSelected
                                 ? is1538
                                   ? "bg-emerald-600 text-white border-emerald-600 shadow-none ring-2 ring-emerald-500/20"
                                   : "bg-indigo-600 text-white border-indigo-600 shadow-none ring-2 ring-indigo-500/20"
-                                : isLocked6569
-                                  ? "bg-amber-50/70 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
                             }`}
                           >
                             <Building2 className="w-3.5 h-3.5" />
                             <span>
-                              {isLocked6569 ? "🔒 " : ""}
                               {acc.bankName ||
                                 acc.accountName.split("(")[0].trim()}
                             </span>
@@ -8975,8 +8977,8 @@ const SavedDcs = () => {
                               className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
                                 isSelected
                                   ? "bg-black/20 text-white"
-                                  : isLocked6569
-                                    ? "bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200"
+                                  : is6569Acc && !is6569Unlocked
+                                    ? "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-200"
                                     : "bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-slate-200"
                               }`}
                             >
@@ -9009,6 +9011,23 @@ const SavedDcs = () => {
                         </span>
                       </button>
                     </div>
+
+                    {isAccount6569Identifier(selectedBankAccountId, bankAccountsList) && (
+                      <div className="flex items-center justify-between text-[11px] bg-teal-50/80 border border-teal-200 text-teal-900 dark:bg-teal-950/40 dark:border-teal-800 dark:text-teal-200 px-2.5 py-1.5 rounded-lg my-1">
+                        <span>
+                          Account 6569: Showing unlocked credits per ledger rule ({ledgerConfig.unlockRule === 'count' ? `Last ${ledgerConfig.customLimit || ledgerConfig.defaultLimit || 10} Txns` : 'Configured Window'}).
+                        </span>
+                        {!is6569Unlocked && (
+                          <button
+                            type="button"
+                            onClick={() => setIs6569AuthDialogOpen(true)}
+                            className="font-bold underline hover:text-teal-950 dark:hover:text-teal-100 flex items-center gap-1 cursor-pointer shrink-0 ml-2"
+                          >
+                            <Lock className="w-2.5 h-2.5" /> Unlock All
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {isLoadingBankCredits ? (

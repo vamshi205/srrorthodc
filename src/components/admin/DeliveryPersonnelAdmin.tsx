@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  ArrowLeft,
   Calendar,
   CheckCircle2,
   Clock,
@@ -25,6 +24,17 @@ import {
   Phone,
   GitMerge,
   AlertTriangle,
+  BadgeIndianRupee,
+  Fuel,
+  Utensils,
+  Car,
+  Wrench,
+  Zap,
+  TrendingUp,
+  MapPin,
+  Tag,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,13 +69,21 @@ import {
   syncPersonnelFromDcs,
   normalizePersonnelName,
   mergePersonnel,
+  getDeliveryTeamPersonnelNames,
 } from "@/lib/personnelStorage";
+import {
+  BankTransaction,
+  BankAccount,
+  fetchBankAccountsFromFirestore,
+  fetchBankTransactionsFromFirestore,
+} from "@/services/bankAccountFirebaseService";
+import {
+  calculateExpenseAnalytics,
+  ExpensePeriod,
+  PersonnelExpenseSummary,
+} from "@/lib/expenseAnalyticsEngine";
 
-interface DeliveryPersonnelAdminProps {
-  onBack: () => void;
-}
-
-export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ onBack }) => {
+export const DeliveryPersonnelAdmin: React.FC = () => {
   const { toast } = useToast();
 
   const [dcs, setDcs] = useState<SavedDc[]>([]);
@@ -77,6 +95,14 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
   const [selectedPersonFilter, setSelectedPersonFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<"all" | "7d" | "30d" | "this_month">("all");
   const [activeTab, setActiveTab] = useState("leaderboard");
+
+  // Bank & Spending States
+  const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [spendingPeriod, setSpendingPeriod] = useState<ExpensePeriod>("month");
+  const [spendingSearch, setSpendingSearch] = useState("");
+  const [spendingPerson, setSpendingPerson] = useState<string>("all");
+  const [expandedSpendingCards, setExpandedSpendingCards] = useState<Record<string, boolean>>({});
 
   // Modal states
   const [addPersonModalOpen, setAddPersonModalOpen] = useState(false);
@@ -96,7 +122,14 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
   const fetchData = async () => {
     setLoading(true);
     try {
-      let loadedDcs = await loadSavedDcs();
+      const [loadedDcs, loadedTxs, loadedAccs] = await Promise.all([
+        loadSavedDcs(),
+        fetchBankTransactionsFromFirestore(),
+        fetchBankAccountsFromFirestore(),
+      ]);
+
+      setBankTransactions(loadedTxs);
+      setBankAccounts(loadedAccs);
 
       // Auto-detect and merge "Prashanth" variations if present across loaded DCs
       const prashanthVariants = ["prasanth", "prashant", "prasanth kumar", "prashanth k"];
@@ -109,15 +142,19 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
       if (hasPrashanthDuplicates) {
         const mergeRes = await mergePersonnel(prashanthVariants, "Prashanth", loadedDcs);
         if (mergeRes.mergedDcsCount > 0) {
-          loadedDcs = await loadSavedDcs();
+          const reloadedDcs = await loadSavedDcs();
+          setDcs(reloadedDcs);
           toast({
             title: "Duplicates Merged",
             description: `Consolidated ${mergeRes.mergedDcsCount} DC(s) with Prashanth variations into "Prashanth".`,
           });
+        } else {
+          setDcs(loadedDcs);
         }
+      } else {
+        setDcs(loadedDcs);
       }
 
-      setDcs(loadedDcs);
       // Auto-sync any names from DCs
       const synced = syncPersonnelFromDcs(loadedDcs);
       setPersonnel(synced);
@@ -125,12 +162,81 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
       console.error("Error loading delivery data:", err);
       toast({
         title: "Error Loading Data",
-        description: "Failed to load delivery challans.",
+        description: "Failed to load delivery challans or expense data.",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
+  };
+
+  const deliveryTeamNames = useMemo(() => getDeliveryTeamPersonnelNames(), []);
+
+  // Compute expense analytics for delivery team
+  const spendingAnalytics = useMemo(() => {
+    return calculateExpenseAnalytics(bankTransactions, spendingPeriod, spendingPerson);
+  }, [bankTransactions, spendingPeriod, spendingPerson]);
+
+  // Filter individual transaction logs within executive accordions
+  const filteredSpendingSummaries = useMemo(() => {
+    if (!spendingSearch.trim()) return spendingAnalytics.personnelSummaries;
+    const q = spendingSearch.toLowerCase();
+    return spendingAnalytics.personnelSummaries.filter((s) => {
+      const matchName = s.personnelName.toLowerCase().includes(q);
+      const matchTx = s.transactions.some(
+        (t) =>
+          (t.description || "").toLowerCase().includes(q) ||
+          (t.referenceNumber || "").toLowerCase().includes(q) ||
+          (t.expenseCategory || "").toLowerCase().includes(q)
+      );
+      return matchName || matchTx;
+    });
+  }, [spendingAnalytics.personnelSummaries, spendingSearch]);
+
+  const toggleExpandSpending = (name: string) => {
+    setExpandedSpendingCards((prev) => ({ ...prev, [name]: !prev[name] }));
+  };
+
+  // Export Analytics report as CSV
+  const handleExportSpendingCSV = () => {
+    const headers = [
+      "Delivery Executive",
+      "Today Spent (₹)",
+      "This Week Spent (₹)",
+      "This Month Spent (₹)",
+      "Selected Period Total (₹)",
+      "Transaction Count",
+      "Top Category",
+    ];
+
+    const rows = spendingAnalytics.personnelSummaries.map((s) => [
+      `"${s.personnelName}"`,
+      s.todayAmount,
+      s.weekAmount,
+      s.monthAmount,
+      s.filteredAmount,
+      s.transactionCount,
+      `"${s.categoryBreakdown[0]?.category || "None"}"`,
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `delivery_personnel_spending_${spendingPeriod}_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Report Exported",
+      description: "Downloaded Delivery Personnel Spending Report (CSV).",
+    });
   };
 
   useEffect(() => {
@@ -572,22 +678,22 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Navigation & Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
+    <div className="space-y-5 w-full py-1">
+      {/* Unified Executive Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card/95 p-4 sm:p-5 rounded-2xl border border-border shadow-sm backdrop-blur-sm">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={onBack} className="gap-1.5 h-9 px-3">
-            <ArrowLeft className="w-4 h-4" />
-            <span className="font-semibold text-xs">Back to Choice</span>
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Truck className="w-5 h-5 text-teal-600" />
-              Delivery &amp; Field Personnel Analytics
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Complete operational analysis: who delivered what, items volume, hospital coverage, and return tracking.
-            </p>
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-accent border border-primary/20 text-accent-foreground flex items-center justify-center shadow-2xs">
+              <Truck className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold font-sans tracking-tight text-foreground">
+                Delivery &amp; Field Personnel Logistics
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Staff dispatch analytics, hospital coverage, returned item tracking, and personnel expense reports.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -674,7 +780,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
       )}
 
       {/* Filter Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-card dark:bg-slate-900 rounded-xl border border-border dark:border-slate-800 shadow-xs">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -693,12 +799,12 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
             placeholder="Search person, hospital, item or DC#..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 h-8 text-xs bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+            className="pl-9 h-8 text-xs bg-muted dark:bg-slate-950 border-border dark:border-slate-800"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-slate-700"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
             >
               ✕
             </button>
@@ -714,7 +820,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
             value={dateFilter}
             onValueChange={(val: any) => setDateFilter(val)}
           >
-            <SelectTrigger className="h-8 text-xs w-[130px] font-medium bg-slate-50 dark:bg-slate-950">
+            <SelectTrigger className="h-8 text-xs w-[130px] font-medium bg-muted dark:bg-slate-950">
               <SelectValue placeholder="Date range" />
             </SelectTrigger>
             <SelectContent>
@@ -735,7 +841,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
               <p className="text-[11px] font-semibold text-teal-800 dark:text-teal-300 uppercase tracking-wider">
                 Total DCs Delivered
               </p>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">
+              <h3 className="text-2xl font-black text-foreground dark:text-slate-100 mt-1">
                 {globalKpis.totalDcs}
               </h3>
               <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -754,7 +860,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
               <p className="text-[11px] font-semibold text-blue-800 dark:text-blue-300 uppercase tracking-wider">
                 Total Items &amp; Implants
               </p>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">
+              <h3 className="text-2xl font-black text-foreground dark:text-slate-100 mt-1">
                 {globalKpis.totalItems}
               </h3>
               <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -792,7 +898,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
               <p className="text-[11px] font-semibold text-purple-800 dark:text-purple-300 uppercase tracking-wider">
                 Star Deliverer
               </p>
-              <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-slate-100 mt-1 truncate max-w-[130px]">
+              <h3 className="text-base sm:text-lg font-black text-foreground dark:text-slate-100 mt-1 truncate max-w-[130px]">
                 {globalKpis.starDeliverer?.name || "None yet"}
               </h3>
               <p className="text-[10px] text-muted-foreground mt-0.5 font-medium">
@@ -808,32 +914,36 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
 
       {/* Main Tabbed Analysis Sections */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="bg-slate-100 dark:bg-slate-900 p-1 rounded-xl grid grid-cols-2 sm:grid-cols-4 h-auto gap-1 border border-slate-200 dark:border-slate-800">
-          <TabsTrigger value="leaderboard" className="text-xs py-1.5 font-bold gap-1.5">
+        <TabsList className="bg-muted p-1 rounded-xl grid grid-cols-2 sm:grid-cols-5 h-auto gap-1 border border-border">
+          <TabsTrigger value="leaderboard" className="text-xs py-1.5 font-bold gap-1.5 data-[state=active]:bg-card data-[state=active]:text-teal-800 data-[state=active]:shadow-2xs">
             <Users className="w-3.5 h-3.5 text-teal-600" />
             Personnel Leaderboard
           </TabsTrigger>
-          <TabsTrigger value="what_delivered" className="text-xs py-1.5 font-bold gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-blue-600" />
-            What Delivered (Item Analysis)
+          <TabsTrigger value="spending" className="text-xs py-1.5 font-bold gap-1.5 data-[state=active]:bg-card data-[state=active]:text-emerald-800 data-[state=active]:shadow-2xs">
+            <BadgeIndianRupee className="w-3.5 h-3.5 text-emerald-600" />
+            Spending &amp; Expenses
           </TabsTrigger>
-          <TabsTrigger value="pending_returns" className="text-xs py-1.5 font-bold gap-1.5">
+          <TabsTrigger value="what_delivered" className="text-xs py-1.5 font-bold gap-1.5 data-[state=active]:bg-card data-[state=active]:text-blue-800 data-[state=active]:shadow-2xs">
+            <Layers className="w-3.5 h-3.5 text-blue-600" />
+            What Delivered
+          </TabsTrigger>
+          <TabsTrigger value="pending_returns" className="text-xs py-1.5 font-bold gap-1.5 data-[state=active]:bg-card data-[state=active]:text-amber-800 data-[state=active]:shadow-2xs">
             <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
             Pending Returns ({globalKpis.pendingReturns})
           </TabsTrigger>
-          <TabsTrigger value="roster" className="text-xs py-1.5 font-bold gap-1.5">
+          <TabsTrigger value="roster" className="text-xs py-1.5 font-bold gap-1.5 data-[state=active]:bg-card data-[state=active]:text-purple-800 data-[state=active]:shadow-2xs">
             <UserCheck className="w-3.5 h-3.5 text-purple-600" />
-            Manage Personnel Directory
+            Personnel Directory
           </TabsTrigger>
         </TabsList>
 
         {/* TAB 1: PERSONNEL LEADERBOARD */}
         <TabsContent value="leaderboard" className="space-y-4">
-          <Card className="rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <Card className="rounded-xl border border-border dark:border-slate-800 shadow-xs">
             <CardHeader className="p-4 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <CardTitle className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <CardTitle className="text-sm sm:text-base font-bold text-foreground dark:text-slate-100 flex items-center gap-2">
                     <Users className="w-4 h-4 text-teal-600" />
                     Delivery Personnel Performance &amp; Activity
                   </CardTitle>
@@ -848,7 +958,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-950 text-muted-foreground border-b border-slate-200 dark:border-slate-800 font-bold uppercase text-[10px]">
+                <thead className="bg-muted dark:bg-slate-950 text-muted-foreground border-b border-border dark:border-slate-800 font-bold uppercase text-[10px]">
                   <tr>
                     <th className="py-2.5 px-4">Personnel Name</th>
                     <th className="py-2.5 px-3">Role</th>
@@ -879,7 +989,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                               {stat.name.charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                              <div className="font-bold text-foreground dark:text-slate-100 flex items-center gap-1.5">
                                 {stat.name}
                                 {idx === 0 && stat.totalDcs > 0 && (
                                   <Badge className="bg-amber-500 hover:bg-amber-600 text-slate-950 text-[9px] h-4 px-1 font-black">
@@ -896,7 +1006,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                           </div>
                         </td>
                         <td className="py-3 px-3">
-                          <Badge variant="outline" className="text-[10px] font-medium bg-slate-50 dark:bg-slate-900">
+                          <Badge variant="outline" className="text-[10px] font-medium bg-muted dark:bg-slate-900">
                             {stat.officialRecord?.role || "Staff"}
                           </Badge>
                         </td>
@@ -906,7 +1016,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                           </span>
                         </td>
                         <td className="py-3 px-3 text-center">
-                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                          <span className="font-bold text-foreground dark:text-slate-200">
                             {stat.totalItems}
                           </span>
                         </td>
@@ -920,7 +1030,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                           )}
                         </td>
                         <td className="py-3 px-3 text-center">
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          <span className="font-semibold text-foreground dark:text-slate-300">
                             {stat.totalReturnsCollected}
                           </span>
                         </td>
@@ -932,7 +1042,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                                 .map((h) => (
                                   <span
                                     key={h}
-                                    className="bg-slate-100 dark:bg-slate-800 text-[10px] px-1.5 py-0.5 rounded truncate max-w-[120px]"
+                                    className="bg-muted dark:bg-slate-800 text-[10px] px-1.5 py-0.5 rounded truncate max-w-[120px]"
                                     title={h}
                                   >
                                     {h}
@@ -971,13 +1081,467 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
           </Card>
         </TabsContent>
 
+        {/* TAB 2: SPENDING & EXPENSES REPORT (PER DELIVERY PERSON) */}
+        <TabsContent value="spending" className="space-y-4">
+          {/* Executive Summary KPI Cards (Pure Light Theme) */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Card className="border border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {spendingPeriod === "today"
+                    ? "Today's Spent"
+                    : spendingPeriod === "week"
+                    ? "This Week's Spent"
+                    : spendingPeriod === "month"
+                    ? "This Month's Spent"
+                    : "Total Spent"}
+                </div>
+                <div className="text-xl font-mono font-extrabold text-teal-800 mt-1">
+                  ₹{spendingAnalytics.totalSpent.toLocaleString("en-IN")}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  Today: ₹{spendingAnalytics.todayTotal.toLocaleString("en-IN")}
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-800 border border-teal-200 flex items-center justify-center shrink-0">
+                <BadgeIndianRupee className="w-5 h-5" />
+              </div>
+            </Card>
+
+            <Card className="border border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Top Spender
+                </div>
+                <div className="text-base font-bold text-foreground mt-1 truncate max-w-[130px]">
+                  {spendingAnalytics.topSpenderName}
+                </div>
+                <div className="text-[10px] text-emerald-700 font-mono font-semibold mt-0.5">
+                  ₹{spendingAnalytics.topSpenderAmount.toLocaleString("en-IN")} in period
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+            </Card>
+
+            <Card className="border border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Top Expense Type
+                </div>
+                <div className="text-sm font-bold text-foreground mt-1 truncate max-w-[130px]">
+                  {spendingAnalytics.topCategoryName}
+                </div>
+                <div className="text-[10px] text-amber-700 font-mono font-semibold mt-0.5">
+                  ₹{spendingAnalytics.topCategoryAmount.toLocaleString("en-IN")} total
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 flex items-center justify-center shrink-0">
+                <Fuel className="w-5 h-5" />
+              </div>
+            </Card>
+
+            <Card className="border border-border shadow-xs bg-card rounded-xl p-3.5 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Active Delivery Staff
+                </div>
+                <div className="text-xl font-bold text-foreground mt-1">
+                  {deliveryTeamNames.length} Executives
+                </div>
+                <div className="text-[10px] text-purple-700 font-semibold mt-0.5">
+                  Tracked in Roster
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 flex items-center justify-center shrink-0">
+                <Users className="w-5 h-5" />
+              </div>
+            </Card>
+          </div>
+
+          {/* Control Toolbar & Filters */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-xs">
+            {/* Search */}
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+              <Input
+                type="search"
+                value={spendingSearch}
+                onChange={(e) => setSpendingSearch(e.target.value)}
+                placeholder="Search executive, fuel, narration..."
+                className="pl-9 text-xs h-9 rounded-md bg-card border-border"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+              {/* Personnel Select Filter */}
+              <div className="w-44">
+                <Select value={spendingPerson} onValueChange={setSpendingPerson}>
+                  <SelectTrigger className="h-8 text-xs bg-card border-border">
+                    <SelectValue placeholder="All Executives" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border-border text-xs">
+                    <SelectItem value="all">All Delivery Executives</SelectItem>
+                    {deliveryTeamNames.map((name) => (
+                      <SelectItem key={name} value={name}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Time Period Filter Toggle */}
+              <div className="flex items-center gap-1 bg-muted p-1 rounded-lg border border-border text-xs">
+                <button
+                  onClick={() => setSpendingPeriod("today")}
+                  className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors cursor-pointer ${
+                    spendingPeriod === "today"
+                      ? "bg-card text-teal-800 shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => setSpendingPeriod("week")}
+                  className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors cursor-pointer ${
+                    spendingPeriod === "week"
+                      ? "bg-card text-teal-800 shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  This Week
+                </button>
+                <button
+                  onClick={() => setSpendingPeriod("month")}
+                  className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors cursor-pointer ${
+                    spendingPeriod === "month"
+                      ? "bg-card text-teal-800 shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  This Month
+                </button>
+                <button
+                  onClick={() => setSpendingPeriod("all")}
+                  className={`px-2.5 py-1 rounded-md font-semibold text-xs transition-colors cursor-pointer ${
+                    spendingPeriod === "all"
+                      ? "bg-card text-teal-800 shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  All Time
+                </button>
+              </div>
+
+              {/* Export Report */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExportSpendingCSV}
+                className="h-8 text-xs font-semibold gap-1.5 border-teal-300 text-teal-800 bg-teal-50 hover:bg-teal-100 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" /> Export Report
+              </Button>
+            </div>
+          </div>
+
+          {/* Delivery Personnel Cards Grid & Accordions */}
+          <div className="space-y-3">
+            {filteredSpendingSummaries.length === 0 ? (
+              <Card className="p-8 text-center text-muted-foreground border-dashed border-2 border-border bg-card rounded-xl">
+                <Users className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+                <p className="text-sm font-semibold">No expense records found for selected period.</p>
+                <p className="text-xs text-slate-400 mt-1">Expenses tagged from bank debits will appear here automatically.</p>
+              </Card>
+            ) : (
+              filteredSpendingSummaries.map((person) => {
+                const isExpanded = expandedSpendingCards[person.personnelName] ?? false;
+
+                return (
+                  <Card
+                    key={person.personnelName}
+                    className="border border-border shadow-xs bg-card rounded-xl overflow-hidden transition-all hover:border-slate-300"
+                  >
+                    {/* Header Row */}
+                    <div
+                      onClick={() => toggleExpandSpending(person.personnelName)}
+                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-muted/60 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-800 font-bold text-sm shrink-0 shadow-2xs">
+                          {person.personnelName.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-base text-foreground">
+                              {person.personnelName}
+                            </h3>
+                            <Badge variant="outline" className="text-[10px] font-semibold text-teal-800 bg-teal-50 border-teal-200">
+                              Delivery Executive
+                            </Badge>
+                          </div>
+
+                          {/* Mini Period Totals Pills */}
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-muted-foreground">
+                            <span className="font-medium">
+                              Today: <strong className="text-foreground">₹{person.todayAmount.toLocaleString("en-IN")}</strong>
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="font-medium">
+                              Week: <strong className="text-foreground">₹{person.weekAmount.toLocaleString("en-IN")}</strong>
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="font-medium">
+                              Month: <strong className="text-foreground">₹{person.monthAmount.toLocaleString("en-IN")}</strong>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Total Filtered Spent & Toggle Drawer */}
+                      <div className="flex items-center justify-between sm:justify-end gap-4">
+                        <div className="text-right">
+                          <div className="text-[10px] font-semibold text-muted-foreground uppercase">
+                            Selected Period Spent
+                          </div>
+                          <div className="text-lg font-mono font-extrabold text-teal-800">
+                            ₹{person.filteredAmount.toLocaleString("en-IN")}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {person.transactionCount} transfers
+                          </div>
+                        </div>
+
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full text-muted-foreground hover:text-foreground">
+                          {isExpanded ? (
+                            <ChevronUp className="w-5 h-5 text-teal-700" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-slate-400" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Category Pills Bar */}
+                    {person.categoryBreakdown.length > 0 && (
+                      <div className="px-4 pb-3 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2.5 bg-muted/50">
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase mr-1">
+                          Spent On:
+                        </span>
+                        {person.categoryBreakdown.map((cat) => (
+                          <div
+                            key={cat.category}
+                            className="px-2.5 py-1 rounded-lg bg-card border border-border text-[11px] font-semibold text-foreground flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Tag className="w-3.5 h-3.5 text-teal-600" />
+                            <span>{cat.category}:</span>
+                            <span className="font-mono text-teal-800">
+                              ₹{cat.amount.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Expandable Detailed Transaction History & Daily Route Timeline */}
+                    {isExpanded && (
+                      <div className="border-t border-border bg-muted p-4 space-y-4">
+                        {/* Daily Route Chain Timeline Grouped by Date */}
+                        {(() => {
+                          const dateGroups = new Map<string, BankTransaction[]>();
+                          person.transactions.forEach((tx) => {
+                            const dateKey = tx.date || "Unknown Date";
+                            if (!dateGroups.has(dateKey)) {
+                              dateGroups.set(dateKey, []);
+                            }
+                            dateGroups.get(dateKey)!.push(tx);
+                          });
+
+                          const sortedDates = Array.from(dateGroups.keys()).sort((a, b) => b.localeCompare(a));
+
+                          return (
+                            <div className="bg-card p-3.5 rounded-xl border border-border shadow-2xs space-y-3">
+                              <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                <MapPin className="w-4 h-4 text-teal-600" />
+                                <span>Daily Travel Route Timeline &amp; Route Chain</span>
+                              </h4>
+
+                              {sortedDates.length === 0 ? (
+                                <p className="text-xs text-muted-foreground italic">No routes recorded for this period.</p>
+                              ) : (
+                                <div className="space-y-2.5">
+                                  {sortedDates.map((dateKey) => {
+                                    const dayTxs = dateGroups.get(dateKey) || [];
+                                    const totalDaySpent = dayTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+                                    const totalDayDistance = dayTxs.reduce((sum, t) => sum + (t.travelDistanceKm || 0), 0);
+
+                                    const stops: string[] = [];
+                                    dayTxs.forEach((t) => {
+                                      const fromLoc = t.travelFromLocation || "SRR Warehouse";
+                                      const toLoc = t.travelToLocation || (t.expenseNotes ? `Destination (${t.expenseNotes})` : "Hospital / Site");
+
+                                      if (stops.length === 0) {
+                                        stops.push(fromLoc);
+                                      }
+                                      if (toLoc && stops[stops.length - 1] !== toLoc) {
+                                        stops.push(toLoc);
+                                      }
+                                    });
+
+                                    return (
+                                      <div
+                                        key={dateKey}
+                                        className="p-3 bg-muted rounded-lg border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                                      >
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-2">
+                                            <Badge className="bg-teal-700 text-white font-mono text-[10px] px-2 py-0.5 rounded-md">
+                                              {new Date(dateKey).toLocaleDateString("en-IN", {
+                                                weekday: "short",
+                                                day: "2-digit",
+                                                month: "short",
+                                                year: "numeric",
+                                              })}
+                                            </Badge>
+                                            <span className="text-muted-foreground text-[11px]">
+                                              ({dayTxs.length} transfer{dayTxs.length > 1 ? "s" : ""})
+                                            </span>
+                                            {totalDayDistance > 0 && (
+                                              <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-300 font-mono text-[10px]">
+                                                Distance: {totalDayDistance.toFixed(1)} km
+                                              </Badge>
+                                            )}
+                                          </div>
+
+                                          {/* Chained Route Sequence */}
+                                          <div className="flex flex-wrap items-center gap-1 mt-1 text-xs font-semibold text-foreground">
+                                            <span className="text-muted-foreground font-bold mr-1">Route Chain:</span>
+                                            {stops.map((stop, idx) => (
+                                              <React.Fragment key={idx}>
+                                                <span className="bg-card border border-border px-2 py-0.5 rounded-md text-teal-800 font-bold">
+                                                  {stop}
+                                                </span>
+                                                {idx < stops.length - 1 && (
+                                                  <span className="text-teal-600 font-extrabold text-sm">➔</span>
+                                                )}
+                                              </React.Fragment>
+                                            ))}
+                                          </div>
+                                        </div>
+
+                                        <div className="text-left sm:text-right shrink-0">
+                                          <div className="text-[10px] font-semibold text-muted-foreground uppercase">
+                                            Day Total Spent
+                                          </div>
+                                          <div className="text-sm font-mono font-extrabold text-teal-800">
+                                            ₹{totalDaySpent.toLocaleString("en-IN")}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Itemized Transaction Log Table */}
+                        <div>
+                          <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5 mb-2">
+                            <Layers className="w-4 h-4 text-teal-600" />
+                            <span>Itemized Transaction Log for {person.personnelName}</span>
+                          </h4>
+
+                          {person.transactions.length === 0 ? (
+                            <p className="text-xs text-muted-foreground italic py-2">
+                              No transactions recorded for this executive in the selected time period.
+                            </p>
+                          ) : (
+                            <div className="overflow-x-auto rounded-lg border border-border bg-card">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-muted border-b border-border text-muted-foreground font-semibold">
+                                    <th className="p-2.5 text-left">Date &amp; Time</th>
+                                    <th className="p-2.5 text-left">Account</th>
+                                    <th className="p-2.5 text-left">Payee / Narration / UTR</th>
+                                    <th className="p-2.5 text-left">Category</th>
+                                    <th className="p-2.5 text-right">Amount (₹)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {person.transactions.map((tx) => {
+                                    const acc = bankAccounts.find((a) => a.id === tx.accountId);
+                                    return (
+                                      <tr key={tx.id} className="hover:bg-muted/60">
+                                        <td className="p-2.5 whitespace-nowrap">
+                                          <div className="font-bold text-foreground">
+                                            {new Date(tx.date).toLocaleDateString("en-IN", {
+                                              day: "2-digit",
+                                              month: "short",
+                                              year: "numeric",
+                                            })}
+                                          </div>
+                                          {tx.time && <div className="text-[10px] text-muted-foreground">{tx.time}</div>}
+                                        </td>
+                                        <td className="p-2.5 whitespace-nowrap font-medium text-foreground">
+                                          {acc?.accountName || "Bank Account"}
+                                        </td>
+                                        <td className="p-2.5">
+                                          <div className="font-medium text-foreground">
+                                            {tx.description}
+                                          </div>
+                                          {tx.referenceNumber && (
+                                            <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                                              Ref: {tx.referenceNumber}
+                                            </div>
+                                          )}
+                                          {(tx.travelFromLocation || tx.travelToLocation || tx.travelDistanceKm) && (
+                                            <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md inline-flex">
+                                              <MapPin className="w-3 h-3 text-teal-600 shrink-0" />
+                                              <span>
+                                                Route: {tx.travelFromLocation || "SRR Warehouse"} ➔ {tx.travelToLocation || "Hospital"}
+                                                {tx.travelDistanceKm ? ` (${tx.travelDistanceKm} km)` : ''}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="p-2.5 whitespace-nowrap">
+                                          <Badge variant="outline" className="text-[10px] font-semibold bg-muted text-foreground border-slate-300 gap-1">
+                                            <Tag className="w-3 h-3 text-teal-600" />
+                                            <span>{tx.expenseCategory || "General"}</span>
+                                          </Badge>
+                                        </td>
+                                        <td className="p-2.5 text-right whitespace-nowrap font-mono font-bold text-sm text-rose-600">
+                                          -₹{tx.amount.toLocaleString("en-IN")}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </TabsContent>
+
         {/* TAB 2: WHAT DELIVERED (ITEM-LEVEL BREAKDOWN) */}
         <TabsContent value="what_delivered" className="space-y-4">
-          <Card className="rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <Card className="rounded-xl border border-border dark:border-slate-800 shadow-xs">
             <CardHeader className="p-4 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <CardTitle className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <CardTitle className="text-sm sm:text-base font-bold text-foreground dark:text-slate-100 flex items-center gap-2">
                     <Layers className="w-4 h-4 text-blue-600" />
                     Complete Item &amp; Implant Delivery Breakdown
                   </CardTitle>
@@ -992,7 +1556,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                     value={selectedPersonFilter}
                     onValueChange={setSelectedPersonFilter}
                   >
-                    <SelectTrigger className="h-8 text-xs w-[180px] font-bold bg-white dark:bg-slate-900 border-teal-300">
+                    <SelectTrigger className="h-8 text-xs w-[180px] font-bold bg-card dark:bg-slate-900 border-teal-300">
                       <SelectValue placeholder="All Personnel" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1011,7 +1575,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-950 text-muted-foreground border-b border-slate-200 dark:border-slate-800 font-bold uppercase text-[10px]">
+                <thead className="bg-muted dark:bg-slate-950 text-muted-foreground border-b border-border dark:border-slate-800 font-bold uppercase text-[10px]">
                   <tr>
                     <th className="py-2.5 px-4">Item / Implant Name</th>
                     <th className="py-2.5 px-3 text-center">Total Delivered</th>
@@ -1033,10 +1597,10 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                     itemDeliveryBreakdown.map((item) => (
                       <tr
                         key={item.name}
-                        className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+                        className="hover:bg-muted/70 dark:hover:bg-slate-900/40 transition-colors"
                       >
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900 dark:text-slate-100 max-w-xs truncate" title={item.name}>
+                          <div className="font-bold text-foreground dark:text-slate-100 max-w-xs truncate" title={item.name}>
                             {item.name}
                           </div>
                         </td>
@@ -1080,7 +1644,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                             {Array.from(item.hospitals).slice(0, 2).map((hosp) => (
                               <span
                                 key={hosp}
-                                className="bg-slate-100 dark:bg-slate-800 text-[10px] px-1.5 py-0.5 rounded truncate max-w-[110px]"
+                                className="bg-muted dark:bg-slate-800 text-[10px] px-1.5 py-0.5 rounded truncate max-w-[110px]"
                                 title={hosp}
                               >
                                 {hosp}
@@ -1103,7 +1667,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
 
           {/* DC Dossier List for selected person */}
           {selectedPersonFilter !== "all" && (
-            <Card className="rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <Card className="rounded-xl border border-border dark:border-slate-800 shadow-xs">
               <CardHeader className="p-4 pb-2 border-b border-slate-100 dark:border-slate-800">
                 <CardTitle className="text-sm font-bold flex items-center justify-between">
                   <span>Challans Delivered by {selectedPersonFilter}</span>
@@ -1119,7 +1683,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
               </CardHeader>
               <CardContent className="p-0 overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-950 text-muted-foreground text-[10px] uppercase font-bold border-b border-slate-200 dark:border-slate-800">
+                  <thead className="bg-muted dark:bg-slate-950 text-muted-foreground text-[10px] uppercase font-bold border-b border-border dark:border-slate-800">
                     <tr>
                       <th className="py-2 px-3">DC No</th>
                       <th className="py-2 px-3">Date</th>
@@ -1135,14 +1699,14 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                         (dc) => dc.deliveredBy?.trim().toLowerCase() === selectedPersonFilter.toLowerCase()
                       )
                       .map((dc) => (
-                        <tr key={dc.id} className="hover:bg-slate-50 dark:hover:bg-slate-900">
+                        <tr key={dc.id} className="hover:bg-muted dark:hover:bg-slate-900">
                           <td className="py-2.5 px-3 font-bold text-teal-700 dark:text-teal-400">
                             #{dc.dcNo}
                           </td>
                           <td className="py-2.5 px-3 text-muted-foreground text-[11px]">
                             {dc.savedAt ? new Date(dc.savedAt).toLocaleDateString("en-IN") : "-"}
                           </td>
-                          <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                          <td className="py-2.5 px-3 font-semibold text-foreground dark:text-slate-200">
                             {dc.hospitalName}
                           </td>
                           <td className="py-2.5 px-3">
@@ -1195,7 +1759,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-950 text-muted-foreground border-b border-slate-200 dark:border-slate-800 font-bold uppercase text-[10px]">
+                <thead className="bg-muted dark:bg-slate-950 text-muted-foreground border-b border-border dark:border-slate-800 font-bold uppercase text-[10px]">
                   <tr>
                     <th className="py-2.5 px-4">DC Number</th>
                     <th className="py-2.5 px-3">Delivery Date</th>
@@ -1226,13 +1790,13 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                           key={dc.id}
                           className="hover:bg-amber-50/30 dark:hover:bg-amber-950/10 transition-colors"
                         >
-                          <td className="py-3 px-4 font-bold text-slate-900 dark:text-slate-100">
+                          <td className="py-3 px-4 font-bold text-foreground dark:text-slate-100">
                             #{dc.dcNo}
                           </td>
                           <td className="py-3 px-3 text-muted-foreground text-[11px]">
                             {dcDate.toLocaleDateString("en-IN")}
                           </td>
-                          <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                          <td className="py-3 px-3 font-semibold text-foreground dark:text-slate-200">
                             {dc.hospitalName}
                           </td>
                           <td className="py-3 px-3">
@@ -1269,11 +1833,11 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
 
         {/* TAB 4: ROSTER MANAGEMENT */}
         <TabsContent value="roster" className="space-y-4">
-          <Card className="rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <Card className="rounded-xl border border-border dark:border-slate-800 shadow-xs">
             <CardHeader className="p-4 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <CardTitle className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <CardTitle className="text-sm sm:text-base font-bold text-foreground dark:text-slate-100 flex items-center gap-2">
                     <UserCheck className="w-4 h-4 text-purple-600" />
                     Delivery Personnel Directory
                   </CardTitle>
@@ -1308,7 +1872,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                   return (
                     <div
                       key={p.id}
-                      className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col justify-between gap-3 hover:border-teal-500/40 transition-all"
+                      className="p-3.5 rounded-xl border border-border dark:border-slate-800 bg-muted/50 dark:bg-slate-900/50 flex flex-col justify-between gap-3 hover:border-teal-500/40 transition-all"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -1316,7 +1880,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                             {p.name.charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <div className="font-bold text-slate-900 dark:text-slate-100 truncate text-xs sm:text-sm">
+                            <div className="font-bold text-foreground dark:text-slate-100 truncate text-xs sm:text-sm">
                               {p.name}
                             </div>
                             <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
@@ -1338,7 +1902,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                             variant="ghost"
                             size="icon"
                             onClick={() => handleOpenEdit(p)}
-                            className="h-7 w-7 text-slate-500 hover:text-teal-700"
+                            className="h-7 w-7 text-muted-foreground hover:text-teal-700"
                             title="Edit"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -1355,7 +1919,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                         </div>
                       </div>
 
-                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[11px] flex items-center justify-between text-muted-foreground">
+                      <div className="pt-2 border-t border-border/60 dark:border-slate-800 text-[11px] flex items-center justify-between text-muted-foreground">
                         <span>Total Historical Deliveries:</span>
                         <span className="font-extrabold text-teal-700 dark:text-teal-400">
                           {matchingStat?.totalDcs || 0} DCs
@@ -1456,7 +2020,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
       <Dialog open={mergeModalOpen} onOpenChange={setMergeModalOpen}>
         <DialogContent className="max-w-md border-2 border-amber-500/30">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground dark:text-slate-100">
               <GitMerge className="w-5 h-5 text-amber-600" />
               Merge Duplicate Personnel
             </DialogTitle>
@@ -1477,10 +2041,10 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
                   {detectedDuplicates.map((dup, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-amber-200/60 dark:border-slate-800 text-xs gap-2"
+                      className="flex items-center justify-between p-2 rounded-lg bg-card dark:bg-slate-900 border border-amber-200/60 dark:border-slate-800 text-xs gap-2"
                     >
                       <div className="min-w-0">
-                        <span className="font-bold text-slate-800 dark:text-slate-200">
+                        <span className="font-bold text-foreground dark:text-slate-200">
                           {dup.source}
                         </span>
                         <span className="text-muted-foreground mx-1 text-[11px]">➔</span>
@@ -1506,7 +2070,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
             {/* Manual Merge Form */}
             <div className="space-y-3 pt-1">
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                   1. Duplicate Person to Merge (Source)
                 </Label>
                 <Select value={mergeSource} onValueChange={setMergeSource}>
@@ -1524,7 +2088,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
               </div>
 
               <div>
-                <Label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                <Label className="text-xs font-bold text-foreground dark:text-slate-200">
                   2. Canonical Person to Keep (Target)
                 </Label>
                 <Select value={mergeTarget} onValueChange={setMergeTarget}>
@@ -1544,7 +2108,7 @@ export const DeliveryPersonnelAdmin: React.FC<DeliveryPersonnelAdminProps> = ({ 
               </div>
             </div>
 
-            <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-900 text-[11px] text-muted-foreground">
+            <div className="p-2.5 rounded-lg bg-muted dark:bg-slate-900 text-[11px] text-muted-foreground">
               ⚠️ All DCs matching the duplicate person will be re-assigned to the target person, consolidating all stats and leaving a single clean name.
             </div>
 
