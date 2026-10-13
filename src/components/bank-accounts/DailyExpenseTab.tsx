@@ -46,6 +46,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -623,7 +624,7 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
                                 const stops: string[] = [];
                                 dayTxs.forEach((t) => {
                                   const fromLoc = t.travelFromLocation || "SRR Warehouse";
-                                  const toLoc = t.travelToLocation || (t.expenseNotes ? `Destination (${t.expenseNotes})` : "Hospital / Site");
+                                  const toLoc = t.travelToLocation || (t.remarks || t.expenseNotes ? `Destination (${t.remarks || t.expenseNotes})` : "Hospital / Site");
 
                                   if (stops.length === 0) {
                                     stops.push(fromLoc);
@@ -751,6 +752,12 @@ export const DailyExpenseTab: React.FC<DailyExpenseTabProps> = ({
                                           {tx.travelPurposeNote && (
                                             <span className="text-slate-500 font-normal">({tx.travelPurposeNote})</span>
                                           )}
+                                        </div>
+                                      )}
+                                      {(tx.remarks || tx.expenseNotes) && (
+                                        <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-md inline-flex">
+                                          <FileText className="w-3 h-3 text-amber-600 shrink-0" />
+                                          <span>Remarks: {tx.remarks || tx.expenseNotes}</span>
                                         </div>
                                       )}
                                     </td>

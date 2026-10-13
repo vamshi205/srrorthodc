@@ -470,7 +470,7 @@ export const BankAccountsView: React.FC = () => {
 
   const handleOpenRemarksModal = (tx: BankTransaction) => {
     setRemarksTargetTx(tx);
-    setModalExpenseNotes(tx.expenseNotes || "");
+    setModalExpenseNotes(tx.remarks || tx.expenseNotes || "");
     setModalTravelFrom(tx.travelFromLocation || "");
     setModalTravelTo(tx.travelToLocation || "");
     setModalTravelDistance(tx.travelDistanceKm ? String(tx.travelDistanceKm) : "");
@@ -483,15 +483,17 @@ export const BankAccountsView: React.FC = () => {
     if (!remarksTargetTx) return;
     setIsSavingRemarks(true);
     try {
+      const cleanRemarks = modalExpenseNotes.trim();
       const updatedTx: BankTransaction = {
         ...remarksTargetTx,
-        expenseNotes: modalExpenseNotes.trim() || undefined,
+        expenseNotes: cleanRemarks || undefined,
+        remarks: cleanRemarks || undefined,
         travelFromLocation: modalTravelFrom.trim() || undefined,
         travelToLocation: modalTravelTo.trim() || undefined,
         travelDistanceKm: modalTravelDistance.trim() ? Number(modalTravelDistance) : undefined,
         travelPurposeNote: modalTravelPurpose.trim() || undefined,
         expensePersonnelName: modalPersonnelName.trim() || undefined,
-        isExpenseTagged: Boolean(modalExpenseNotes.trim() || modalTravelFrom.trim() || modalPersonnelName.trim()),
+        isExpenseTagged: Boolean(cleanRemarks || modalTravelFrom.trim() || modalPersonnelName.trim()),
         taggedAt: new Date().toISOString(),
         updatedAt: Date.now(),
       };
@@ -605,7 +607,17 @@ export const BankAccountsView: React.FC = () => {
       fetchLimit
     );
 
-    return () => unsubscribe();
+    const handleTxUpdate = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setTransactions(e.detail);
+      }
+    };
+    window.addEventListener('srrortho:bank_transactions_updated', handleTxUpdate);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('srrortho:bank_transactions_updated', handleTxUpdate);
+    };
   }, [fetchLimit]);
 
   // Load DC Tracker Saved DCs for Cash Queue integration
@@ -2811,7 +2823,7 @@ export const BankAccountsView: React.FC = () => {
                                 type="button"
                                 onClick={() => handleOpenRemarksModal(tx)}
                                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors ${
-                                  tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
+                                  tx.remarks || tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
                                     ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold"
                                     : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
                                 }`}
@@ -2819,8 +2831,8 @@ export const BankAccountsView: React.FC = () => {
                               >
                                 <Edit className="w-2.5 h-2.5 text-amber-600 shrink-0" />
                                 <span>
-                                  {tx.expenseNotes
-                                    ? tx.expenseNotes
+                                  {tx.remarks || tx.expenseNotes
+                                    ? (tx.remarks || tx.expenseNotes)
                                     : tx.travelFromLocation && tx.travelToLocation
                                     ? `Route: ${tx.travelFromLocation} → ${tx.travelToLocation}`
                                     : tx.travelPurposeNote
@@ -3138,15 +3150,15 @@ export const BankAccountsView: React.FC = () => {
                         type="button"
                         onClick={() => handleOpenRemarksModal(tx)}
                         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border ${
-                          tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
+                          tx.remarks || tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
                             ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold"
                             : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400"
                         }`}
                       >
                         <Edit className="w-2.5 h-2.5 text-amber-600 shrink-0" />
                         <span>
-                          {tx.expenseNotes
-                            ? tx.expenseNotes
+                          {tx.remarks || tx.expenseNotes
+                            ? (tx.remarks || tx.expenseNotes)
                             : tx.travelFromLocation && tx.travelToLocation
                             ? `Route: ${tx.travelFromLocation} → ${tx.travelToLocation}`
                             : tx.travelPurposeNote
@@ -3808,6 +3820,11 @@ export const BankAccountsView: React.FC = () => {
           transactions={transactions}
           accounts={accounts}
           onRefresh={() => loadAllData(true)}
+          onUpdateTransaction={(updatedTx) => {
+            setTransactions((prev) =>
+              prev.map((t) => (t.id === updatedTx.id ? updatedTx : t))
+            );
+          }}
           is6569Unlocked={is6569Unlocked}
           onUnlock6569={() => setIs6569AuthDialogOpen(true)}
           ledgerConfig={ledgerConfig}

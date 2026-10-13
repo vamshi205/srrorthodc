@@ -69,6 +69,7 @@ export interface BankTransaction {
   expensePersonnelName?: string;
   expenseCategory?: ExpenseCategory;
   expenseNotes?: string;
+  remarks?: string;
   isExpenseTagged?: boolean;
   taggedAt?: string;
   autoTagConfidence?: number;
@@ -1064,6 +1065,8 @@ export async function recordCashPaymentToCashInHand(
       linkedCustomerName: dc.hospitalName,
       linkedHospital: dc.hospitalName,
       createdSource: 'cash_invoice_link',
+      remarks: remarks || undefined,
+      expenseNotes: remarks || undefined,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };

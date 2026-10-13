@@ -45,6 +45,7 @@ import {
   Mail,
   Download,
   Lock,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,6 +74,7 @@ interface ExpenseTaggingTabProps {
   transactions: BankTransaction[];
   accounts: BankAccount[];
   onRefresh: () => void;
+  onUpdateTransaction?: (tx: BankTransaction) => void;
   is6569Unlocked?: boolean;
   onUnlock6569?: () => void;
   ledgerConfig?: LedgerDisplayConfig;
@@ -96,6 +98,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   transactions,
   accounts,
   onRefresh,
+  onUpdateTransaction,
   is6569Unlocked = false,
   onUnlock6569,
   ledgerConfig,
@@ -170,6 +173,13 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   const [routeTo, setRouteTo] = useState("");
   const [routeDistance, setRouteDistance] = useState("");
   const [routePurpose, setRoutePurpose] = useState("");
+  const [routeRemarks, setRouteRemarks] = useState("");
+
+  // Remarks Modal State
+  const [isRemarksModalOpen, setIsRemarksModalOpen] = useState(false);
+  const [editingTxForRemarks, setEditingTxForRemarks] = useState<BankTransaction | null>(null);
+  const [remarksInput, setRemarksInput] = useState("");
+  const [isSavingRemarks, setIsSavingRemarks] = useState(false);
 
   // Email Alert Details Modal State
   const [viewEmailTx, setViewEmailTx] = useState<BankTransaction | null>(null);
@@ -180,6 +190,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     setRouteTo(tx.travelToLocation || "");
     setRouteDistance(tx.travelDistanceKm ? String(tx.travelDistanceKm) : "");
     setRoutePurpose(tx.travelPurposeNote || "");
+    setRouteRemarks(tx.remarks || tx.expenseNotes || "");
     setIsRouteModalOpen(true);
   };
 
@@ -188,16 +199,23 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
     setIsSaving(true);
     try {
       const distNum = parseFloat(routeDistance);
+      const cleanRemarks = routeRemarks.trim();
       const updated: BankTransaction = {
         ...editingTxForRoute,
         travelFromLocation: routeFrom.trim() || "SRR Warehouse (Kalyan Nagar)",
         travelToLocation: routeTo.trim(),
         travelDistanceKm: !isNaN(distNum) && distNum > 0 ? distNum : undefined,
-        travelPurposeNote: routePurpose.trim(),
+        travelPurposeNote: routePurpose.trim() || undefined,
+        remarks: cleanRemarks || editingTxForRoute.remarks || editingTxForRoute.expenseNotes || undefined,
+        expenseNotes: cleanRemarks || editingTxForRoute.expenseNotes || editingTxForRoute.remarks || undefined,
         isExpenseTagged: true,
-        taggedAt: new Date().toISOString(),
+        taggedAt: editingTxForRoute.taggedAt || new Date().toISOString(),
+        updatedAt: Date.now(),
       };
       await saveBankTransactionToFirestore(updated, false);
+      if (onUpdateTransaction) {
+        onUpdateTransaction(updated);
+      }
       toast.success(`Saved Travel Route (${routeFrom} ➔ ${routeTo || 'Destination'}${distNum ? `, ${distNum} km` : ''}) for ${editingTxForRoute.expensePersonnelName || 'Executive'}`);
       setIsRouteModalOpen(false);
       setEditingTxForRoute(null);
@@ -206,6 +224,40 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
       toast.error("Failed to save travel route details");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleOpenRemarksModal = (tx: BankTransaction) => {
+    setEditingTxForRemarks(tx);
+    setRemarksInput(tx.remarks || tx.expenseNotes || "");
+    setIsRemarksModalOpen(true);
+  };
+
+  const handleSaveRemarks = async () => {
+    if (!editingTxForRemarks) return;
+    setIsSavingRemarks(true);
+    try {
+      const cleanRemarks = remarksInput.trim();
+      const updated: BankTransaction = {
+        ...editingTxForRemarks,
+        remarks: cleanRemarks || undefined,
+        expenseNotes: cleanRemarks || undefined,
+        isExpenseTagged: Boolean(cleanRemarks || editingTxForRemarks.expensePersonnelName || editingTxForRemarks.travelFromLocation),
+        taggedAt: editingTxForRemarks.taggedAt || new Date().toISOString(),
+        updatedAt: Date.now(),
+      };
+      await saveBankTransactionToFirestore(updated, false);
+      if (onUpdateTransaction) {
+        onUpdateTransaction(updated);
+      }
+      toast.success(cleanRemarks ? `Saved remarks: "${cleanRemarks}"` : "Remarks cleared");
+      setIsRemarksModalOpen(false);
+      setEditingTxForRemarks(null);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save remarks");
+    } finally {
+      setIsSavingRemarks(false);
     }
   };
 
@@ -363,7 +415,8 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
         referenceNumber: `EXP-${Date.now().toString().slice(-6)}`,
         expensePersonnelName: normalizePersonnelName(manualPersonnel) || manualPersonnel,
         expenseCategory: manualCategory,
-        expenseNotes: manualNotes.trim(),
+        remarks: manualNotes.trim() || undefined,
+        expenseNotes: manualNotes.trim() || undefined,
         isExpenseTagged: true,
         taggedAt: now.toISOString(),
         createdSource: "manual",
@@ -916,11 +969,12 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                           {/* Route & Purpose Justification Action / Badge */}
                           {tx.travelFromLocation || tx.travelToLocation || tx.travelDistanceKm ? (
                             <button
+                              type="button"
                               onClick={() => handleOpenRouteModal(tx)}
                               className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-800 px-2 py-0.5 rounded-md hover:bg-teal-100"
                               title="Click to edit travel route details"
                             >
-                              <MapPin className="w-3 h-3 text-teal-600" />
+                              <MapPin className="w-3 h-3 text-teal-600 shrink-0" />
                               <span>
                                 {tx.travelFromLocation || "SRR Warehouse"} ➔ {tx.travelToLocation || "Hospital"}
                                 {tx.travelDistanceKm ? ` (${tx.travelDistanceKm} km)` : ''}
@@ -930,10 +984,35 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                             <Button
                               size="sm"
                               variant="ghost"
+                              type="button"
                               onClick={() => handleOpenRouteModal(tx)}
                               className="h-6 px-2 text-[10px] font-semibold text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 rounded-md"
                             >
                               <MapPin className="w-3 h-3" /> Add Route
+                            </Button>
+                          )}
+
+                          {/* Remarks Action / Badge (Next to Add Route) */}
+                          {tx.remarks || tx.expenseNotes ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRemarksModal(tx)}
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 px-2 py-0.5 rounded-md hover:bg-amber-100 max-w-[220px]"
+                              title={`Remarks: ${tx.remarks || tx.expenseNotes} (Click to edit)`}
+                            >
+                              <FileText className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span className="truncate">{tx.remarks || tx.expenseNotes}</span>
+                            </button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              type="button"
+                              onClick={() => handleOpenRemarksModal(tx)}
+                              className="h-6 px-2 text-[10px] font-semibold text-amber-700 hover:text-amber-900 hover:bg-amber-50 gap-1 rounded-md"
+                              title="Add remarks / expense notes"
+                            >
+                              <FileText className="w-3 h-3" /> Add Remarks
                             </Button>
                           )}
                         </div>
@@ -1172,7 +1251,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                       onClick={() => handleOpenRouteModal(tx)}
                       className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-800 px-2 py-0.5 rounded hover:bg-teal-100"
                     >
-                      <MapPin className="w-3 h-3 text-teal-600" />
+                      <MapPin className="w-3 h-3 text-teal-600 shrink-0" />
                       <span>
                         {tx.travelFromLocation || "SRR Warehouse"} ➔ {tx.travelToLocation || "Hospital"}
                         {tx.travelDistanceKm ? ` (${tx.travelDistanceKm} km)` : ''}
@@ -1185,6 +1264,27 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                       className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200"
                     >
                       <MapPin className="w-3 h-3" /> Log Route
+                    </button>
+                  )}
+
+                  {/* Remarks Action / Badge (Next to Route) */}
+                  {tx.remarks || tx.expenseNotes ? (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRemarksModal(tx)}
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 px-2 py-0.5 rounded hover:bg-amber-100 max-w-[140px]"
+                      title={`Remarks: ${tx.remarks || tx.expenseNotes} (Click to edit)`}
+                    >
+                      <FileText className="w-3 h-3 text-amber-600 shrink-0" />
+                      <span className="truncate">{tx.remarks || tx.expenseNotes}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRemarksModal(tx)}
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200"
+                    >
+                      <FileText className="w-3 h-3" /> Add Remarks
                     </button>
                   )}
                 </div>
@@ -1339,6 +1439,16 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
                 rows={2}
               />
             </div>
+
+            <div>
+              <Label className="text-xs font-semibold">Remarks / Expense Notes (Optional)</Label>
+              <Input
+                value={routeRemarks}
+                onChange={(e) => setRouteRemarks(e.target.value)}
+                placeholder="e.g. Fuel for Yashoda delivery / Urgent trip"
+                className="mt-1 h-9 text-xs rounded-xl"
+              />
+            </div>
           </div>
 
           <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
@@ -1356,6 +1466,107 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
               className="h-9 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-xl shadow-xs"
             >
               {isSaving ? "Saving..." : "Save Route & Justification"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transaction Remarks & Notes Modal */}
+      <Dialog open={isRemarksModalOpen} onOpenChange={setIsRemarksModalOpen}>
+        <DialogContent className="w-[94vw] max-w-[94vw] sm:max-w-md p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0">
+          <DialogHeader className="p-5 bg-amber-50/80 dark:bg-amber-950/40 border-b border-amber-200/80 dark:border-amber-900/40">
+            <DialogTitle className="text-base font-bold text-amber-950 dark:text-amber-100 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-amber-600" />
+              <span>Transaction Remarks &amp; Expense Notes</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+              Add or update remarks for ₹{editingTxForRemarks?.amount?.toLocaleString("en-IN")} (Ref: {editingTxForRemarks?.referenceNumber || editingTxForRemarks?.id}). These remarks sync seamlessly with the Ledger.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-5 space-y-4 text-xs">
+            {/* Context Summary */}
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-[11px] space-y-1">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Date: <span className="font-semibold text-foreground">{editingTxForRemarks?.date}</span></span>
+                <span>Amount: <span className="font-mono font-bold text-rose-600 dark:text-rose-400">-₹{editingTxForRemarks?.amount?.toLocaleString("en-IN")}</span></span>
+              </div>
+              <div className="text-muted-foreground truncate">
+                Desc: <span className="text-foreground font-medium">{editingTxForRemarks?.description}</span>
+              </div>
+              {editingTxForRemarks?.expensePersonnelName && (
+                <div className="text-muted-foreground">
+                  Executive: <span className="text-emerald-700 dark:text-emerald-400 font-bold">{editingTxForRemarks.expensePersonnelName}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-xs font-semibold">Remarks / Expense Notes</Label>
+                {remarksInput && (
+                  <button
+                    type="button"
+                    onClick={() => setRemarksInput("")}
+                    className="text-[10px] text-muted-foreground hover:text-rose-600 underline"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Pills */}
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {[
+                  "Fuel for delivery",
+                  "Lunch / Food allowance",
+                  "Urgent OT Implant drop",
+                  "Tray Return pickup",
+                  "Vehicle repair & puncture",
+                  "Toll / Parking charges",
+                  "Cash Advance",
+                ].map((pill) => (
+                  <button
+                    key={pill}
+                    type="button"
+                    onClick={() => setRemarksInput(pill)}
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border transition-colors ${
+                      remarksInput === pill
+                        ? "bg-amber-600 text-white border-amber-600"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                    }`}
+                  >
+                    {pill}
+                  </button>
+                ))}
+              </div>
+
+              <Textarea
+                value={remarksInput}
+                onChange={(e) => setRemarksInput(e.target.value)}
+                placeholder="Enter remarks or note for this transaction..."
+                className="text-xs rounded-xl resize-none font-medium"
+                rows={3}
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsRemarksModalOpen(false)}
+              disabled={isSavingRemarks}
+              className="h-9 text-xs rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveRemarks}
+              disabled={isSavingRemarks}
+              className="h-9 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs"
+            >
+              {isSavingRemarks ? "Saving..." : "Save Remarks"}
             </Button>
           </DialogFooter>
         </DialogContent>

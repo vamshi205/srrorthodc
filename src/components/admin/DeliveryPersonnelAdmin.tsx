@@ -1381,7 +1381,7 @@ export const DeliveryPersonnelAdmin: React.FC = () => {
                                     const stops: string[] = [];
                                     dayTxs.forEach((t) => {
                                       const fromLoc = t.travelFromLocation || "SRR Warehouse";
-                                      const toLoc = t.travelToLocation || (t.expenseNotes ? `Destination (${t.expenseNotes})` : "Hospital / Site");
+                                      const toLoc = t.travelToLocation || (t.remarks || t.expenseNotes ? `Destination (${t.remarks || t.expenseNotes})` : "Hospital / Site");
 
                                       if (stops.length === 0) {
                                         stops.push(fromLoc);
