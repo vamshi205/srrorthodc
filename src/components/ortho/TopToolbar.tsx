@@ -212,6 +212,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               </div>
               <div className="text-[11px] text-teal-100/80 font-semibold truncate">Operations Portal</div>
             </div>
+            {isBankAccounts && (
+              <div className="min-w-0 md:hidden">
+                <div className="font-sans font-extrabold text-xs text-white leading-tight truncate flex items-center gap-1">
+                  <Landmark className="w-3 h-3 text-teal-300 shrink-0" />
+                  <span className="truncate">Bank Accounts</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -332,21 +340,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
           {/* Right Side: Quick Actions & Utilities */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* Refresh Data on DC routes */}
-            {(isProcedureList || isManualDc) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="hidden sm:flex text-teal-50 hover:bg-white/15 hover:text-white h-8 px-2.5 gap-1.5 text-xs font-semibold border border-white/20 rounded-lg bg-white/10"
-                onClick={() => fetchProcedures(true)}
-                disabled={loading}
-                title="Refresh Procedures"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 text-teal-200 ${loading ? 'animate-spin' : ''}`} />
-                <span className="hidden xl:inline">{loading ? '...' : 'Refresh'}</span>
-              </Button>
-            )}
-
             {/* Print Action on DC routes */}
             {(isProcedureList || isManualDc) && (
               <Button
@@ -378,6 +371,20 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                 </span>
               )}
             </Button>
+
+            {/* Refresh Procedures & Catalog Data on DC routes (Icon only) */}
+            {(isProcedureList || isManualDc) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-teal-50 hover:bg-white/20 border border-white/20 rounded-lg bg-white/10 transition-all"
+                onClick={() => fetchProcedures(true)}
+                disabled={loading}
+                title="Refresh Procedures & Catalog Data"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-teal-200 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            )}
 
             <Button
               variant="ghost"

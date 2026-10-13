@@ -2353,9 +2353,9 @@ export const BankAccountsView: React.FC = () => {
   return (
     <div className="w-full flex-1 flex flex-col space-y-4 font-sans text-foreground">
       {/* DC Tracker Styled Tab Bar */}
-      <div className="w-full overflow-x-auto pb-0.5">
+      <div className="w-full pb-0.5">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-          <TabsList className="grid h-11 grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 shadow-2xs w-full min-w-[500px] sm:min-w-0">
+          <TabsList className="grid grid-cols-2 sm:grid-cols-4 h-auto sm:h-11 gap-1.5 sm:gap-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 p-1 shadow-2xs w-full min-w-0">
             {/* 1. Ledger */}
             <TabsTrigger
               value="ledger"
@@ -2434,23 +2434,23 @@ export const BankAccountsView: React.FC = () => {
       {activeTab === "ledger" && (
         <div className="space-y-3">
           {/* Action Toolbar */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 bg-card p-2.5 sm:p-3 rounded-xl border border-border shadow-sm">
             {/* Search Input */}
-            <div className="relative w-full sm:w-96">
+            <div className="relative w-full sm:w-80 md:w-96">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground pointer-events-none" />
               <Input
                 type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search narration, UTR #, invoice, customer..."
-                className="pl-9 text-xs h-9 rounded-md"
+                className="pl-9 text-xs h-9 rounded-md w-full"
               />
             </div>
 
             {/* Account Selector, Add Account & Actions */}
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-                <SelectTrigger className="h-8 text-xs font-semibold w-auto min-w-[170px] rounded-md">
+                <SelectTrigger className="h-8 text-xs font-semibold flex-1 sm:flex-initial sm:w-auto min-w-[140px] sm:min-w-[170px] rounded-md">
                   <SelectValue placeholder="All Bank Accounts" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2466,28 +2466,31 @@ export const BankAccountsView: React.FC = () => {
               <Button
                 size="sm"
                 onClick={handleOpenAddAccount}
-                className="h-8 px-3 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs gap-1"
+                className="h-8 px-2.5 sm:px-3 text-xs font-semibold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs gap-1"
               >
-                <Plus className="w-3.5 h-3.5" /> Add Account
+                <Plus className="w-3.5 h-3.5" /> <span className="inline">Add Account</span>
               </Button>
 
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => loadAllData(true)}
-                className="h-8 px-3 text-xs text-muted-foreground rounded-md gap-1"
+                className="h-8 px-2.5 text-xs text-muted-foreground rounded-md gap-1"
                 title="Refresh Ledger"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-teal-600' : ''}`} /> Refresh
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-teal-600' : ''}`} />
+                <span className="hidden xs:inline sm:inline">Refresh</span>
               </Button>
 
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleExportCSV}
-                className="h-8 px-3 text-xs text-muted-foreground rounded-md gap-1"
+                className="h-8 w-8 p-0 text-muted-foreground hover:text-emerald-700 hover:border-emerald-300 rounded-md flex items-center justify-center shrink-0"
+                title="Export Statement to CSV"
+                aria-label="Export Statement to CSV"
               >
-                <Download className="w-3.5 h-3.5" /> Export CSV
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
               </Button>
 
               {is6569Unlocked && (
@@ -2618,7 +2621,9 @@ export const BankAccountsView: React.FC = () => {
           </div>
 
           {/* Main Ledger Table */}
-          <Card className="border-border shadow-sm overflow-hidden rounded-xl">
+          {/* Desktop Table View */}
+          <div className="hidden md:block">
+            <Card className="border-border shadow-sm overflow-hidden rounded-xl">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -2973,6 +2978,239 @@ export const BankAccountsView: React.FC = () => {
             </div>
           </Card>
         </div>
+
+          {/* Mobile Ledger Cards View */}
+          <div className="md:hidden space-y-2.5">
+            {filteredTransactions.length === 0 ? (
+              <Card className="p-6 text-center text-muted-foreground border-border rounded-xl">
+                No bank transactions found matching filter.
+              </Card>
+            ) : (
+              filteredTransactions.map((tx) => {
+                const acc = accounts.find((a) => a.id === tx.accountId);
+                const isCredit = tx.type === 'credit';
+                const isLinked = Boolean(tx.linkedInvoiceNumber || tx.linkedInvoiceId);
+                const runningBal = transactionRunningBalances.get(tx.id);
+                const isRowLocked = checkIs6569RowLocked(tx);
+
+                if (isRowLocked) {
+                  return (
+                    <Card key={tx.id} className="p-3.5 bg-amber-50/30 dark:bg-amber-950/20 border border-amber-300/80 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs text-slate-400 filter blur-[3.5px] select-none">
+                          {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </span>
+                        <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-800 border-amber-300 font-bold px-1.5 py-0 flex items-center gap-0.5">
+                          <Lock className="w-2.5 h-2.5 text-amber-600" /> Locked (6569)
+                        </Badge>
+                      </div>
+                      <div className="filter blur-[4px] select-none text-slate-400 text-xs font-mono">
+                        HDFC Bank Statement Protected ••••••••••••••••••
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-200/60">
+                        <div className="font-mono font-bold text-sm text-slate-400 filter blur-[4px] select-none">
+                          ₹••••••••
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setIs6569AuthDialogOpen(true)}
+                          className="h-7 px-2.5 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border-amber-300 rounded-md gap-1 shadow-2xs cursor-pointer"
+                        >
+                          <Lock className="w-3.5 h-3.5 text-amber-600" /> Unlock
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                }
+
+                const narrationText = tx.description && !/inform\s+you|writing\s+to/i.test(tx.description) && !tx.description.startsWith('Deposit: inform')
+                  ? tx.description
+                  : extractHdfcNarration(tx.rawEmailBody || tx.rawAlert || tx.description, tx.type === 'credit', tx.description);
+
+                return (
+                  <Card
+                    key={tx.id}
+                    className={`p-3.5 rounded-xl border transition-all ${
+                      isCredit
+                        ? "border-emerald-200/70 bg-gradient-to-br from-emerald-50/30 via-white to-white dark:from-emerald-950/20 dark:via-slate-900 dark:to-slate-900"
+                        : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+                    }`}
+                  >
+                    {/* Top Row: Date, Badges & Amount */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-xs text-foreground">
+                            {new Date(tx.date).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                          </span>
+                          {tx.time && (
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                              <Clock className="w-2.5 h-2.5" /> {tx.time}
+                            </span>
+                          )}
+                          <Badge
+                            className={`text-[9px] font-bold px-1.5 py-0 rounded ${
+                              isCredit
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-rose-100 text-rose-800 border border-rose-300'
+                            }`}
+                          >
+                            {isCredit ? '+ Credit' : '- Debit'}
+                          </Badge>
+                        </div>
+                        <div className="mt-1">
+                          <span className="inline-flex items-center text-[11px] font-bold text-teal-900 dark:text-teal-200 bg-teal-50/80 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 px-1.5 py-0.5 rounded">
+                            <Landmark className="w-3 h-3 mr-1 text-teal-600" />
+                            {acc?.accountName || 'Bank Account'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Amount & Balance */}
+                      <div className="text-right shrink-0">
+                        <div className={`font-mono font-black text-base ${isCredit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                          {`${isCredit ? '+' : '-'}₹${tx.amount.toLocaleString('en-IN')}`}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          {!isBalanceUnlocked ? (
+                            <span className="filter blur-xs select-none">Bal: ₹••••••</span>
+                          ) : tx.availableBalance !== undefined ? (
+                            <span className="text-teal-700 dark:text-teal-400 font-semibold font-mono">
+                              Bal: ₹{tx.availableBalance.toLocaleString('en-IN')}
+                            </span>
+                          ) : (
+                            <span className="font-mono">
+                              Bal: ₹{(runningBal !== undefined ? runningBal : 0).toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle: Narration */}
+                    <div className="mt-2 text-xs font-medium text-foreground leading-snug break-words">
+                      {narrationText}
+                    </div>
+
+                    {/* Reference & Linked Info */}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+                      {tx.referenceNumber && (
+                        <div className="font-mono text-muted-foreground flex items-center gap-1 bg-muted/60 px-1.5 py-0.5 rounded border border-border">
+                          <span>Ref:</span>
+                          <span className="font-semibold text-foreground">{tx.referenceNumber}</span>
+                        </div>
+                      )}
+
+                      {isLinked ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const matchingInv = cashInvoices.find(
+                              (inv) =>
+                                inv.invNumber === tx.linkedInvoiceNumber ||
+                                inv.invNumber?.replace(/\//g, '_') === tx.linkedInvoiceId
+                            );
+                            if (matchingInv) {
+                              setPreviewInvoice(matchingInv);
+                            } else {
+                              toast.info(`Linked Invoice: ${tx.linkedInvoiceNumber}`);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-50 text-teal-900 border border-teal-300"
+                        >
+                          <Receipt className="w-3 h-3 text-teal-700" />
+                          <span>{tx.linkedInvoiceNumber}</span>
+                          {tx.linkedCustomerName && <span>• {tx.linkedCustomerName}</span>}
+                        </button>
+                      ) : isCredit ? (
+                        <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-300 rounded">
+                          Unlinked Credit
+                        </Badge>
+                      ) : null}
+
+                      {/* Quick remarks button */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenRemarksModal(tx)}
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border ${
+                          tx.expenseNotes || tx.travelPurposeNote || tx.travelFromLocation
+                            ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold"
+                            : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400"
+                        }`}
+                      >
+                        <Edit className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                        <span>
+                          {tx.expenseNotes
+                            ? tx.expenseNotes
+                            : tx.travelFromLocation && tx.travelToLocation
+                            ? `Route: ${tx.travelFromLocation} → ${tx.travelToLocation}`
+                            : tx.travelPurposeNote
+                            ? tx.travelPurposeNote
+                            : "+ Remarks"}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Bottom Actions Bar */}
+                    <div className="mt-2.5 pt-2 border-t border-border/60 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {isCredit && !isLinked && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleOpenLinkModal(tx)}
+                            className="h-7 px-2 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md shadow-xs gap-1"
+                          >
+                            <Link2 className="w-3.5 h-3.5" /> Link Invoice
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setViewingTxDetails(tx)}
+                          className="h-7 px-2 text-xs text-muted-foreground hover:text-teal-700 rounded-md gap-1"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-teal-600" /> View Email
+                        </Button>
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setViewingTxDetails(tx)}>
+                            <Eye className="w-3.5 h-3.5 mr-2 text-teal-600" /> View Full Email &amp; Details
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {isCredit && (
+                            <DropdownMenuItem onClick={() => handleOpenLinkModal(tx)}>
+                              <Link2 className="w-3.5 h-3.5 mr-2 text-teal-700" />
+                              {isLinked ? 'Change Linked Invoice' : 'Link Cash Invoice'}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => handleOpenEditTx(tx)}>
+                            <Edit className="w-3.5 h-3.5 mr-2" /> Edit Transaction
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => handleDeleteTransaction(tx)} className="text-rose-600">
+                            <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete Transaction
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </div>
       )}
 
       {/* ========================================================================= */}
@@ -3015,7 +3253,9 @@ export const BankAccountsView: React.FC = () => {
           </div>
 
           {/* Primary Table: DC Tracker Cash Queue Transactions */}
-          <Card className="border-border shadow-sm overflow-hidden rounded-xl">
+          {/* Desktop Table View */}
+          <div className="hidden md:block">
+            <Card className="border-border shadow-sm overflow-hidden rounded-xl">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -3141,6 +3381,121 @@ export const BankAccountsView: React.FC = () => {
             </div>
           </Card>
         </div>
+
+          {/* Mobile Cash Queue Cards View */}
+          <div className="md:hidden space-y-2.5">
+            {cashQueueDcs.length === 0 ? (
+              <Card className="p-6 text-center text-muted-foreground border-border rounded-xl">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                <span className="font-bold text-foreground">No pending items in Cash Queue!</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  All Cash Queue delivery challans have been settled and completed.
+                </p>
+              </Card>
+            ) : (
+              cashQueueDcs.map((dc) => {
+                const matchedTxInfo = findSuggestedBankTransactionForDc(dc);
+                const acc = matchedTxInfo ? accounts.find((a) => a.id === matchedTxInfo.transaction.accountId) : null;
+
+                return (
+                  <Card
+                    key={dc.id}
+                    className="p-3.5 rounded-xl border border-amber-200/80 bg-white dark:bg-slate-900 shadow-xs space-y-2.5"
+                  >
+                    {/* Top Row: DC #, Date, Badge & Cash Amount */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-bold text-xs text-amber-900 dark:text-amber-300 bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded">
+                            DC #{dc.dcNo}
+                          </span>
+                          {dc.invoiceRef && (
+                            <span className="font-mono text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
+                              Memo #{dc.invoiceRef}
+                            </span>
+                          )}
+                          <Badge className="bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-bold px-1.5 py-0">
+                            Cash Queue
+                          </Badge>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                          <Calendar className="w-2.5 h-2.5" />
+                          <span>{dc.date}</span>
+                          <span>•</span>
+                          <span>{dc.items?.length || 0} items</span>
+                        </div>
+                      </div>
+
+                      {/* Cash Amount */}
+                      <div className="text-right shrink-0">
+                        <div className="text-[10px] text-muted-foreground uppercase font-semibold">Cash Due</div>
+                        <div className="font-mono font-black text-base text-amber-700 dark:text-amber-400">
+                          ₹{(dc.cashAmount || 0).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle: Hospital, Doctor, Patient */}
+                    <div className="text-xs space-y-0.5 pt-0.5">
+                      <div className="font-bold text-foreground">
+                        {dc.hospitalName}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
+                        {dc.doctorName && <span>Dr. {dc.doctorName}</span>}
+                        {dc.patientName && <span>Pt: {dc.patientName}</span>}
+                      </div>
+                    </div>
+
+                    {/* 1-Click Match Prompt if Available */}
+                    {matchedTxInfo && (
+                      <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 rounded-lg flex flex-col gap-2">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Suggested Bank Deposit</span>
+                          </span>
+                          <span className="font-mono font-bold text-emerald-800 dark:text-emerald-300">
+                            +₹{matchedTxInfo.transaction.amount.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-emerald-800/80 dark:text-emerald-300/80">
+                          {acc?.accountName || 'Bank Account'} • {matchedTxInfo.reason}
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => handleMatchAndLinkDcToTransaction(dc, matchedTxInfo.transaction)}
+                          className="h-7 w-full text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow-xs"
+                        >
+                          ⚡ 1-Click Match &amp; Link
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Bottom Actions Bar */}
+                    <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setViewingDcDetails(dc)}
+                        className="h-7 px-2.5 text-xs text-muted-foreground hover:text-teal-700 rounded-md gap-1"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-teal-600" /> View Details
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        onClick={() => handleOpenSettleDcModal(dc)}
+                        className="h-7 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-xs gap-1"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Record Payment
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </div>
       )}
 
       {/* ========================================================================= */}
@@ -3168,7 +3523,9 @@ export const BankAccountsView: React.FC = () => {
             </div>
           </div>
 
-          <Card className="border-border shadow-sm rounded-xl overflow-hidden">
+          {/* Desktop Table View */}
+          <div className="hidden md:block">
+            <Card className="border-border shadow-sm rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-muted/60 text-muted-foreground font-bold border-b border-border">
@@ -3302,6 +3659,142 @@ export const BankAccountsView: React.FC = () => {
             </div>
           </Card>
         </div>
+
+          {/* Mobile Reconciled Cards View */}
+          <div className="md:hidden space-y-2.5">
+            {linkedCreditTransactions.length === 0 ? (
+              <Card className="p-6 text-center text-muted-foreground border-border rounded-xl">
+                No linked bank transactions found yet. Use the "Unlinked" tab to match deposits with Cash Memos.
+              </Card>
+            ) : (
+              linkedCreditTransactions.map((tx) => {
+                const acc = accounts.find((a) => a.id === tx.accountId);
+                const invRef = tx.linkedInvoiceNumber || tx.linkedInvoiceId || 'Linked Invoice';
+                const dcNo = resolveDcNumber(tx);
+
+                return (
+                  <Card
+                    key={tx.id}
+                    className="p-3.5 rounded-xl border border-teal-200/80 bg-white dark:bg-slate-900 shadow-xs space-y-2.5"
+                  >
+                    {/* Top Row: Date & Amount */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-xs text-foreground">{tx.date}</span>
+                          {tx.time && (
+                            <span className="text-[10px] text-muted-foreground">{tx.time}</span>
+                          )}
+                          <Badge className="bg-teal-100 text-teal-800 border border-teal-300 text-[9px] font-bold px-1.5 py-0">
+                            Reconciled
+                          </Badge>
+                        </div>
+                        <div className="mt-1">
+                          <span className="inline-flex items-center text-[11px] font-bold text-teal-900 dark:text-teal-200 bg-teal-50/80 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 px-1.5 py-0.5 rounded">
+                            <Landmark className="w-3 h-3 mr-1 text-teal-600" />
+                            {acc?.accountName || 'Bank Account'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Amount */}
+                      <div className="text-right shrink-0">
+                        <div className="text-[10px] text-muted-foreground uppercase font-semibold">Credit</div>
+                        <div className="font-mono font-black text-base text-emerald-600 dark:text-emerald-400">
+                          +₹{(tx.amount || 0).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle: Linked Invoice & DC details */}
+                    <div className="text-xs space-y-1 pt-0.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const matchingInv = cashInvoices.find(
+                              (inv) =>
+                                inv.invNumber === tx.linkedInvoiceNumber ||
+                                inv.invNumber?.replace(/\//g, '_') === tx.linkedInvoiceId
+                            );
+                            if (matchingInv) {
+                              setPreviewInvoice(matchingInv);
+                            } else {
+                              toast.info(`Linked Invoice: ${invRef}`);
+                            }
+                          }}
+                          className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-teal-50 text-teal-900 border border-teal-300 hover:bg-teal-100"
+                        >
+                          Invoice: {invRef}
+                        </button>
+                        {dcNo && (
+                          <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-amber-100/90 text-amber-900 border border-amber-300">
+                            DC #{dcNo}
+                          </span>
+                        )}
+                      </div>
+
+                      {(tx.linkedCustomerName || tx.linkedHospital) && (
+                        <div className="font-semibold text-foreground text-xs pt-0.5">
+                          {tx.linkedCustomerName || tx.linkedHospital}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* UTR Reference */}
+                    {tx.referenceNumber && (
+                      <div className="flex items-center justify-between text-[10px] font-mono bg-muted/60 px-2 py-1 rounded border border-border">
+                        <span className="text-muted-foreground">UTR: {tx.referenceNumber}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(tx.referenceNumber || '');
+                            toast.success('Copied UTR to clipboard!');
+                          }}
+                          className="text-teal-700 hover:underline font-semibold"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Bottom Actions Bar */}
+                    <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const matchingInv = cashInvoices.find(
+                            (inv) =>
+                              inv.invNumber === tx.linkedInvoiceNumber ||
+                              inv.invNumber?.replace(/\//g, '_') === tx.linkedInvoiceId
+                          );
+                          if (matchingInv) {
+                            setPreviewInvoice(matchingInv);
+                          } else {
+                            toast.info(`Linked Invoice: ${invRef}`);
+                          }
+                        }}
+                        className="h-7 px-2.5 text-xs text-muted-foreground hover:text-teal-700 rounded-md gap-1"
+                      >
+                        <Receipt className="w-3.5 h-3.5 text-teal-600" /> View Invoice
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleUnlinkTransaction(tx)}
+                        className="h-7 px-2.5 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border-rose-200 rounded-md font-semibold gap-1"
+                      >
+                        <Unlink className="w-3.5 h-3.5 text-rose-600" /> Unlink
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </div>
       )}
 
 
@@ -3327,7 +3820,7 @@ export const BankAccountsView: React.FC = () => {
       {/* MODAL: LINK BANK CREDIT DIRECTLY TO A CASH INVOICE                        */}
       {/* ========================================================================= */}
       <Dialog open={isLinkModalOpen} onOpenChange={setIsLinkModalOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-sans text-base text-teal-800 dark:text-teal-300">
               <Link2 className="w-5 h-5 text-teal-700" />
@@ -3506,7 +3999,7 @@ export const BankAccountsView: React.FC = () => {
 
       {/* CASH INVOICE DOCUMENT PREVIEW MODAL */}
       <Dialog open={!!viewingCashInvoiceModal} onOpenChange={(open) => !open && setViewingCashInvoiceModal(null)}>
-        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border rounded-2xl">
+        <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border rounded-2xl">
           <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
             <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
               <Receipt className="w-5 h-5 text-teal-700 dark:text-teal-400" />
@@ -3547,7 +4040,7 @@ export const BankAccountsView: React.FC = () => {
       {/* MODAL: ADD / EDIT BANK ACCOUNT                                            */}
       {/* ========================================================================= */}
       <Dialog open={isAddAccountOpen} onOpenChange={setIsAddAccountOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-sans text-base">
               <Landmark className="w-5 h-5 text-teal-700" />
@@ -3677,7 +4170,7 @@ export const BankAccountsView: React.FC = () => {
       {/* MODAL: ADD / EDIT TRANSACTION                                             */}
       {/* ========================================================================= */}
       <Dialog open={isAddTxOpen} onOpenChange={setIsAddTxOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-sans text-base">
               {txForm.type === 'credit' ? (
@@ -3848,7 +4341,7 @@ export const BankAccountsView: React.FC = () => {
       {/* MODAL: INTER-ACCOUNT FUND TRANSFER                                        */}
       {/* ========================================================================= */}
       <Dialog open={isTransferModalOpen} onOpenChange={setIsTransferModalOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-sans text-base text-indigo-900 dark:text-indigo-300">
               <ArrowRightLeft className="w-5 h-5 text-indigo-600" />
@@ -3941,7 +4434,7 @@ export const BankAccountsView: React.FC = () => {
       {/* MODAL: LINKED INVOICE PREVIEW POPUP                                       */}
       {/* ========================================================================= */}
       <Dialog open={Boolean(previewInvoice)} onOpenChange={(open) => !open && setPreviewInvoice(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between font-sans text-base">
               <div className="flex items-center gap-2">
@@ -4019,7 +4512,7 @@ export const BankAccountsView: React.FC = () => {
       {/* MODAL: QUICK REMARKS & TRAVEL ROUTE FOR TRANSACTION                      */}
       {/* ========================================================================= */}
       <Dialog open={remarksModalOpen} onOpenChange={setRemarksModalOpen}>
-        <DialogContent className="sm:max-w-md border-2 border-amber-500/30">
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6 border-2 border-amber-500/30">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
               <Edit className="w-4 h-4 text-amber-600" />
@@ -4139,7 +4632,7 @@ export const BankAccountsView: React.FC = () => {
       {/* ========================================================================= */}
       {/* MODAL: EMAIL CONTENT */}
       <Dialog open={Boolean(viewingTxDetails)} onOpenChange={(open) => !open && setViewingTxDetails(null)}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto p-5">
+        <DialogContent className="w-[95vw] sm:max-w-lg max-h-[85vh] overflow-y-auto p-4 sm:p-5">
           <DialogHeader>
             <div className="flex items-center justify-between pr-6">
               <DialogTitle className="text-sm font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
@@ -4187,7 +4680,7 @@ export const BankAccountsView: React.FC = () => {
 
       {/* Cash Memo / DC Document Preview Modal */}
       <Dialog open={!!viewingDcDetails} onOpenChange={(open) => !open && setViewingDcDetails(null)}>
-        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border rounded-2xl">
+        <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-slate-900 border-border rounded-2xl">
           <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
             <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
               <Receipt className="w-5 h-5 text-teal-700 dark:text-teal-400" />
@@ -4254,7 +4747,7 @@ export const BankAccountsView: React.FC = () => {
       >
         <DialogContent 
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="sm:max-w-4xl lg:max-w-5xl w-full p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
+          className="w-[96vw] max-w-[96vw] sm:max-w-4xl lg:max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 gap-0"
         >
           <DialogHeader className="sr-only">
             <DialogTitle>Record Payment Collection</DialogTitle>
@@ -4769,7 +5262,7 @@ export const BankAccountsView: React.FC = () => {
 
       {/* 🔒 Admin Authentication Password Dialog for Account 6569 */}
       <Dialog open={is6569AuthDialogOpen} onOpenChange={setIs6569AuthDialogOpen}>
-        <DialogContent className="sm:max-w-md p-6 rounded-2xl border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900">
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto p-5 sm:p-6 rounded-2xl border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900">
           <DialogHeader className="space-y-2 text-center flex flex-col items-center">
             <div className="w-12 h-12 rounded-full bg-teal-100 dark:bg-teal-950/80 border border-teal-300 dark:border-teal-700 text-teal-700 dark:text-teal-300 flex items-center justify-center shadow-inner mb-1">
               <Lock className="w-6 h-6" />

@@ -560,9 +560,9 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
   return (
     <div className="space-y-4 font-sans text-foreground">
       {/* Streamlined Toolbar & Action Bar */}
-      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-2.5 bg-card p-2.5 rounded-xl border border-border shadow-xs">
+      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-2 bg-card p-2 sm:p-2.5 rounded-xl border border-border shadow-xs">
         {/* Left Side: Search Input */}
-        <div className="relative flex-1 min-w-[200px] max-w-md">
+        <div className="relative flex-1 min-w-0 lg:max-w-xs xl:max-w-sm">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
@@ -574,21 +574,23 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
         </div>
 
         {/* Right Side: Date Range Selector & Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 justify-end">
-          <div className="flex items-center gap-0.5 bg-muted/60 p-0.5 rounded-md border border-border text-xs">
+        <div className="flex items-center justify-between lg:justify-end gap-1.5 sm:gap-2">
+          {/* Date Range Selector */}
+          <div className="inline-flex items-center gap-0.5 bg-muted/60 p-0.5 rounded-md border border-border text-xs shrink-0">
             <button
               onClick={() => setDateRangeFilter("all")}
-              className={`px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
+              className={`px-1.5 sm:px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
                 dateRangeFilter === "all"
                   ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              All Time
+              <span className="sm:hidden">All</span>
+              <span className="hidden sm:inline">All Time</span>
             </button>
             <button
               onClick={() => setDateRangeFilter("today")}
-              className={`px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
+              className={`px-1.5 sm:px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
                 dateRangeFilter === "today"
                   ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -598,52 +600,63 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
             </button>
             <button
               onClick={() => setDateRangeFilter("week")}
-              className={`px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
+              className={`px-1.5 sm:px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
                 dateRangeFilter === "week"
                   ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              This Week
+              <span className="sm:hidden">Week</span>
+              <span className="hidden sm:inline">This Week</span>
             </button>
             <button
               onClick={() => setDateRangeFilter("month")}
-              className={`px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
+              className={`px-1.5 sm:px-2 py-1 rounded-sm font-semibold text-[11px] transition-colors ${
                 dateRangeFilter === "month"
                   ? "bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              This Month
+              <span className="sm:hidden">Month</span>
+              <span className="hidden sm:inline">This Month</span>
             </button>
           </div>
 
-          <Button
-            size="sm"
-            onClick={handleRunAiEngine}
-            className="h-8 px-2.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-md gap-1"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Auto-Tag</span>
-          </Button>
+          {/* Action Buttons */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              size="sm"
+              onClick={handleRunAiEngine}
+              className="h-8 w-8 p-0 md:w-auto md:px-2.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-md gap-1 shrink-0"
+              title="AI Auto-Tag Expenses"
+              aria-label="AI Auto-Tag Expenses"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">AI Auto-Tag</span>
+            </Button>
 
-          <Button
-            size="sm"
-            onClick={() => setIsManualModalOpen(true)}
-            className="h-8 px-2.5 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md gap-1"
-          >
-            <Plus className="w-3.5 h-3.5" /> Spot Expense
-          </Button>
+            <Button
+              size="sm"
+              onClick={() => setIsManualModalOpen(true)}
+              className="h-8 w-8 p-0 md:w-auto md:px-2.5 text-xs font-bold bg-teal-700 hover:bg-teal-800 text-white rounded-md gap-1 shrink-0"
+              title="Spot Expense (Add Manual Expense)"
+              aria-label="Spot Expense"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Spot Expense</span>
+            </Button>
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleExportExcel}
-            className="h-8 px-2.5 text-xs font-bold border-border rounded-md gap-1"
-            title="Download CSV report"
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-600" /> Export
-          </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExportExcel}
+              className="h-8 w-8 p-0 border-border rounded-md hover:bg-muted transition-colors flex items-center justify-center shrink-0"
+              title="Export to CSV"
+              aria-label="Export to CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600" />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -688,10 +701,10 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
           ))}
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto shrink-0">
           {/* Bank Account Selection Dropdown */}
           <Select value={selectedAccountId} onValueChange={handleAccountChange}>
-            <SelectTrigger className="h-6 text-[11px] w-auto min-w-[140px] rounded-md font-semibold border-teal-300 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200">
+            <SelectTrigger className="h-6 text-[11px] flex-1 sm:flex-initial sm:w-auto min-w-[130px] rounded-md font-semibold border-teal-300 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200">
               <Building2 className="w-3 h-3 mr-1 text-teal-600 shrink-0" />
               <SelectValue placeholder="All Accounts" />
             </SelectTrigger>
@@ -716,7 +729,7 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
             value={selectedCategoryFilter}
             onValueChange={(v) => setSelectedCategoryFilter(v)}
           >
-            <SelectTrigger className="h-6 text-[11px] w-auto min-w-[140px] rounded-md font-semibold">
+            <SelectTrigger className="h-6 text-[11px] flex-1 sm:flex-initial sm:w-auto min-w-[130px] rounded-md font-semibold">
               <SelectValue placeholder="All Expense Categories" />
             </SelectTrigger>
             <SelectContent>
@@ -753,7 +766,9 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
       )}
 
       {/* 4. Debit Transactions Queue Table */}
-      <Card className="border-border shadow-sm overflow-hidden rounded-xl">
+      {/* Desktop Table View */}
+      <div className="hidden md:block">
+        <Card className="border-border shadow-sm overflow-hidden rounded-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
@@ -1023,6 +1038,228 @@ export const ExpenseTaggingTab: React.FC<ExpenseTaggingTabProps> = ({
           </table>
         </div>
       </Card>
+    </div>
+
+      {/* Mobile Debit Expense Cards View */}
+      <div className="md:hidden space-y-2.5">
+        {filteredDebits.length === 0 ? (
+          <Card className="p-6 text-center text-muted-foreground border-border rounded-xl">
+            No debit transactions found matching the filter.
+          </Card>
+        ) : (
+          filteredDebits.map((tx) => {
+            const acc = accounts.find((a) => a.id === tx.accountId);
+            const isRowLocked = is6569TransactionLocked(tx, activeConfig, rankMap, is6569Unlocked, accounts);
+
+            if (isRowLocked) {
+              return (
+                <Card key={tx.id} className="p-3.5 bg-amber-50/30 dark:bg-amber-950/20 border border-amber-300/80 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs text-slate-400 filter blur-[3.5px] select-none">
+                      {new Date(tx.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                    </span>
+                    <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-800 border-amber-300 font-bold px-1.5 py-0 flex items-center gap-0.5">
+                      <Lock className="w-2.5 h-2.5 text-amber-600" /> Locked (6569)
+                    </Badge>
+                  </div>
+                  <div className="filter blur-[4px] select-none text-slate-400 text-xs font-mono">
+                    HDFC Bank Statement Protected ••••••••••••••••••
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-amber-200/60">
+                    <span className="font-mono font-bold text-sm text-slate-400 filter blur-[4px] select-none">
+                      ₹••••••••
+                    </span>
+                    {onUnlock6569 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onUnlock6569}
+                        className="h-7 text-xs px-2.5 font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-300 rounded-md gap-1"
+                      >
+                        <Lock className="w-3 h-3 text-amber-600" /> Unlock
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              );
+            }
+
+            const suggestion = aiSuggestions.get(tx.id) || liveSuggestionsMap.get(tx.id);
+            const currentPersonnel = tx.expensePersonnelName || "";
+            const currentCategory = tx.expenseCategory || suggestion?.suggestedCategory || "Fuel / Petrol";
+            const isUntagged = !tx.isExpenseTagged && !currentPersonnel;
+
+            return (
+              <Card
+                key={tx.id}
+                className={`p-3.5 rounded-xl border transition-all space-y-2.5 ${
+                  isUntagged
+                    ? "border-amber-300 bg-amber-50/30 dark:bg-amber-950/10 shadow-2xs"
+                    : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs"
+                }`}
+              >
+                {/* Top Row: Date, Account & Amount */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-xs text-foreground">
+                        {new Date(tx.date).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                      {tx.time && <span className="text-[10px] text-muted-foreground">{tx.time}</span>}
+                    </div>
+                    <div className="mt-1">
+                      <span className="inline-flex items-center text-[11px] font-bold text-teal-900 dark:text-teal-200 bg-teal-50/80 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 px-1.5 py-0.5 rounded">
+                        <Building2 className="w-3 h-3 mr-1 text-teal-600" />
+                        {acc?.accountName || "Bank Account"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Debit Amount */}
+                  <div className="text-right shrink-0">
+                    <div className="font-mono font-black text-base text-rose-600 dark:text-rose-400">
+                      -₹{tx.amount.toLocaleString("en-IN")}
+                    </div>
+                    <div className="mt-0.5">
+                      {tx.isExpenseTagged ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-bold px-1.5 py-0">
+                          Tagged
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-800 border-amber-300 px-1.5 py-0">
+                          Untagged
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Narration & Ref */}
+                <div className="text-xs font-medium text-foreground leading-snug break-words">
+                  {tx.description}
+                  {tx.referenceNumber && (
+                    <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                      Ref: {tx.referenceNumber}
+                    </div>
+                  )}
+                </div>
+
+                {/* Badges / Recommendation / Route */}
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                  {tx.isExpenseTagged && currentPersonnel ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-2 py-0.5 rounded">
+                      <UserCheck className="w-3 h-3 text-emerald-600" />
+                      <span>{currentPersonnel}</span>
+                    </span>
+                  ) : suggestion?.suggestedPersonnelName ? (
+                    <button
+                      type="button"
+                      onClick={() => handleTagTransaction(tx, suggestion.suggestedPersonnelName!, currentCategory)}
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-900 dark:text-purple-200 bg-purple-50 dark:bg-purple-950/70 border border-purple-300 dark:border-purple-700 px-2 py-0.5 rounded hover:bg-purple-100"
+                    >
+                      <Sparkles className="w-3 h-3 text-purple-600 animate-pulse" />
+                      <span>Suggest: {suggestion.suggestedPersonnelName}</span>
+                    </button>
+                  ) : null}
+
+                  {tx.travelFromLocation || tx.travelToLocation || tx.travelDistanceKm ? (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRouteModal(tx)}
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-300 dark:border-teal-800 px-2 py-0.5 rounded hover:bg-teal-100"
+                    >
+                      <MapPin className="w-3 h-3 text-teal-600" />
+                      <span>
+                        {tx.travelFromLocation || "SRR Warehouse"} ➔ {tx.travelToLocation || "Hospital"}
+                        {tx.travelDistanceKm ? ` (${tx.travelDistanceKm} km)` : ''}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRouteModal(tx)}
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200"
+                    >
+                      <MapPin className="w-3 h-3" /> Log Route
+                    </button>
+                  )}
+                </div>
+
+                {/* Delivery Executive & Category Selectors */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-border">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase">Executive:</span>
+                    <Select
+                      value={currentPersonnel}
+                      onValueChange={(val) => handleTagTransaction(tx, val, currentCategory)}
+                    >
+                      <SelectTrigger className={`h-8 text-xs font-semibold w-full rounded-md ${
+                        currentPersonnel 
+                          ? "bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200 font-bold"
+                          : "bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700"
+                      }`}>
+                        <SelectValue placeholder="Select Exec">
+                          {currentPersonnel || <span className="text-slate-400 italic">Select Exec...</span>}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__UNTAGGED__" className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                          ❌ Reset to Untagged
+                        </SelectItem>
+                        <SelectItem value="Standard Dispatch" className="text-xs text-teal-800 dark:text-teal-300 font-bold border-b border-border pb-1 mb-1">
+                          📦 Standard Dispatch (General Operations)
+                        </SelectItem>
+                        {personnelNames
+                          .filter((p) => p !== "Standard Dispatch")
+                          .map((pName) => (
+                            <SelectItem key={pName} value={pName} className="text-xs">
+                              {pName}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase">Category:</span>
+                    <Select
+                      value={currentCategory}
+                      onValueChange={(val: any) => handleTagTransaction(tx, currentPersonnel || personnelNames[0] || "Standard Dispatch", val)}
+                    >
+                      <SelectTrigger className="h-8 text-xs font-semibold w-full bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 rounded-md">
+                        <SelectValue placeholder="Select Category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EXPENSE_CATEGORIES.map((cat) => (
+                          <SelectItem key={cat} value={cat} className="text-xs">
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Email Verification Action */}
+                <div className="pt-1.5 flex items-center justify-end">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setViewEmailTx(tx)}
+                    className="h-6 px-2 text-[11px] text-teal-700 hover:text-teal-900 hover:bg-teal-50 gap-1 rounded"
+                  >
+                    <Mail className="w-3.5 h-3.5" /> View Alert Details
+                  </Button>
+                </div>
+              </Card>
+            );
+          })
+        )}
+      </div>
 
       {/* Travel Route & Purpose Modal */}
       <Dialog open={isRouteModalOpen} onOpenChange={setIsRouteModalOpen}>
