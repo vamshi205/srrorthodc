@@ -305,14 +305,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               <Landmark className={`w-3.5 h-3.5 ${isBankAccounts ? 'text-teal-900' : 'text-teal-200'}`} /> Bank Accounts
             </Button>
 
-            <Button
-              variant="ghost"
-              size="sm"
-              className={getNavBtnClass(isCustomers)}
-              onClick={() => navigate('/customers')}
-            >
-              <UsersRound className={`w-3.5 h-3.5 ${isCustomers ? 'text-teal-900' : 'text-teal-200'}`} /> Customers
-            </Button>
 
             <Button
               variant="ghost"
@@ -506,15 +498,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                         onClick={() => navigate('/bank-accounts')}
                       >
                         <Landmark className="w-4 h-4 text-teal-400" /> Bank Accounts
-                      </Button>
-                    </SheetClose>
-                    <SheetClose asChild>
-                      <Button
-                        variant="ghost"
-                        className={getMobileNavClass(isCustomers)}
-                        onClick={() => navigate('/customers')}
-                      >
-                        <UsersRound className="w-4 h-4 text-emerald-400" /> Customers & Hospitals
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>
