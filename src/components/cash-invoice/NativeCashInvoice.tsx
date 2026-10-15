@@ -79,7 +79,9 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Mail,
+  BookOpen,
 } from "lucide-react";
+import { CustomerCashLedgerModal } from "@/components/customers/CustomerCashLedgerModal";
 
 interface InvoiceItem {
   id: string;
@@ -210,6 +212,24 @@ export const NativeCashInvoice: React.FC = () => {
   const [isLoadingBankCredits, setIsLoadingBankCredits] = useState<boolean>(false);
   const [viewingTxDetails, setViewingTxDetails] = useState<BankTransaction | null>(null);
 
+  // Customer Ledger Modal State
+  const [selectedCustomerForLedger, setSelectedCustomerForLedger] = useState<Customer | null>(null);
+
+  const handleOpenCustomerLedger = (name: string, address?: string, mobile?: string) => {
+    const cleanName = (name || "").trim().toLowerCase();
+    const matched = customers.find((c) => (c.name || "").trim().toLowerCase() === cleanName);
+    if (matched) {
+      setSelectedCustomerForLedger(matched);
+    } else {
+      setSelectedCustomerForLedger({
+        id: name,
+        name: name,
+        address: address || "",
+        mobile: mobile || "",
+      });
+    }
+  };
+
   // Available & Filtered Bank Credit Statement Transactions
   const availableBankCredits = useMemo(() => {
     return bankTransactions.filter((tx) => tx.type === "credit");
@@ -295,7 +315,7 @@ export const NativeCashInvoice: React.FC = () => {
       // Check query params
       const paramDc = searchParams.get("dcNo") || sessionStorage.getItem("prefill_cash_dc_no");
       const paramClient = searchParams.get("client") || sessionStorage.getItem("prefill_cash_client_name");
-      const paramView = searchParams.get("viewInv") || sessionStorage.getItem("view_cash_inv_num");
+      const paramView = searchParams.get("viewInv") || searchParams.get("inv") || sessionStorage.getItem("view_cash_inv_num");
 
       let loadedExisting = false;
 
@@ -1859,6 +1879,15 @@ export const NativeCashInvoice: React.FC = () => {
                 >
                   Paid ({kpi.paidCount})
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate("/customers")}
+                  className="h-8 text-xs font-bold gap-1.5 border-indigo-200 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-md shadow-2xs"
+                  title="View full Customer Directory & Cash Invoice Ledgers"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> Customer Ledgers
+                </Button>
               </div>
             </div>
           </div>
@@ -1920,9 +1949,19 @@ export const NativeCashInvoice: React.FC = () => {
                               : "-"}
                           </td>
                           <td className="p-3">
-                            <div className="font-bold text-foreground">{inv.clientName}</div>
+                            <div className="font-bold text-foreground flex items-center gap-1.5 flex-wrap">
+                              <span>{inv.clientName}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCustomerLedger(inv.clientName, inv.clientAddress, inv.clientMobile)}
+                                className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+                                title={`Open Cash Invoice Ledger for ${inv.clientName}`}
+                              >
+                                <BookOpen className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" /> Ledger
+                              </button>
+                            </div>
                             {inv.clientMobile && (
-                              <div className="text-[11px] text-muted-foreground">
+                              <div className="text-[11px] text-muted-foreground mt-0.5">
                                 {inv.clientMobile}
                               </div>
                             )}
@@ -2694,6 +2733,14 @@ export const NativeCashInvoice: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Customer Cash Invoice Ledger Modal */}
+      <CustomerCashLedgerModal
+        customer={selectedCustomerForLedger}
+        isOpen={Boolean(selectedCustomerForLedger)}
+        onClose={() => setSelectedCustomerForLedger(null)}
+        cachedInvoices={savedInvoices}
+      />
     </div>
   );
 };

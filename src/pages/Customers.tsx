@@ -48,8 +48,12 @@ import {
   Smartphone,
   UserCheck,
   Lock,
+  BookOpen,
+  MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CustomerCashLedgerModal } from "@/components/customers/CustomerCashLedgerModal";
+import { CashInvoiceData, fetchCashInvoicesFromFirestore } from "@/services/cashInvoiceFirebaseService";
 import {
   Customer,
   HospitalContact,
@@ -113,6 +117,8 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [selectedHospitalForContacts, setSelectedHospitalForContacts] = useState<Customer | null>(null);
   const [invoicesDuesMap, setInvoicesDuesMap] = useState<Record<string, number>>({});
+  const [selectedCustomerForLedger, setSelectedCustomerForLedger] = useState<Customer | null>(null);
+  const [allCashInvoices, setAllCashInvoices] = useState<CashInvoiceData[]>([]);
 
   // Add / Edit Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -202,12 +208,12 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
       })
       .catch((err) => console.warn("Failed to fetch unified customers:", err));
 
-    // Calculate customer dues from cash invoices if present in localStorage
-    try {
-      const rawInvoices = localStorage.getItem("im_saved_invoices");
-      if (rawInvoices) {
-        const invoices = JSON.parse(rawInvoices);
+    // Load cash invoices from cache / Firestore to calculate customer dues accurately
+    const loadCashInvoices = async () => {
+      try {
+        const invoices = await fetchCashInvoicesFromFirestore();
         if (Array.isArray(invoices)) {
+          setAllCashInvoices(invoices);
           const dues: Record<string, number> = {};
           invoices.forEach((inv: any) => {
             if (inv && inv.clientName) {
@@ -218,16 +224,37 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
           });
           setInvoicesDuesMap(dues);
         }
+      } catch (e) {
+        console.error("Error calculating dues from cash invoices:", e);
       }
-    } catch (e) {
-      console.error("Error calculating dues:", e);
-    }
+    };
+    loadCashInvoices();
+
+    const handleCashInvoicesUpdated = (e: any) => {
+      const invoices = e?.detail && Array.isArray(e.detail) ? e.detail : null;
+      if (invoices) {
+        setAllCashInvoices(invoices);
+        const dues: Record<string, number> = {};
+        invoices.forEach((inv: any) => {
+          if (inv && inv.clientName) {
+            const nameLower = inv.clientName.toLowerCase().trim();
+            const balance = (Number(inv.grandTotal) || 0) - (Number(inv.paymentReceived) || 0);
+            dues[nameLower] = (dues[nameLower] || 0) + balance;
+          }
+        });
+        setInvoicesDuesMap(dues);
+      }
+    };
+    window.addEventListener("srrortho:cash_invoices_updated", handleCashInvoicesUpdated);
 
     const handleUpdate = () => {
       setCustomers(deduplicateAndCleanCustomers(getSavedCustomers()));
     };
     window.addEventListener("srrortho:customers_updated", handleUpdate);
-    return () => window.removeEventListener("srrortho:customers_updated", handleUpdate);
+    return () => {
+      window.removeEventListener("srrortho:customers_updated", handleUpdate);
+      window.removeEventListener("srrortho:cash_invoices_updated", handleCashInvoicesUpdated);
+    };
   }, []);
 
   const [savedDcs, setSavedDcs] = useState<SavedDc[]>([]);
@@ -359,6 +386,251 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
     if (lower.includes("recept") || lower.includes("board") || lower.includes("front") || lower.includes("desk") || lower.includes("landline")) return "Reception";
     if (lower.includes("doc") || lower.includes("surg") || lower.includes("ortho") || lower.includes("person") || lower.includes("mobile")) return "Doctor";
     return "Others";
+  };
+
+  const normalizeDigits = (str?: string) => {
+    if (!str) return "";
+    const d = str.replace(/\D/g, "");
+    if (d.length === 12 && d.startsWith("91")) return d.slice(2);
+    if (d.length === 11 && d.startsWith("0")) return d.slice(1);
+    return d;
+  };
+
+  const toTitleCase = (str?: string) => {
+    if (!str) return "";
+    return str
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  };
+
+  const cleanName = (n?: string) =>
+    (n || "")
+      .toLowerCase()
+      .replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|sister|brother|nurse)\s+/i, "")
+      .replace(/[^a-z0-9]/g, "")
+      .trim();
+
+  const isGenericName = (n?: string) => {
+    if (!n) return true;
+    const clean = cleanName(n);
+    return (
+      !clean ||
+      clean === "notset" ||
+      clean === "none" ||
+      clean === "null" ||
+      clean === "doctor" ||
+      clean === "dr" ||
+      clean === "ot" ||
+      clean === "otperson" ||
+      clean === "otincharge" ||
+      clean === "hospital" ||
+      clean === "staff" ||
+      clean === "contact"
+    );
+  };
+
+  const getWaUrl = (digits: string) => {
+    if (!digits || digits.length < 10) return undefined;
+    const wa = digits.length === 10 ? `91${digits}` : digits;
+    return `https://wa.me/${wa}`;
+  };
+
+  const getHospitalDoctorAndOt = (cust: Customer) => {
+    const contactsList = Array.isArray(cust.contacts) ? cust.contacts : [];
+
+    // --- 1. DOCTOR / INCHARGE ---
+    let drName = "";
+    if (!isGenericName(cust.contactPerson)) {
+      drName = toTitleCase(cust.contactPerson);
+    }
+    if (!drName) {
+      const drContact = contactsList.find((c) =>
+        /doc|surg|ortho|incharge|consult/i.test(c.role || "")
+      );
+      if (drContact && !isGenericName(drContact.name)) {
+        drName = toTitleCase(drContact.name);
+      }
+    }
+
+    const persRaw = (cust.personalNumber || cust.mobile || "").trim();
+    let persDigits = normalizeDigits(persRaw);
+    let drPhone = persRaw;
+
+    if (!persDigits || persDigits.length < 6) {
+      const drPhoneContact = contactsList.find(
+        (c) =>
+          c.phone &&
+          normalizeDigits(c.phone).length >= 6 &&
+          (/doc|surg|ortho|personal/i.test(c.role || "") ||
+            (drName && cleanName(c.name) === cleanName(drName)))
+      );
+      if (drPhoneContact && drPhoneContact.phone) {
+        drPhone = drPhoneContact.phone.trim();
+        persDigits = normalizeDigits(drPhone);
+      }
+    }
+
+    // --- 2. OT CONTACT ---
+    const otRaw = (cust.otNumber || "").trim();
+    const otDigits = normalizeDigits(otRaw);
+    let otPersonName = "";
+
+    // Match OT name if role explicitly includes 'ot', 'theatre', or 'theater'
+    const otContact = contactsList.find((c) =>
+      /ot\b|theatre|theater/i.test(c.role || "") || /ot\b/i.test(c.name || "")
+    );
+    if (otContact && !isGenericName(otContact.name)) {
+      otPersonName = toTitleCase(otContact.name);
+    }
+
+    // Match OT name by phone if not found yet
+    if (!otPersonName && otDigits) {
+      const matchedByPhone = contactsList.find(
+        (c) => c.phone && normalizeDigits(c.phone) === otDigits && !isGenericName(c.name)
+      );
+      if (matchedByPhone) {
+        otPersonName = toTitleCase(matchedByPhone.name);
+      }
+    }
+
+    // Check if Janahitha Sujatha case or matching person:
+    const isSujathaOtCase =
+      drName &&
+      otDigits &&
+      persDigits === otDigits &&
+      contactsList.some(
+        (c) =>
+          /ot/i.test(c.role || "") &&
+          cleanName(c.name) === cleanName(drName)
+      );
+
+    if (otPersonName && drName && cleanName(otPersonName) === cleanName(drName)) {
+      drName = "";
+      drPhone = "";
+      persDigits = "";
+    } else if (isSujathaOtCase) {
+      otPersonName = drName;
+      drName = "";
+      drPhone = "";
+      persDigits = "";
+    }
+
+    // If Dr and OT share the exact same number, keep drName if different from otPersonName, but clear drPhone
+    if (persDigits && otDigits && persDigits === otDigits) {
+      drPhone = "";
+      persDigits = "";
+    }
+
+    const doctorInfo = {
+      name: drName || undefined,
+      phone: persDigits && persDigits.length >= 6 ? drPhone : undefined,
+      waUrl: persDigits && persDigits.length >= 10 ? getWaUrl(persDigits) : undefined,
+    };
+
+    const otInfo = {
+      name: otPersonName || undefined,
+      phone: otDigits && otDigits.length >= 6 ? otRaw : undefined,
+      waUrl: otDigits && otDigits.length >= 10 ? getWaUrl(otDigits) : undefined,
+    };
+
+    // Extra lines (Hospital reception or additional staff)
+    const extraLines: Array<{ prefix: string; name?: string; phone?: string; waUrl?: string }> = [];
+
+    const hospRaw = (cust.hospitalNumber || "").trim();
+    const hospDigits = normalizeDigits(hospRaw);
+    if (hospDigits && hospDigits.length >= 6 && hospDigits !== otDigits && hospDigits !== persDigits) {
+      extraLines.push({
+        prefix: "Hosp",
+        phone: hospRaw,
+        waUrl: getWaUrl(hospDigits),
+      });
+    }
+
+    for (const c of contactsList) {
+      if (!c) continue;
+      const cDigits = normalizeDigits(c.phone);
+      if (cDigits && (cDigits === otDigits || cDigits === persDigits || cDigits === hospDigits)) continue;
+      const cName = toTitleCase(c.name);
+      if (isGenericName(cName) && !cDigits) continue;
+      if (drName && cleanName(cName) === cleanName(drName)) continue;
+      if (otPersonName && cleanName(cName) === cleanName(otPersonName)) continue;
+
+      const rawRole = (c.role || "").trim().toLowerCase();
+      let normPrefix = "Staff";
+      let badgeStyle = "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 font-extrabold";
+
+      if (/ot\b|theatre|theater|sister|nurse/i.test(rawRole)) {
+        normPrefix = "OT";
+        badgeStyle = "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 font-extrabold";
+      } else if (/doc|doctor|surg|ortho|consult/i.test(rawRole)) {
+        normPrefix = "Dr";
+        badgeStyle = "bg-purple-100 text-purple-900 dark:bg-purple-950 dark:text-purple-300 font-extrabold";
+      } else if (/hosp|board|recept|front|desk|landline/i.test(rawRole)) {
+        normPrefix = "Hosp";
+        badgeStyle = "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-300 font-extrabold";
+      } else if (c.role) {
+        normPrefix = toTitleCase(c.role.replace(/[^a-zA-Z]/g, "")).slice(0, 8) || "Staff";
+      }
+
+      extraLines.push({
+        prefix: normPrefix,
+        badgeStyle,
+        name: isGenericName(cName) ? undefined : cName,
+        phone: cDigits ? c.phone?.trim() : undefined,
+        waUrl: cDigits ? getWaUrl(cDigits) : undefined,
+      });
+    }
+
+    return { doctorInfo, otInfo, extraLines };
+  };
+
+  const getStructuredCustomerContacts = (cust: Customer) => {
+    const { doctorInfo, otInfo, extraLines } = getHospitalDoctorAndOt(cust);
+    const lines: Array<{
+      prefix: "OT" | "Dr" | "Hosp" | string;
+      badgeStyle: string;
+      name?: string;
+      phone?: string;
+      waUrl?: string;
+    }> = [];
+
+    // 1. OT Line first (primary operational line for implants / delivery)
+    if (otInfo.phone || otInfo.name) {
+      lines.push({
+        prefix: "OT",
+        badgeStyle: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 font-extrabold",
+        name: otInfo.name,
+        phone: otInfo.phone,
+        waUrl: otInfo.waUrl,
+      });
+    }
+
+    // 2. Doctor / Incharge Line
+    if (doctorInfo.name || doctorInfo.phone) {
+      lines.push({
+        prefix: "Dr",
+        badgeStyle: "bg-purple-100 text-purple-900 dark:bg-purple-950 dark:text-purple-300 font-extrabold",
+        name: doctorInfo.name,
+        phone: doctorInfo.phone,
+        waUrl: doctorInfo.waUrl,
+      });
+    }
+
+    // 3. Other Staff / Department Lines
+    for (const el of extraLines) {
+      lines.push({
+        prefix: el.prefix,
+        badgeStyle: el.badgeStyle || "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 font-extrabold",
+        name: el.name,
+        phone: el.phone,
+        waUrl: el.waUrl,
+      });
+    }
+
+    return lines;
   };
 
   const openAddModal = () => {
@@ -804,11 +1076,14 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
             </Card>
 
             <Card className="border-border shadow-sm p-4 rounded-xl">
-              <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase">Unpaid Outstanding</div>
+              <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase flex items-center justify-between">
+                <span>Cash Invoices Due</span>
+                <span className="text-[9px] font-semibold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-200">cash only</span>
+              </div>
               <div className="text-xl sm:text-2xl font-black font-sans font-mono text-rose-600 dark:text-rose-400 mt-1">
                 ₹{totalOutstanding.toLocaleString("en-IN")}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-0.5">Pending across hospitals</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Pending cash invoice balances</p>
             </Card>
           </div>
 
@@ -1006,233 +1281,168 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
             /* ========================================================================= */
             /* Professional Enterprise Table List View (Default)                         */
             /* ========================================================================= */
-            <div className="rounded-2xl border border-border dark:border-slate-800 bg-card/95 dark:bg-slate-900 shadow-sm overflow-hidden backdrop-blur-md">
+            <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm w-full">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full border-collapse text-sm">
                   <thead>
-                    <tr className="bg-muted dark:bg-slate-950 border-b border-border dark:border-slate-800 text-[11px] font-extrabold uppercase tracking-wider text-foreground dark:text-slate-300 select-none">
-                      <th className="py-3.5 px-3.5 w-12 text-center">#</th>
-                      <th className="py-3.5 px-4 min-w-[240px]">Hospital &amp; Location</th>
-                      <th className="py-3.5 px-4 min-w-[290px]">Direct Department Lines</th>
-                      <th className="py-3.5 px-4 min-w-[260px]">Staff Directory &amp; Contacts</th>
-                      <th className="py-3.5 px-4 w-28 text-center">Outstanding</th>
-                      <th className="py-3.5 px-4 w-48 text-right">Quick Actions</th>
+                    <tr className="bg-slate-50/80 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
+                      <th className="py-3 px-3 w-[48px] text-center">#</th>
+                      <th className="py-3 px-3.5 text-left w-[290px] min-w-[240px]">Hospital &amp; Location</th>
+                      <th className="py-3 px-3.5 text-left min-w-[280px]">Contacts &amp; Department Lines</th>
+                      <th className="py-3 px-3 w-[115px] text-center" title="Outstanding balance strictly from Cash Invoices">Cash Due</th>
+                      <th className="py-3 px-3 w-[280px] min-w-[270px] text-center">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
                     {filteredCustomers.map((cust, idx) => {
                       const balance = invoicesDuesMap[cust.name.toLowerCase().trim()] || 0;
+                      const contactLines = getStructuredCustomerContacts(cust);
                       return (
                         <tr
                           key={`${cust.id || "cust"}_${cust.name}_${idx}`}
-                          className="hover:bg-teal-50 dark:hover:bg-slate-800 transition-colors group"
+                          className="group transition-colors duration-150 hover:bg-slate-50/80 dark:hover:bg-slate-900/60"
                         >
-                          {/* Row Number */}
-                          <td className="py-3.5 px-3.5 text-center text-slate-400 font-mono text-[11px] font-bold">
+                          {/* Row Number with DC Tracker style left accent indicator */}
+                          <td className="relative py-3.5 px-3 text-center text-slate-400 font-mono text-[11px] font-bold align-middle">
+                            <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-teal-500 opacity-0 group-hover:opacity-100 transition-all duration-200" />
                             {String(idx + 1).padStart(2, "0")}
                           </td>
 
-                          {/* Hospital Name & Info */}
-                          <td className="py-3.5 px-4">
-                            <div className="font-extrabold text-foreground dark:text-slate-100 text-sm flex items-center gap-1.5">
-                              <Building2 className="w-4 h-4 text-teal-600 shrink-0" />
-                              <span>{cust.name}</span>
+                          {/* Hospital Name & Location - wraps nicely to next line in same row for lengthy names */}
+                          <td className="py-3.5 px-3.5 text-left align-middle w-[290px] min-w-[240px]">
+                            <div className="font-extrabold text-slate-900 dark:text-slate-100 text-[13px] flex items-start gap-1.5 leading-snug">
+                              <Building2 className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                              <span className="break-words whitespace-normal font-bold">
+                                {cust.name}
+                              </span>
                             </div>
                             {cust.address && (
-                              <div className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
-                                <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                                <span className="truncate max-w-[280px]" title={cust.address}>
+                              <div className="text-[11px] text-slate-500 flex items-start gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+                                <span className="break-words whitespace-normal text-slate-600 dark:text-slate-400">
                                   {cust.address}
                                 </span>
-                              </div>
-                            )}
-                            {cust.contactPerson && (
-                              <div className="text-[11px] text-muted-foreground dark:text-slate-400 font-medium flex items-center gap-1 mt-0.5">
-                                <User className="w-3 h-3 text-teal-500 shrink-0" />
-                                <span>Dr / Incharge: <strong className="text-foreground dark:text-slate-200">{cust.contactPerson}</strong></span>
                               </div>
                             )}
                             {cust.notes && (
                               <div className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-1 font-medium bg-amber-50 dark:bg-amber-950 px-1.5 py-0.5 rounded w-fit">
                                 <Clock className="w-2.5 h-2.5 shrink-0" />
-                                <span>{cust.notes}</span>
+                                <span className="break-words whitespace-normal">{cust.notes}</span>
                               </div>
                             )}
                           </td>
 
-                          {/* Direct Department Phone Numbers */}
-                          <td className="py-3.5 px-4 space-y-1.5">
-                            {/* OT Direct Line */}
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9.5px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.5 rounded shrink-0">
-                                OT
-                              </span>
-                              {cust.otNumber ? (
-                                <div className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400 text-xs">
-                                  <a href={`tel:${cust.otNumber}`} className="hover:underline flex items-center gap-1">
-                                    <Phone className="w-2.5 h-2.5 shrink-0" />
-                                    {cust.otNumber}
-                                  </a>
-                                  <a
-                                    href={`https://wa.me/${cust.otNumber.replace(/[^0-9]/g, "")}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-emerald-600 hover:scale-110 transition-transform"
-                                    title="WhatsApp OT Desk"
+                          {/* Contacts & Department Lines (All numbers in single column: Role : Name : Number, multiple on next line) */}
+                          <td className="py-3.5 px-3.5 text-left align-middle min-w-[280px]">
+                            {contactLines.length > 0 ? (
+                              <div className="space-y-1.5">
+                                {contactLines.map((line, lIdx) => (
+                                  <div
+                                    key={lIdx}
+                                    className="flex items-center gap-1.5 text-xs flex-wrap font-medium leading-relaxed"
                                   >
-                                    💬
-                                  </a>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 text-[11px] italic">Not set</span>
-                              )}
-                            </div>
-
-                            {/* Hospital Board Line */}
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9.5px] font-black bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 px-1.5 py-0.5 rounded shrink-0">
-                                HOSP
-                              </span>
-                              {cust.hospitalNumber ? (
-                                <a
-                                  href={`tel:${cust.hospitalNumber}`}
-                                  className="font-semibold text-sky-700 dark:text-sky-400 hover:underline text-xs flex items-center gap-1"
-                                >
-                                  <Phone className="w-2.5 h-2.5 shrink-0" />
-                                  {cust.hospitalNumber}
-                                </a>
-                              ) : (
-                                <span className="text-slate-400 text-[11px] italic">Not set</span>
-                              )}
-                            </div>
-
-                            {/* Personal Doctor Mobile */}
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9.5px] font-black bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 px-1.5 py-0.5 rounded shrink-0">
-                                PERS
-                              </span>
-                              {cust.personalNumber || cust.mobile ? (
-                                <div className="flex items-center gap-1.5 font-semibold text-purple-700 dark:text-purple-400 text-xs">
-                                  <a
-                                    href={`tel:${cust.personalNumber || cust.mobile}`}
-                                    className="hover:underline flex items-center gap-1"
-                                  >
-                                    <Phone className="w-2.5 h-2.5 shrink-0" />
-                                    {cust.personalNumber || cust.mobile}
-                                  </a>
-                                  <a
-                                    href={`https://wa.me/${(cust.personalNumber || cust.mobile || "").replace(
-                                      /[^0-9]/g,
-                                      ""
-                                    )}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-emerald-600 hover:scale-110 transition-transform"
-                                    title="WhatsApp Doctor"
-                                  >
-                                    💬
-                                  </a>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 text-[11px] italic">Not set</span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Staff Directory & Key Contacts */}
-                          <td className="py-3.5 px-4">
-                            {Array.isArray(cust.contacts) && cust.contacts.length > 0 ? (
-                              <div className="space-y-1">
-                                {cust.contacts.slice(0, 2).map((c, i) => (
-                                  <div key={i} className="flex items-center justify-between gap-1 text-[11px]">
-                                    <span className="truncate max-w-[150px]">
-                                      <span className="font-bold text-foreground dark:text-slate-300">
-                                        {c.role || "Staff"}:
-                                      </span>{" "}
-                                      {c.name}
+                                    <span
+                                      className={`text-[9.5px] font-black px-1.5 py-0.5 rounded tracking-wide shrink-0 ${line.badgeStyle}`}
+                                    >
+                                      {line.prefix}
                                     </span>
-                                    {c.phone && (
-                                      <a
-                                        href={`tel:${c.phone}`}
-                                        className="text-teal-700 dark:text-teal-400 font-semibold hover:underline flex items-center gap-0.5 shrink-0"
-                                      >
-                                        <Phone className="w-2.5 h-2.5" />
-                                        {c.phone}
-                                      </a>
+                                    <span className="text-slate-400 font-bold">:</span>
+                                    {line.name && (
+                                      <>
+                                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                                          {line.name}
+                                        </span>
+                                        {line.phone && (
+                                          <span className="text-slate-400 font-bold">:</span>
+                                        )}
+                                      </>
+                                    )}
+                                    {line.phone && (
+                                      <div className="inline-flex items-center gap-1 shrink-0">
+                                        <a
+                                          href={`tel:${line.phone}`}
+                                          className="font-bold text-teal-700 dark:text-teal-400 hover:underline tracking-tight"
+                                        >
+                                          {line.phone}
+                                        </a>
+                                        {line.waUrl && (
+                                          <a
+                                            href={line.waUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-emerald-600 hover:scale-125 transition-transform inline-flex items-center ml-0.5"
+                                            title={`WhatsApp ${line.prefix} ${line.name || ""} (${line.phone})`}
+                                          >
+                                            <MessageCircle className="w-3.5 h-3.5 text-emerald-600 fill-emerald-100 dark:fill-emerald-950" />
+                                          </a>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
                                 ))}
-                                {cust.contacts.length > 2 && (
-                                  <button
-                                    onClick={() => setSelectedHospitalForContacts(cust)}
-                                    className="text-[10px] font-bold text-teal-600 dark:text-teal-400 hover:underline pt-0.5 block"
-                                  >
-                                    +{cust.contacts.length - 2} more staff contacts...
-                                  </button>
-                                )}
                               </div>
                             ) : (
-                              <button
-                                onClick={() => openEditModal(cust)}
-                                className="text-[11px] text-slate-400 hover:text-teal-700 dark:hover:text-teal-300 flex items-center gap-1 border border-dashed border-border dark:border-slate-800 px-2 py-1 rounded-md"
-                              >
-                                <Plus className="w-3 h-3" /> Add Staff Contacts
-                              </button>
+                              <div className="flex items-center gap-1.5 text-slate-400 text-xs">
+                                <span className="italic text-[11px]">No contacts</span>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditModal(cust)}
+                                  className="text-[11px] text-teal-600 hover:text-teal-700 dark:text-teal-400 inline-flex items-center gap-0.5 hover:underline font-semibold cursor-pointer"
+                                >
+                                  <Plus className="w-2.5 h-2.5" /> Add
+                                </button>
+                              </div>
                             )}
                           </td>
 
                           {/* Outstanding Balance */}
-                          <td className="py-3.5 px-4 text-center">
-                            {balance > 0 ? (
-                              <Badge className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 text-[10.5px] font-bold">
-                                ₹{balance.toFixed(0)}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 font-semibold">
-                                Clear
-                              </Badge>
-                            )}
+                          <td className="py-3.5 px-3 text-center align-middle w-[115px]">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCustomerForLedger(cust)}
+                              className="inline-flex items-center justify-center gap-1 cursor-pointer focus:outline-hidden hover:opacity-90 transition-all"
+                              title="Click to view Customer Cash Invoice Ledger"
+                            >
+                              {balance > 0 ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-mono shadow-2xs">
+                                  ₹{balance.toLocaleString("en-IN")}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] text-emerald-700 bg-emerald-50 border border-emerald-200 font-semibold hover:bg-emerald-100">
+                                  Clear
+                                </span>
+                              )}
+                            </button>
                           </td>
 
-                          {/* Quick Actions */}
-                          <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                          {/* Quick Actions - Centered with generous width and no-wrap */}
+                          <td className="py-3.5 px-3 text-center align-middle w-[280px] min-w-[270px]">
+                            <div className="flex items-center justify-center gap-1.5 flex-nowrap whitespace-nowrap">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelectedCustomerForLedger(cust)}
+                                className="h-7 text-[11px] gap-1.5 border-indigo-200 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 font-bold px-2.5 rounded-lg shadow-2xs"
+                                title="View Customer Cash Invoice Ledger (Debits, Credits, Statement)"
+                              >
+                                <BookOpen className="w-3 h-3 text-indigo-600 dark:text-indigo-400" /> Ledger
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() =>
                                   navigate(`/?mode=procedure&hospital=${encodeURIComponent(cust.name)}`)
                                 }
-                                className="h-7 text-[11px] gap-1 border-teal-300 text-teal-800 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950 font-bold px-2 shadow-2xs"
+                                className="h-7 text-[11px] gap-1.5 border-teal-300 text-teal-800 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950 font-bold px-2.5 rounded-lg shadow-2xs"
                                 title="Create Delivery Challan for this hospital"
                               >
                                 <FileText className="w-3 h-3 text-teal-600" /> + DC
                               </Button>
                               <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  navigate(`/cash-invoice?client=${encodeURIComponent(cust.name)}`)
-                                }
-                                className="h-7 text-[11px] gap-1 border-slate-300 text-foreground dark:text-slate-300 hover:bg-muted dark:hover:bg-slate-800 font-bold px-2 shadow-2xs"
-                                title="Create Cash Memo / Invoice"
-                              >
-                                <Receipt className="w-3 h-3 text-muted-foreground" /> + Bill
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => openMergeModal(cust)}
-                                className="h-7 w-7 text-slate-400 hover:text-amber-600 hover:bg-amber-50"
-                                title={`Merge "${cust.name}" into another profile...`}
-                              >
-                                <GitMerge className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button
                                 size="icon"
                                 variant="ghost"
                                 onClick={() => openEditModal(cust)}
-                                className="h-7 w-7 text-muted-foreground hover:text-teal-700"
+                                className="h-7 w-7 text-slate-400 hover:text-teal-700 hover:bg-teal-50 dark:hover:bg-teal-950 rounded-lg transition-colors"
                                 title="Edit hospital numbers and staff"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -1241,7 +1451,7 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
                                 size="icon"
                                 variant="ghost"
                                 onClick={() => handleDeleteClick(cust)}
-                                className="h-7 w-7 text-slate-400 hover:text-red-600"
+                                className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950 rounded-lg transition-colors"
                                 title="Delete hospital"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1283,141 +1493,85 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
                             </p>
                           )}
                         </div>
-                        {balance > 0 ? (
-                          <Badge className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 text-[10px] font-bold">
-                            Due ₹{balance.toFixed(0)}
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200">
-                            Clear
-                          </Badge>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCustomerForLedger(cust)}
+                          className="cursor-pointer focus:outline-hidden hover:opacity-90 transition-all"
+                          title="Click to view Customer Cash Invoice Ledger"
+                        >
+                          {balance > 0 ? (
+                            <Badge className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 text-[10px] font-bold cursor-pointer">
+                              Due ₹{balance.toFixed(0)}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 cursor-pointer hover:bg-emerald-50">
+                              Clear
+                            </Badge>
+                          )}
+                        </button>
                       </div>
 
-                      {/* Phone Numbers Box */}
-                      <div className="mt-3 p-2.5 rounded-lg bg-muted dark:bg-slate-950 border border-slate-100 dark:border-slate-800 space-y-2">
-                        {/* OT Direct Number */}
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1.5 font-bold text-teal-800 dark:text-teal-300">
-                            <span className="text-[9.5px] font-black bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 px-1.5 py-0.5 rounded">
-                              OT
-                            </span>
-                            OT Line:
-                          </span>
-                          {cust.otNumber ? (
-                            <div className="flex items-center gap-1">
-                              <a
-                                href={`tel:${cust.otNumber}`}
-                                className="font-bold text-teal-700 dark:text-teal-400 hover:underline"
+                      {/* Contacts Box (OT & Doctor) */}
+                      {(() => {
+                        const lines = getStructuredCustomerContacts(cust);
+                        if (lines.length === 0) {
+                          return (
+                            <div className="mt-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                              <span className="text-slate-400 italic text-[11px]">No contacts set</span>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(cust)}
+                                className="text-[10.5px] text-teal-600 hover:text-teal-700 dark:text-teal-400 inline-flex items-center gap-0.5 hover:underline font-semibold cursor-pointer"
                               >
-                                {cust.otNumber}
-                              </a>
-                              <a
-                                href={`https://wa.me/${cust.otNumber.replace(/[^0-9]/g, "")}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-emerald-600 hover:scale-110 transition-transform text-xs"
-                                title="Chat on WhatsApp"
-                              >
-                                💬
-                              </a>
+                                <Plus className="w-2.5 h-2.5" /> Add
+                              </button>
                             </div>
-                          ) : (
-                            <span className="text-muted-foreground text-[10px] italic">Not set</span>
-                          )}
-                        </div>
+                          );
+                        }
 
-                        {/* Hospital Board Number */}
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1.5 font-bold text-sky-800 dark:text-sky-300">
-                            <span className="text-[9.5px] font-black bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 px-1.5 py-0.5 rounded">
-                              HOSP
-                            </span>
-                            Reception:
-                          </span>
-                          {cust.hospitalNumber ? (
-                            <a
-                              href={`tel:${cust.hospitalNumber}`}
-                              className="font-bold text-sky-700 dark:text-sky-400 hover:underline"
-                            >
-                              {cust.hospitalNumber}
-                            </a>
-                          ) : (
-                            <span className="text-muted-foreground text-[10px] italic">Not set</span>
-                          )}
-                        </div>
-
-                        {/* Personal Number */}
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1.5 font-bold text-purple-800 dark:text-purple-300">
-                            <span className="text-[9.5px] font-black bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 px-1.5 py-0.5 rounded">
-                              PERS
-                            </span>
-                            Doctor / Mobile:
-                          </span>
-                          {cust.personalNumber || cust.mobile ? (
-                            <div className="flex items-center gap-1">
-                              <a
-                                href={`tel:${cust.personalNumber || cust.mobile}`}
-                                className="font-bold text-purple-700 dark:text-purple-400 hover:underline"
+                        return (
+                          <div className="mt-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 space-y-1.5">
+                            {lines.map((line, lIdx) => (
+                              <div
+                                key={lIdx}
+                                className="flex items-center justify-between text-xs gap-2"
                               >
-                                {cust.personalNumber || cust.mobile}
-                              </a>
-                              <a
-                                href={`https://wa.me/${(cust.personalNumber || cust.mobile || "").replace(
-                                  /[^0-9]/g,
-                                  ""
-                                )}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-emerald-600 hover:scale-110 transition-transform text-xs"
-                                title="Chat on WhatsApp"
-                              >
-                                💬
-                              </a>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-[10px] italic">Not set</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Primary Contact Person & Staff */}
-                      {(cust.contactPerson || (cust.contacts && cust.contacts.length > 0)) && (
-                        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
-                          {cust.contactPerson && (
-                            <div className="font-bold text-foreground dark:text-slate-200 flex items-center gap-1 mb-1">
-                              <User className="w-3.5 h-3.5 text-teal-600" />
-                              <span>{cust.contactPerson}</span>
-                            </div>
-                          )}
-                          {Array.isArray(cust.contacts) && cust.contacts.length > 0 && (
-                            <div className="space-y-1 mt-1">
-                              {cust.contacts.map((c, i) => (
-                                <div
-                                  key={i}
-                                  className="text-[11px] text-muted-foreground flex items-center justify-between"
-                                >
-                                  <span className="truncate max-w-[150px]">
-                                    <span className="font-bold text-foreground dark:text-slate-300">
-                                      {c.role || "Staff"}:
-                                    </span>{" "}
-                                    {c.name || "Contact"}
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                  <span className={`text-[9.5px] font-black px-1.5 py-0.5 rounded tracking-wide shrink-0 ${line.badgeStyle}`}>
+                                    {line.prefix}:
                                   </span>
-                                  {c.phone && (
-                                    <a
-                                      href={`tel:${c.phone}`}
-                                      className="text-teal-700 font-semibold hover:underline"
-                                    >
-                                      {c.phone}
-                                    </a>
+                                  {line.name && (
+                                    <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                      {line.name}
+                                    </span>
                                   )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                                </span>
+                                {line.phone && (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <a
+                                      href={`tel:${line.phone}`}
+                                      className="font-bold text-teal-700 dark:text-teal-400 hover:underline text-xs tracking-tight"
+                                    >
+                                      {line.phone}
+                                    </a>
+                                    {line.waUrl && (
+                                      <a
+                                        href={line.waUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-emerald-600 hover:scale-125 transition-transform text-xs ml-0.5 inline-flex items-center"
+                                        title={`WhatsApp ${line.prefix} (${line.phone})`}
+                                      >
+                                        <MessageCircle className="w-3 h-3 text-emerald-600 fill-emerald-100 dark:fill-emerald-950" />
+                                      </a>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
 
                       {/* Notes / Timings */}
                       {cust.notes && (
@@ -1445,26 +1599,15 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() =>
-                            navigate(`/cash-invoice?client=${encodeURIComponent(cust.name)}`)
-                          }
-                          className="h-7 text-[11px] gap-1 border-slate-300 text-foreground hover:bg-muted font-bold"
-                          title="Create Cash Invoice for this hospital"
+                          onClick={() => setSelectedCustomerForLedger(cust)}
+                          className="h-7 text-[11px] gap-1 border-indigo-200 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 font-bold px-2"
+                          title="View Customer Cash Invoice Ledger"
                         >
-                          <Receipt className="w-3 h-3 text-muted-foreground" /> Cash Memo
+                          <BookOpen className="w-3 h-3 text-indigo-600 dark:text-indigo-400" /> Ledger
                         </Button>
                       </div>
 
                       <div className="flex items-center gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => openMergeModal(cust)}
-                          className="h-7 w-7 text-muted-foreground hover:text-amber-600 hover:bg-amber-50"
-                          title="Merge hospital..."
-                        >
-                          <GitMerge className="w-3.5 h-3.5" />
-                        </Button>
                         <Button
                           size="icon"
                           variant="ghost"
@@ -2398,6 +2541,14 @@ export default function Customers({ embedded = false }: CustomersProps = {}) {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Customer Cash Invoice Ledger Modal */}
+        <CustomerCashLedgerModal
+          customer={selectedCustomerForLedger}
+          isOpen={Boolean(selectedCustomerForLedger)}
+          onClose={() => setSelectedCustomerForLedger(null)}
+          cachedInvoices={allCashInvoices}
+        />
       </main>
     </div>
   );

@@ -3157,17 +3157,17 @@ Website: srrorthoplus.com`;
                 return (
                   <>
                     {/* Desktop Table View */}
-                    <div className="hidden lg:block rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 overflow-hidden">
+                    <div className="hidden lg:block rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
-                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 dark:text-slate-400">Ref No.</th>
-                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 dark:text-slate-400">Hospital / Client</th>
-                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 dark:text-slate-400">Template</th>
-                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 dark:text-slate-400">Amount</th>
-                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 dark:text-slate-400">Date</th>
-                              <th className="text-right py-3 px-4 text-xs font-medium text-slate-500 dark:text-slate-400">Actions</th>
+                            <tr className="border-b border-slate-200 bg-slate-50/80">
+                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500">Ref No.</th>
+                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500">Hospital / Client</th>
+                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500">Template</th>
+                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500">Amount</th>
+                              <th className="text-left py-3 px-4 text-xs font-medium text-slate-500">Date</th>
+                              <th className="text-right py-3 px-4 text-xs font-medium text-slate-500">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -3176,11 +3176,11 @@ Website: srrorthoplus.com`;
                               const amountFormatted = formatQuotationAmount(item);
                               const isDropdownOpen = activeDropdownId === item.id;
                               return (
-                                <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70 dark:border-slate-800 dark:hover:bg-slate-900/50 transition-colors">
+                                <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70 transition-colors">
                                   <td className="py-3.5 px-4">
                                     <div className="flex flex-col gap-1">
                                       <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="text-xs font-semibold text-teal-800 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 px-2.5 py-1 rounded-md whitespace-nowrap font-mono">
+                                        <span className="text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-md whitespace-nowrap font-mono">
                                           {(item.ref || '').replace('SRR/QUOT/', '')}
                                         </span>
                                         {item.parentRef && (
@@ -3201,16 +3201,16 @@ Website: srrorthoplus.com`;
                                   </td>
                                   <td className="py-3.5 px-4">
                                     <div className="flex items-center gap-1.5">
-                                      <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{item.hospital}</span>
+                                      <span className="text-sm font-medium text-slate-900">{item.hospital}</span>
                                       <EmailSentTooltip item={item} emailHistory={emailHistory} />
                                     </div>
                                   </td>
                                   <td className="py-3.5 px-4">
-                                    <span className="text-[13px] text-slate-600 dark:text-slate-300 font-medium">{item.templateName}</span>
+                                    <span className="text-[13px] text-slate-600 font-medium">{item.templateName}</span>
                                   </td>
                                   <td className="py-3.5 px-4">
                                     {amountFormatted ? (
-                                        <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-md inline-block whitespace-nowrap font-mono">
+                                        <span className="text-xs font-semibold text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md inline-block whitespace-nowrap font-mono">
                                         {amountFormatted}
                                       </span>
                                     ) : (
@@ -3218,7 +3218,7 @@ Website: srrorthoplus.com`;
                                     )}
                                   </td>
                                   <td className="py-3.5 px-4">
-                                    <span className="text-[13px] text-slate-600 dark:text-slate-400 font-medium">{item.date}</span>
+                                    <span className="text-[13px] text-slate-600 font-medium">{item.date}</span>
                                   </td>
                                   <td className="py-3.5 px-4">
                                     <div className="flex items-center justify-end gap-1.5 relative history-dropdown-container">
@@ -3333,7 +3333,7 @@ Website: srrorthoplus.com`;
                         const childCount = quotationHistory.filter(h => h.parentRef === item.ref).length;
                         const amountFormatted = formatQuotationAmount(item);
                         return (
-                          <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950 space-y-4">
+                          <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
                             <div className="flex justify-between items-start">
                               <div className="space-y-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
